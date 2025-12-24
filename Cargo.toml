@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "Desktop"
+]
+
+resolver = "2"

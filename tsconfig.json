@@ -1,0 +1,55 @@
+{
+  "compilerOptions": {
+    // Environment setup & latest features
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleDetection": "force",
+    "allowJs": true,
+
+    // JSX Configuration for React
+    "jsx": "react-jsx",
+
+    // Bundler mode
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "noEmit": true,
+    "isolatedModules": true,
+
+    // Path resolution
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./Source/*"],
+      "@frameworks/*": ["./Frameworks/*"],
+      "@library/*": ["./Library/*"]
+    },
+
+    // Best practices
+    "strict": true,
+    "skipLibCheck": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": false,
+    "noImplicitOverride": true,
+    "exactOptionalPropertyTypes": false,
+
+    // Type checking (relaxed for better compatibility)
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "noImplicitReturns": true,
+    "noPropertyAccessFromIndexSignature": false
+  },
+  "include": [
+    "Source/**/*",
+    "Frameworks/**/*",
+    "Library/**/*",
+    "*.ts",
+    "*.tsx",
+    "*.js"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "Distribution"
+  ]
+}

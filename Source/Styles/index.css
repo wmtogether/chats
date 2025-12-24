@@ -1,0 +1,176 @@
+@import 'tailwindcss';
+
+
+@font-face {
+  font-family: 'Google Sans';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('../Library/Shared/Fonts/GoogleSans-VariableFont.ttf') format('woff2');
+  unicode-range: U+02D7, U+0303, U+0331, U+0E01-0E5B, U+200C-200D, U+25CC;
+}
+
+
+/* 1. DEFINE COLOR SYSTEM (CSS Variables) */
+/* By default, we define the Light Mode values here */
+:root {
+  /* -- Light Mode Palette (Generated to match your Dark Mode) -- */
+  --sys-primary: #6750A4;
+  --sys-on-primary: #FFFFFF;
+  --sys-primary-container: #EADDFF;
+  --sys-on-primary-container: #21005D;
+  
+  --sys-secondary: #625B71;
+  --sys-on-secondary: #FFFFFF;
+  --sys-secondary-container: #E8DEF8;
+  --sys-on-secondary-container: #1D192B;
+  
+  --sys-tertiary: #7D5260;
+  --sys-on-tertiary: #FFFFFF;
+  --sys-tertiary-container: #FFD8E4;
+  --sys-on-tertiary-container: #31111D;
+  
+  --sys-error: #B3261E;
+  --sys-on-error: #FFFFFF;
+  --sys-error-container: #F9DEDC;
+  --sys-on-error-container: #410E0B;
+  
+  --sys-background: #FFFBFE;
+  --sys-on-background: #1C1B1F;
+  --sys-surface: #FFFBFE;
+  --sys-on-surface: #1C1B1F;
+  --sys-surface-variant: #E7E0EC;
+  --sys-on-surface-variant: #49454F;
+  --sys-outline: #79747E;
+
+  /* -- Scrollbar Settings -- */
+  --sb-width: 4px;
+  --sb-track-color: transparent;
+  /* Use Outline color for scrollbar so it adapts to light/dark automatically */
+  --sb-thumb-color: var(--sys-outline); 
+  --sb-thumb-hover: var(--sys-primary);
+}
+
+/* 2. DARK MODE OVERRIDES */
+/* When system requests dark mode, swap the values */
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* -- Your Provided Dark Mode Palette -- */
+    --sys-primary: #D0BCFF;
+    --sys-on-primary: #381E72;
+    --sys-primary-container: #4F378B;
+    --sys-on-primary-container: #EADDFF;
+    
+    --sys-secondary: #CCC2DC;
+    --sys-on-secondary: #332D41;
+    --sys-secondary-container: #4A4458;
+    --sys-on-secondary-container: #E8DEF8;
+    
+    --sys-tertiary: #EFB8C8;
+    --sys-on-tertiary: #492532;
+    --sys-tertiary-container: #633B48;
+    --sys-on-tertiary-container: #FFD8E4;
+    
+    --sys-error: #F2B8B5;
+    --sys-on-error: #601410;
+    --sys-error-container: #8C1D18;
+    --sys-on-error-container: #F9DEDC;
+    
+    --sys-background: #1C1B1F;
+    --sys-on-background: #E6E1E5;
+    --sys-surface: #1C1B1F;
+    --sys-on-surface: #E6E1E5;
+    --sys-surface-variant: #49454F;
+    --sys-on-surface-variant: #CAC4D0;
+    --sys-outline: #48464b;
+  }
+}
+
+/* 3. TAILWIND CONFIGURATION */
+/* Map Tailwind classes to the CSS variables above */
+@theme {
+  --color-primary: var(--sys-primary);
+  --color-on-primary: var(--sys-on-primary);
+  --color-primary-container: var(--sys-primary-container);
+  --color-on-primary-container: var(--sys-on-primary-container);
+  
+  --color-secondary: var(--sys-secondary);
+  --color-on-secondary: var(--sys-on-secondary);
+  --color-secondary-container: var(--sys-secondary-container);
+  --color-on-secondary-container: var(--sys-on-secondary-container);
+  
+  --color-tertiary: var(--sys-tertiary);
+  --color-on-tertiary: var(--sys-on-tertiary);
+  --color-tertiary-container: var(--sys-tertiary-container);
+  --color-on-tertiary-container: var(--sys-on-tertiary-container);
+  
+  --color-error: var(--sys-error);
+  --color-on-error: var(--sys-on-error);
+  --color-error-container: var(--sys-error-container);
+  --color-on-error-container: var(--sys-on-error-container);
+  
+  --color-background: var(--sys-background);
+  --color-on-background: var(--sys-on-background);
+  --color-surface: var(--sys-surface);
+  --color-on-surface: var(--sys-on-surface);
+  --color-surface-variant: var(--sys-surface-variant);
+  --color-on-surface-variant: var(--sys-on-surface-variant);
+  --color-outline: var(--sys-outline);
+}
+
+/* 4. BASE STYLES */
+body {
+  margin: 0;
+  font-family: "Inter Variable", "Google Sans", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  
+  /* Apply theme background and text color globally */
+  background-color: var(--sys-background);
+  color: var(--sys-on-background);
+}
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New', monospace;
+}
+
+/* 5. GLOBAL SCROLLBAR */
+html {
+  scrollbar-width: thin;
+  scrollbar-color: var(--sb-thumb-color) var(--sb-track-color);
+}
+
+::-webkit-scrollbar {
+  width: var(--sb-width);
+  height: var(--sb-width);
+}
+
+::-webkit-scrollbar-track {
+  background: var(--sb-track-color);
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: var(--sb-thumb-color);
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--sb-thumb-hover);
+}
+
+/* 6. TYPOGRAPHY */
+.display-large { font-size: 57px; line-height: 64px; font-weight: 400; }
+.display-medium { font-size: 45px; line-height: 52px; font-weight: 400; }
+.display-small { font-size: 36px; line-height: 44px; font-weight: 400; }
+.headline-large { font-size: 32px; line-height: 40px; font-weight: 400; }
+.headline-medium { font-size: 28px; line-height: 36px; font-weight: 400; }
+.headline-small { font-size: 24px; line-height: 32px; font-weight: 400; }
+.title-large { font-size: 22px; line-height: 28px; font-weight: 400; }
+.title-medium { font-size: 16px; line-height: 24px; font-weight: 500; letter-spacing: 0.15px; }
+.title-small { font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: 0.1px; }
+.label-large { font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: 0.1px; }
+.label-medium { font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.5px; }
+.label-small { font-size: 11px; line-height: 16px; font-weight: 500; letter-spacing: 0.5px; }
+.body-large { font-size: 16px; line-height: 24px; font-weight: 400; letter-spacing: 0.5px; }
+.body-medium { font-size: 14px; line-height: 20px; font-weight: 400; letter-spacing: 0.25px; }
+.body-small { font-size: 12px; line-height: 16px; font-weight: 400; letter-spacing: 0.4px; }
