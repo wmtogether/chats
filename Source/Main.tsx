@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useReducer } from 'react';
 import Sidebar from './Components/Sidebar'
 import ChatHeader from './Components/ChatHeader'
 import MessageBubble from './Components/MessageBubble'
@@ -8,7 +8,11 @@ import Icon from './Components/Icon'
 import LoginPage from './Pages/Login';
 import AllChats from './Pages/AllChats';
 import authService from './Library/Authentication/jwt';
-import type { Chat } from './Components/Chatlists';
+import { threadsApiService } from './Library/Shared/threadsApi';
+import type { Thread } from './Library/Shared/threadsApi'
+
+// The 'Chat' type is now an alias for the 'Thread' type from the API service.
+export type { Thread as Chat };
 
 // Types
 interface User {
@@ -35,51 +39,116 @@ interface MessageData {
   }
 }
 
-export default function Main() {
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const [selectedChat, setSelectedChat] = useState<Chat | null>(null);
-  const [showAllChats, setShowAllChats] = useState(false);
-  const [isLoadingAllChats, setIsLoadingAllChats] = useState(false);
+// State management with useReducer
+interface AppState {
+  isLoggedIn: boolean;
+  isLoading: boolean;
+  chats: Thread[];
+  selectedChat: Thread | null;
+  showAllChats: boolean;
+  isLoadingAllChats: boolean;
+}
 
-  // Check authentication status on component mount
+type AppAction =
+  | { type: 'LOGIN_SUCCESS' }
+  | { type: 'LOGOUT' }
+  | { type: 'SET_CHATS'; payload: Thread[] }
+  | { type: 'SELECT_CHAT'; payload: Thread | null }
+  | { type: 'SHOW_ALL_CHATS' }
+  | { type: 'HIDE_ALL_CHATS' }
+  | { type: 'SET_LOADING'; payload: boolean }
+  | { type: 'SET_ALL_CHATS_LOADING'; payload: boolean };
+
+const initialState: AppState = {
+  isLoggedIn: false,
+  isLoading: true,
+  chats: [],
+  selectedChat: null,
+  showAllChats: false,
+  isLoadingAllChats: false,
+};
+
+function appReducer(state: AppState, action: AppAction): AppState {
+  switch (action.type) {
+    case 'LOGIN_SUCCESS':
+      return { ...state, isLoggedIn: true };
+    case 'LOGOUT':
+      return { ...state, isLoggedIn: false, selectedChat: null };
+    case 'SET_CHATS':
+      return { ...state, chats: action.payload, selectedChat: state.selectedChat ? action.payload.find(c => c.id === state.selectedChat!.id) || null : null };
+    case 'SELECT_CHAT':
+      return { ...state, selectedChat: action.payload, showAllChats: false };
+    case 'SHOW_ALL_CHATS':
+      return { ...state, showAllChats: true, isLoadingAllChats: true };
+    case 'HIDE_ALL_CHATS':
+      return { ...state, showAllChats: false };
+    case 'SET_LOADING':
+      return { ...state, isLoading: action.payload };
+    case 'SET_ALL_CHATS_LOADING':
+      return { ...state, isLoadingAllChats: action.payload };
+    default:
+      return state;
+  }
+}
+
+export default function Main() {
+  const [state, dispatch] = useReducer(appReducer, initialState);
+  const { isLoggedIn, isLoading, chats, selectedChat, showAllChats, isLoadingAllChats } = state;
+
+  // Check authentication and fetch initial data
   useEffect(() => {
-    const checkAuth = () => {
+    const checkAuthAndFetchData = async () => {
+      dispatch({ type: 'SET_LOADING', payload: true });
       const authenticated = authService.isAuthenticated();
-      setIsLoggedIn(authenticated);
-      setIsLoading(false);
+      if (authenticated) {
+        dispatch({ type: 'LOGIN_SUCCESS' });
+        try {
+          const response = await threadsApiService.getThreads({ limit: 50 }); // Fetch initial chats
+          dispatch({ type: 'SET_CHATS', payload: response.threads });
+          if (response.threads.length > 0) {
+            // Select the most recently updated chat by default
+            const latestChat = response.threads.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())[0];
+            dispatch({ type: 'SELECT_CHAT', payload: latestChat });
+          }
+        } catch (error) {
+          console.error("Failed to fetch threads:", error);
+          // Handle error appropriately, maybe show a toast notification
+        }
+      }
+      dispatch({ type: 'SET_LOADING', payload: false });
     };
 
-    checkAuth();
+    checkAuthAndFetchData();
   }, []);
 
   const handleLoginSuccess = () => {
-    setIsLoggedIn(true);
+    window.location.reload(); // Reload to re-trigger the auth check and data fetch
   };
 
   const handleLogout = () => {
     authService.logout();
-    setIsLoggedIn(false);
+    dispatch({ type: 'LOGOUT' });
   };
 
-  const handleChatSelect = (chat: Chat) => {
-    setSelectedChat(chat);
-    setShowAllChats(false); // Close all chats view when a chat is selected
+  const handleChatSelect = (chat: Thread) => {
+    dispatch({ type: 'SELECT_CHAT', payload: chat });
   };
 
-  const handleShowAllChats = () => {
-    setIsLoadingAllChats(true);
-    setShowAllChats(true);
-    
-    // Simulate loading delay (remove this in production and replace with actual data fetching)
-    setTimeout(() => {
-      setIsLoadingAllChats(false);
-    }, 1500);
+  const handleShowAllChats = async () => {
+    dispatch({ type: 'SHOW_ALL_CHATS' });
+    try {
+      // Re-fetch all chats to ensure data is fresh
+      const response = await threadsApiService.getThreads({ limit: 500 }); // Fetch more for "all" view
+      dispatch({ type: 'SET_CHATS', payload: response.threads });
+    } catch (error) {
+      console.error("Failed to fetch all threads:", error);
+    } finally {
+      dispatch({ type: 'SET_ALL_CHATS_LOADING', payload: false });
+    }
   };
 
   const handleBackFromAllChats = () => {
-    setShowAllChats(false);
-    setIsLoadingAllChats(false); // Reset loading state when going back
+    dispatch({ type: 'HIDE_ALL_CHATS' });
   };
 
   // Show loading state while checking authentication
@@ -131,14 +200,17 @@ export default function Main() {
 
   return (
     <div className="bg-background text-on-background h-screen w-screen flex overflow-hidden selection:bg-primary/30 selection:text-on-primary ">
-      <Sidebar 
-        onChatSelect={handleChatSelect} 
+      <Sidebar
+        chats={chats}
+        selectedChat={selectedChat}
+        onChatSelect={handleChatSelect}
         onShowAllChats={handleShowAllChats}
         isLoadingAllChats={isLoadingAllChats}
       />
-      
+
       {showAllChats ? (
-        <AllChats 
+        <AllChats
+          chats={chats}
           onChatSelect={handleChatSelect}
           onBack={handleBackFromAllChats}
           selectedChatId={selectedChat?.id}
@@ -146,7 +218,7 @@ export default function Main() {
         />
       ) : (
         <main className="flex-1 flex flex-col min-w-0 bg-surface relative">
-          <ChatHeader selectedChat={selectedChat} />
+          <ChatHeader selectedChat={selectedChat} onLogout={handleLogout} chatCount={chats.length} />
 
           <div className="flex-1 overflow-y-auto flex flex-col relative" id="message-container">
             <StickyStatus selectedChat={selectedChat} />
@@ -158,11 +230,11 @@ export default function Main() {
                   <div className="relative py-6 flex items-center justify-center">
                     <div className="absolute left-0 right-0 h-px bg-surface-variant" />
                     <div className="relative bg-surface px-3 rounded-full border border-outline text-xs font-medium text-on-surface-variant">
-                      {new Date(selectedChat.createdAt).toLocaleDateString('en-US', { 
-                        weekday: 'long', 
-                        year: 'numeric', 
-                        month: 'long', 
-                        day: 'numeric' 
+                      {new Date(selectedChat.createdAt).toLocaleDateString('en-US', {
+                        weekday: 'long',
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric'
                       })}
                     </div>
                   </div>
@@ -194,7 +266,7 @@ export default function Main() {
                   ))}
                 </>
               )}
-              
+
               <div className="h-2" />
             </div>
           </div>

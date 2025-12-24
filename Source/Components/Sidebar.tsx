@@ -1,49 +1,32 @@
 import Icon from './Icon'
 import authService from '../Library/Authentication/jwt'
-import threadsApiService, { type Thread } from '../Library/Shared/threadsApi'
+import { threadsApiService, type Thread } from '../Library/Shared/threadsApi'
 import { useState, useEffect, useRef } from 'react'
-import type { Chat } from './Chatlists'
 
 // Use Thread as Chat since they have the same structure
 type ChatType = Thread;
 
 interface SidebarProps {
-  onChatSelect?: (chat: ChatType) => void;
-  onShowAllChats?: () => void;
-  isLoadingAllChats?: boolean;
+  chats: ChatType[];
+  selectedChat: ChatType | null;
+  onChatSelect: (chat: ChatType) => void;
+  onShowAllChats: () => void;
+  isLoadingAllChats: boolean;
 }
 
-export default function Sidebar({ onChatSelect, onShowAllChats, isLoadingAllChats = false }: SidebarProps) {
+export default function Sidebar({ 
+  chats, 
+  selectedChat, 
+  onChatSelect, 
+  onShowAllChats, 
+  isLoadingAllChats = false 
+}: SidebarProps) {
   const [user, setUser] = useState(authService.getUser());
   const [showUserMenu, setShowUserMenu] = useState(false);
-  const [selectedChatId, setSelectedChatId] = useState<number | undefined>();
-  const [threads, setThreads] = useState<ChatType[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  // Load threads from API
-  useEffect(() => {
-    const loadThreads = async () => {
-      try {
-        setIsLoading(true);
-        setError(null);
-        const response = await threadsApiService.getThreads({ limit: 100 });
-        const validThreads = threadsApiService.filterValidThreads(response.threads);
-        setThreads(validThreads);
-      } catch (err) {
-        console.error('Failed to load threads:', err);
-        setError(err instanceof Error ? err.message : 'Failed to load threads');
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    loadThreads();
-  }, []);
-
-  // Group chats by createdByName
-  const chatGroups = threadsApiService.groupThreadsByCreator(threads);
+  // Group chats by createdByName from the props
+  const chatGroups = threadsApiService.groupThreadsByCreator(chats);
 
   useEffect(() => {
     setUser(authService.getUser());
@@ -71,8 +54,7 @@ export default function Sidebar({ onChatSelect, onShowAllChats, isLoadingAllChat
   };
 
   const handleChatSelect = (chat: ChatType) => {
-    setSelectedChatId(chat.id);
-    onChatSelect?.(chat);
+    onChatSelect(chat);
   };
 
   const formatDate = (dateString: string) => {
@@ -152,7 +134,7 @@ export default function Sidebar({ onChatSelect, onShowAllChats, isLoadingAllChat
                   key={chat.id}
                   onClick={() => handleChatSelect(chat)}
                   className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all hover:bg-surface-variant group ${
-                    selectedChatId === chat.id ? 'bg-primary/10' : ''
+                    selectedChat?.id === chat.id ? 'bg-primary/10' : ''
                   }`}
                 >
                   <div className="flex-shrink-0">

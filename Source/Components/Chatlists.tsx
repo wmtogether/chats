@@ -1,49 +1,24 @@
 import { useState, useEffect } from 'react'
 import Icon from './Icon'
-import mockupData from '../Data/mockup.json'
+import { type Thread } from '../Library/Shared/threadsApi'
 
-interface Chat {
-  id: number
-  uuid: string
-  channelId: string
-  channelName: string
-  channelType: string
-  chatCategory: string
-  description: string | null
-  jobId: number | null
-  queueId: number | null
-  customerId: number | null
-  customers: any | null
-  metadata: {
-    queueId?: number
-    queueStatus: string
-    requestType: string
-    createdByName: string
-  } | null
-  isArchived: number
-  createdById: number
-  createdByName: string
-  createdAt: string
-  updatedAt: string
-}
+// Use Thread as Chat
+type Chat = Thread;
 
 interface ChatlistsProps {
-  onChatSelect?: (chat: Chat) => void
-  selectedChatId?: number
-  onShowAllChats?: () => void
+  chats: Chat[];
+  onChatSelect: (chat: Chat) => void;
+  selectedChatId?: number;
+  onShowAllChats: () => void;
 }
 
-export default function Chatlists({ onChatSelect, selectedChatId, onShowAllChats }: ChatlistsProps) {
-  // Filter out chats with null metadata
-  const [chats] = useState<Chat[]>(
-    (mockupData.chats as Chat[]).filter((chat) => chat.metadata !== null)
-  )
+export default function Chatlists({ chats, onChatSelect, selectedChatId, onShowAllChats }: ChatlistsProps) {
   const [showAll, setShowAll] = useState(false)
 
   const displayedChats = showAll ? chats : chats.slice(0, 5)
 
   const handleChatClick = (chat: Chat) => {
-    onChatSelect?.(chat)
+    onChatSelect(chat)
   }
 
   const formatDate = (dateString: string) => {
@@ -155,4 +130,4 @@ export default function Chatlists({ onChatSelect, selectedChatId, onShowAllChats
   )
 }
 
-export type { Chat }
+export type { Thread as Chat }

@@ -1,22 +1,24 @@
 import { useState, useMemo } from 'react'
 import Icon from '../Components/Icon'
-import mockupData from '../Data/mockup.json'
-import type { Chat } from '../Components/Chatlists'
+import { type Thread } from '../Library/Shared/threadsApi'
+
+type Chat = Thread
 
 interface AllChatsProps {
-  onChatSelect?: (chat: Chat) => void
-  onBack?: () => void
-  selectedChatId?: number
-  isLoading?: boolean
+  chats: Chat[];
+  onChatSelect: (chat: Chat) => void;
+  onBack: () => void;
+  selectedChatId?: number;
+  isLoading?: boolean;
 }
 
-export default function AllChats({ onChatSelect, onBack, selectedChatId, isLoading = false }: AllChatsProps) {
+export default function AllChats({ chats: allChats, onChatSelect, onBack, selectedChatId, isLoading = false }: AllChatsProps) {
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedGroup, setSelectedGroup] = useState<string>('all')
   const [sortBy, setSortBy] = useState<'updated' | 'created' | 'name'>('updated')
 
   // Filter and process chats
-  const validChats = (mockupData.chats as Chat[]).filter((chat) => chat.metadata !== null)
+  const validChats = allChats.filter((chat) => chat.metadata !== null)
   
   // Group chats by creator
   const chatGroups = useMemo(() => {
@@ -92,8 +94,8 @@ export default function AllChats({ onChatSelect, onBack, selectedChatId, isLoadi
   }
 
   const handleChatClick = (chat: Chat) => {
-    onChatSelect?.(chat)
-    onBack?.() // Go back to main view after selecting a chat
+    onChatSelect(chat)
+    onBack() // Go back to main view after selecting a chat
   }
 
   // Skeleton Loading Components

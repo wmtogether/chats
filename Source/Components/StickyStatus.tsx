@@ -1,8 +1,8 @@
 import Icon from './Icon'
-import type { Chat } from './Chatlists'
+import type { Thread as Chat } from '../Library/Shared/threadsApi'
 
 interface StickyStatusProps {
-  selectedChat?: Chat | null;
+  selectedChat: Chat | null;
 }
 
 export default function StickyStatus({ selectedChat }: StickyStatusProps) {
