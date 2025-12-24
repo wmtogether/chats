@@ -1,11 +1,49 @@
 import Icon from './Icon'
 import authService from '../Library/Authentication/jwt'
+import threadsApiService, { type Thread } from '../Library/Shared/threadsApi'
 import { useState, useEffect, useRef } from 'react'
+import type { Chat } from './Chatlists'
 
-export default function Sidebar() {
+// Use Thread as Chat since they have the same structure
+type ChatType = Thread;
+
+interface SidebarProps {
+  onChatSelect?: (chat: ChatType) => void;
+  onShowAllChats?: () => void;
+  isLoadingAllChats?: boolean;
+}
+
+export default function Sidebar({ onChatSelect, onShowAllChats, isLoadingAllChats = false }: SidebarProps) {
   const [user, setUser] = useState(authService.getUser());
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [selectedChatId, setSelectedChatId] = useState<number | undefined>();
+  const [threads, setThreads] = useState<ChatType[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  // Load threads from API
+  useEffect(() => {
+    const loadThreads = async () => {
+      try {
+        setIsLoading(true);
+        setError(null);
+        const response = await threadsApiService.getThreads({ limit: 100 });
+        const validThreads = threadsApiService.filterValidThreads(response.threads);
+        setThreads(validThreads);
+      } catch (err) {
+        console.error('Failed to load threads:', err);
+        setError(err instanceof Error ? err.message : 'Failed to load threads');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadThreads();
+  }, []);
+
+  // Group chats by createdByName
+  const chatGroups = threadsApiService.groupThreadsByCreator(threads);
 
   useEffect(() => {
     setUser(authService.getUser());
@@ -31,6 +69,55 @@ export default function Sidebar() {
     authService.logout();
     window.location.reload(); // Simple way to reset the app state
   };
+
+  const handleChatSelect = (chat: ChatType) => {
+    setSelectedChatId(chat.id);
+    onChatSelect?.(chat);
+  };
+
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString)
+    const now = new Date()
+    const diffInHours = (now.getTime() - date.getTime()) / (1000 * 60 * 60)
+    
+    if (diffInHours < 24) {
+      return date.toLocaleTimeString('en-US', { 
+        hour: '2-digit', 
+        minute: '2-digit',
+        hour12: false 
+      })
+    } else if (diffInHours < 168) { // 7 days
+      return date.toLocaleDateString('en-US', { weekday: 'short' })
+    } else {
+      return date.toLocaleDateString('en-US', { 
+        month: 'short', 
+        day: 'numeric' 
+      })
+    }
+  }
+
+  const getRequestTypeIcon = (requestType: string) => {
+    switch (requestType) {
+      case 'design': return 'palette'
+      case 'dimension': return 'straighten'
+      case 'checkfile': return 'check_circle'
+      case 'adjustdesign': return 'tune'
+      case 'proof': return 'visibility'
+      case 'sample-i': 
+      case 'sample-t': return 'inventory'
+      default: return 'work'
+    }
+  }
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'PENDING': return 'text-yellow-600'
+      case 'IN_PROGRESS': return 'text-blue-600'
+      case 'COMPLETED': return 'text-green-600'
+      case 'CANCELLED': return 'text-red-600'
+      default: return 'text-on-surface-variant'
+    }
+  }
   return (
     <aside className="w-[300px] bg-surface flex flex-col border-r border-outline shrink-0 z-20 select-none">
       {/* Workspace Header */}
@@ -49,53 +136,103 @@ export default function Sidebar() {
 
       {/* Channels List */}
       <div className="flex-1 overflow-y-auto px-3 pb-4 flex flex-col gap-6">
-        {/* Manager Section */}
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center justify-between px-2 pb-1 group/header cursor-pointer">
-            <div className="label-small text-on-surface-variant uppercase tracking-wider">Manager</div>
-            <Icon name="add" className="text-on-surface-variant opacity-0 group-hover/header:opacity-100 hover:text-on-surface transition-opacity" size={16} />
-          </div>
-          <div className="flex flex-col gap-1">
-            <SidebarItem icon="tag" label="release-planning" />
-            <SidebarItem icon="lock" label="hiring-confidential" />
-          </div>
-        </div>
-
-        {/* Sale Section (Active) */}
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center justify-between px-2 pb-1 group/header cursor-pointer">
-            <div className="label-small text-on-surface-variant uppercase tracking-wider">Sale</div>
-            <Icon name="add" className="text-on-surface-variant opacity-0 group-hover/header:opacity-100 hover:text-on-surface transition-opacity" size={16} />
-          </div>
-          
-          <div className="rounded-lg bg-surface border border-outline overflow-hidden">
-            <a className="flex items-center gap-2.5 px-3 py-2 bg-primary/10 border-l-2 border-primary text-on-surface transition-all group" href="#">
-              <Icon name="tag" className="text-primary" />
-              <span className="title-small">enterprise-leads</span>
-            </a>
-            
-            {/* Thread Sub-items */}
-            <div className="px-3 pb-3 pt-2">
-              <div className="flex items-center gap-2 mb-3">
-                <div className="flex -space-x-1.5">
-                  <div className="size-5 rounded-full ring-2 ring-background bg-primary text-on-primary flex items-center justify-center label-small">L</div>
-                  <div className="size-5 rounded-full ring-2 ring-background bg-tertiary text-on-tertiary flex items-center justify-center label-small">A</div>
-                  <div className="size-5 rounded-full ring-2 ring-background bg-surface-variant flex items-center justify-center label-small text-on-surface border border-outline">+2</div>
+        {/* Chat Groups by Creator */}
+        {Object.entries(chatGroups).slice(0, 5).map(([creatorName, groupChats]) => (
+          <div key={creatorName} className="flex flex-col gap-2">
+            <div className="flex items-center justify-between px-2 pb-1 group/header cursor-pointer">
+              <div className="label-small text-on-surface-variant uppercase tracking-wider">
+                {creatorName}
+              </div>
+              <Icon name="add" className="text-on-surface-variant opacity-0 group-hover/header:opacity-100 hover:text-on-surface transition-opacity" size={16} />
+            </div>
+            <div className="flex flex-col gap-1">
+              {/* Show first 5 chats from this group */}
+              {groupChats.slice(0, 5).map((chat: ChatType) => (
+                <div
+                  key={chat.id}
+                  onClick={() => handleChatSelect(chat)}
+                  className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all hover:bg-surface-variant group ${
+                    selectedChatId === chat.id ? 'bg-primary/10' : ''
+                  }`}
+                >
+                  <div className="flex-shrink-0">
+                    <div className="size-8 rounded-full bg-surface-variant border border-outline flex items-center justify-center">
+                      <Icon 
+                        name={getRequestTypeIcon(chat.metadata?.requestType || 'unknown')} 
+                        size={16} 
+                        className="text-on-surface-variant"
+                      />
+                    </div>
+                  </div>
+                  
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between mb-1">
+                      <h3 className="label-medium text-on-surface truncate pr-2">
+                        {chat.channelName}
+                      </h3>
+                      <span className="label-small text-on-surface-variant flex-shrink-0">
+                        {formatDate(chat.updatedAt)}
+                      </span>
+                    </div>
+                    
+                    <div className="flex items-center gap-2">
+                      <span className={`label-small ${getStatusColor(chat.metadata?.queueStatus || 'UNKNOWN')}`}>
+                        {chat.metadata?.queueStatus || 'UNKNOWN'}
+                      </span>
+                      <span className="label-small text-on-surface-variant">
+                        #{chat.metadata?.queueId || 'N/A'}
+                      </span>
+                    </div>
+                  </div>
                 </div>
-                <span className="label-small text-on-surface-variant">4 Members</span>
-              </div>
-              <div className="flex flex-col gap-1 pl-1">
-                <ThreadItem label="Q4 Targets" isNew />
-                <ThreadItem label="Acme Corp Deal" />
-              </div>
+              ))}
+              
+              {/* Show more button for this group */}
+              {groupChats.length > 5 && (
+                <button 
+                  onClick={onShowAllChats}
+                  disabled={isLoadingAllChats}
+                  className="flex items-center justify-center gap-2 p-2 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-variant transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isLoadingAllChats ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current"></div>
+                      <span className="label-small">Loading...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Icon name="expand_more" size={16} />
+                      <span className="label-small">Show {groupChats.length - 5} more</span>
+                    </>
+                  )}
+                </button>
+              )}
             </div>
           </div>
+        ))}
 
-          <div className="flex flex-col gap-0.5">
-            <SidebarItem icon="tag" label="customer-success" />
-            <div className="pl-9 text-[10px] text-on-surface-variant/50">Bob, Alice</div>
+        {/* Show more groups button */}
+        {Object.keys(chatGroups).length > 5 && (
+          <div className="flex justify-center">
+            <button 
+              onClick={onShowAllChats}
+              disabled={isLoadingAllChats}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-variant transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isLoadingAllChats ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current"></div>
+                  <span className="label-medium">Loading...</span>
+                </>
+              ) : (
+                <>
+                  <Icon name="expand_more" size={16} />
+                  <span className="label-medium">Show more groups</span>
+                </>
+              )}
+            </button>
           </div>
-        </div>
+        )}
       </div>
 
       {/* User Footer */}
