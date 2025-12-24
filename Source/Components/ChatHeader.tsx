@@ -1,7 +1,8 @@
-import Icon from './Icon'
+import { Search, LogOut, Palette, Ruler, CheckCircle, Settings, Eye, Package, Briefcase } from 'lucide-react'
 import { useState, useRef, useEffect } from 'react'
 import type { Chat } from './Chatlists'
 import authService from '../Library/Authentication/jwt'
+import { getProfileImageUrl, getProfileInitial } from '../Library/Shared/profileUtils'
 
 interface ChatHeaderProps {
   selectedChat: Chat | null;
@@ -15,8 +16,22 @@ export default function ChatHeader({ selectedChat, onLogout, chatCount }: ChatHe
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    setUser(authService.getUser());
-  }, []);
+    // Refresh user data from auth service
+    const currentUser = authService.getUser();
+    console.log('ChatHeader - Current user from auth service:', currentUser);
+    setUser(currentUser);
+    
+    // Set up a listener for auth state changes
+    const interval = setInterval(() => {
+      const updatedUser = authService.getUser();
+      if (JSON.stringify(updatedUser) !== JSON.stringify(user)) {
+        console.log('ChatHeader - User data updated:', updatedUser);
+        setUser(updatedUser);
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [user]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -34,28 +49,27 @@ export default function ChatHeader({ selectedChat, onLogout, chatCount }: ChatHe
   
   const getRequestTypeIcon = (requestType: string) => {
     switch (requestType) {
-      case 'design': return 'palette'
-      case 'dimension': return 'straighten'
-      case 'checkfile': return 'check_circle'
-      case 'adjustdesign': return 'tune'
-      case 'proof': return 'visibility'
+      case 'design': return Palette
+      case 'dimension': return Ruler
+      case 'checkfile': return CheckCircle
+      case 'adjustdesign': return Settings
+      case 'proof': return Eye
       case 'sample-i': 
-      case 'sample-t': return 'inventory'
-      default: return 'work'
+      case 'sample-t': return Package
+      default: return Briefcase
     }
   }
 
   return (
-    <header className="flex items-center gap-4 p-4 border-b border-outline shrink-0 z-10 bg-surface">
+    <header className="flex items-center gap-4 p-4 border-b border-outline shrink-0 z-30 bg-surface relative">
       <div className="flex items-center gap-3">
         {selectedChat ? (
           <>
             <div className="size-8 rounded-full bg-surface-variant border border-outline flex items-center justify-center">
-              <Icon 
-                name={getRequestTypeIcon(selectedChat.metadata?.requestType || 'unknown')}
-                size={16} 
-                className="text-on-surface-variant"
-              />
+              {(() => {
+                const IconComponent = getRequestTypeIcon(selectedChat.metadata?.requestType || 'unknown');
+                return <IconComponent size={16} className="text-on-surface-variant" />;
+              })()}
             </div>
             <h1 className="title-medium text-on-surface truncate">
               {selectedChat.channelName}
@@ -70,7 +84,7 @@ export default function ChatHeader({ selectedChat, onLogout, chatCount }: ChatHe
 
       <div className="flex items-center gap-3">
         <button className="flex items-center justify-center size-9 rounded-full hover:bg-surface-variant transition-colors">
-          <Icon name="search" className="text-on-surface-variant" />
+          <Search className="text-on-surface-variant" />
         </button>
         <div className="relative" ref={menuRef}>
           <button 
@@ -80,18 +94,21 @@ export default function ChatHeader({ selectedChat, onLogout, chatCount }: ChatHe
             <div 
               className="size-8 rounded-full bg-surface border border-outline flex items-center justify-center text-on-surface label-medium" 
               style={user?.profilePicture ? { 
-                backgroundImage: `url("http://10.10.60.8:1669${user.profilePicture}")`, 
+                backgroundImage: `url("${getProfileImageUrl(user.profilePicture)}")`, 
                 backgroundSize: 'cover' 
               } : {}}
             >
-              {!user?.profilePicture && (user?.name?.charAt(0) || user?.uid?.charAt(0) || 'U')}
+              {!user?.profilePicture && getProfileInitial(user?.name, user?.uid)}
             </div>
           </button>
           {showUserMenu && (
-            <div className="absolute top-full right-0 mt-2 w-48 bg-surface-container border border-outline rounded-lg shadow-lg z-50">
+            <div className="absolute top-full right-0 mt-2 w-48 bg-background border border-outline rounded-lg shadow-xl z-[9999]">
               <div className="p-2">
                 <div className="px-2 py-1">
-                  <p className="label-medium text-on-surface">{user?.name || 'User'}</p>
+                  <p className="label-medium text-on-surface">
+                    {user?.name || 'User'}
+                    {!user && <span className="text-error"> (No user data)</span>}
+                  </p>
                   <p className="label-small text-on-surface-variant">{user?.role || 'Member'}</p>
                 </div>
                 <hr className="my-2 border-outline" />
@@ -99,7 +116,7 @@ export default function ChatHeader({ selectedChat, onLogout, chatCount }: ChatHe
                   onClick={onLogout}
                   className="flex items-center gap-2 w-full p-2 rounded-md hover:bg-error/10 text-error transition-colors"
                 >
-                  <Icon name="logout" size={16} />
+                  <LogOut size={16} />
                   <span className="label-medium">Sign out</span>
                 </button>
               </div>

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import Icon from './Icon'
+import { ChevronDown, ChevronUp, Palette, Ruler, CheckCircle, Settings, Eye, Package, Briefcase } from 'lucide-react'
 import { type Thread } from '../Library/Shared/threadsApi'
 
 // Use Thread as Chat
@@ -44,14 +44,14 @@ export default function Chatlists({ chats, onChatSelect, selectedChatId, onShowA
 
   const getRequestTypeIcon = (requestType: string) => {
     switch (requestType) {
-      case 'design': return 'palette'
-      case 'dimension': return 'straighten'
-      case 'checkfile': return 'check_circle'
-      case 'adjustdesign': return 'tune'
-      case 'proof': return 'visibility'
+      case 'design': return Palette
+      case 'dimension': return Ruler
+      case 'checkfile': return CheckCircle
+      case 'adjustdesign': return Settings
+      case 'proof': return Eye
       case 'sample-i': 
-      case 'sample-t': return 'inventory'
-      default: return 'work'
+      case 'sample-t': return Package
+      default: return Briefcase
     }
   }
 
@@ -77,11 +77,10 @@ export default function Chatlists({ chats, onChatSelect, selectedChatId, onShowA
         >
           <div className="flex-shrink-0">
             <div className="size-8 rounded-full bg-surface-variant border border-outline flex items-center justify-center">
-              <Icon 
-                name={getRequestTypeIcon(chat.metadata?.requestType || 'unknown')} 
-                size={16} 
-                className="text-on-surface-variant"
-              />
+              {(() => {
+                const IconComponent = getRequestTypeIcon(chat.metadata?.requestType || 'unknown');
+                return <IconComponent size={16} className="text-on-surface-variant" />;
+              })()}
             </div>
           </div>
           
@@ -112,7 +111,7 @@ export default function Chatlists({ chats, onChatSelect, selectedChatId, onShowA
           onClick={onShowAllChats}
           className="flex items-center justify-center gap-2 p-3 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-variant transition-all"
         >
-          <Icon name="expand_more" size={16} />
+          <ChevronDown size={16} />
           <span className="label-medium">Show {chats.length - 5} more chats</span>
         </button>
       )}
@@ -122,7 +121,7 @@ export default function Chatlists({ chats, onChatSelect, selectedChatId, onShowA
           onClick={() => setShowAll(false)}
           className="flex items-center justify-center gap-2 p-3 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-variant transition-all"
         >
-          <Icon name="expand_less" size={16} />
+          <ChevronUp size={16} />
           <span className="label-medium">Show less</span>
         </button>
       )}

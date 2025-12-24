@@ -1,3 +1,6 @@
 pub mod reverseproxy;
+pub mod auth_proxy;
 
-pub use reverseproxy::*;
+// Only export what's actually used
+// pub use reverseproxy::*;
+// pub use auth_proxy::*;

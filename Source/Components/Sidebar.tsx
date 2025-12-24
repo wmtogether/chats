@@ -1,6 +1,7 @@
-import Icon from './Icon'
+import { Plus, ChevronDown, Settings, LogOut, CornerDownLeft, Hash, Lock, Palette, Ruler, CheckCircle, Eye, Package, Briefcase } from 'lucide-react'
 import authService from '../Library/Authentication/jwt'
 import { threadsApiService, type Thread } from '../Library/Shared/threadsApi'
+import { getProfileImageUrl, getProfileInitial } from '../Library/Shared/profileUtils'
 import { useState, useEffect, useRef } from 'react'
 
 // Use Thread as Chat since they have the same structure
@@ -14,12 +15,12 @@ interface SidebarProps {
   isLoadingAllChats: boolean;
 }
 
-export default function Sidebar({ 
-  chats, 
-  selectedChat, 
-  onChatSelect, 
-  onShowAllChats, 
-  isLoadingAllChats = false 
+export default function Sidebar({
+  chats,
+  selectedChat,
+  onChatSelect,
+  onShowAllChats,
+  isLoadingAllChats = false
 }: SidebarProps) {
   const [user, setUser] = useState(authService.getUser());
   const [showUserMenu, setShowUserMenu] = useState(false);
@@ -29,8 +30,22 @@ export default function Sidebar({
   const chatGroups = threadsApiService.groupThreadsByCreator(chats);
 
   useEffect(() => {
-    setUser(authService.getUser());
-  }, []);
+    // Refresh user data from auth service
+    const currentUser = authService.getUser();
+    console.log('Sidebar - Current user from auth service:', currentUser);
+    setUser(currentUser);
+
+    // Set up a listener for auth state changes
+    const interval = setInterval(() => {
+      const updatedUser = authService.getUser();
+      if (JSON.stringify(updatedUser) !== JSON.stringify(user)) {
+        console.log('Sidebar - User data updated:', updatedUser);
+        setUser(updatedUser);
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [user]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -61,33 +76,33 @@ export default function Sidebar({
     const date = new Date(dateString)
     const now = new Date()
     const diffInHours = (now.getTime() - date.getTime()) / (1000 * 60 * 60)
-    
+
     if (diffInHours < 24) {
-      return date.toLocaleTimeString('en-US', { 
-        hour: '2-digit', 
+      return date.toLocaleTimeString('en-US', {
+        hour: '2-digit',
         minute: '2-digit',
-        hour12: false 
+        hour12: false
       })
     } else if (diffInHours < 168) { // 7 days
       return date.toLocaleDateString('en-US', { weekday: 'short' })
     } else {
-      return date.toLocaleDateString('en-US', { 
-        month: 'short', 
-        day: 'numeric' 
+      return date.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric'
       })
     }
   }
 
   const getRequestTypeIcon = (requestType: string) => {
     switch (requestType) {
-      case 'design': return 'palette'
-      case 'dimension': return 'straighten'
-      case 'checkfile': return 'check_circle'
-      case 'adjustdesign': return 'tune'
-      case 'proof': return 'visibility'
-      case 'sample-i': 
-      case 'sample-t': return 'inventory'
-      default: return 'work'
+      case 'design': return Palette
+      case 'dimension': return Ruler
+      case 'checkfile': return CheckCircle
+      case 'adjustdesign': return Settings
+      case 'proof': return Eye
+      case 'sample-i':
+      case 'sample-t': return Package
+      default: return Briefcase
     }
   }
 
@@ -101,12 +116,12 @@ export default function Sidebar({
     }
   }
   return (
-    <aside className="w-[300px] bg-surface flex flex-col border-r border-outline shrink-0 z-20 select-none">
+    <aside className="w-[350px] bg-surface flex flex-col border-r border-outline shrink-0 z-20 select-none">
       {/* Workspace Header */}
 
       {/* Navigation Switcher */}
-      <div className="px-4 py-3 shrink-0 ">
-        <div className="flex items-center p-1 bg-surface rounded-lg border border-outline space-x-1">
+      <div className="px-4 py-3 shrink-0 flex space-x-2 w-full">
+        <div className="flex items-center p-1 bg-surface rounded-lg border border-outline space-x-1 w-full">
           <button className="flex-1 py-1.5 px-2 rounded-lg bg-surface-variant text-on-surface label-medium shadow-sm text-center transition-all border border-outline">
             Channels
           </button>
@@ -114,6 +129,9 @@ export default function Sidebar({
             Direct Messages
           </button>
         </div>
+        <button className="border p-1 bg-surface rounded-lg border-outline w-12 flex items-center justify-center">
+          <Plus width={16} height={16} />
+        </button>
       </div>
 
       {/* Channels List */}
@@ -125,7 +143,7 @@ export default function Sidebar({
               <div className="label-small text-on-surface-variant uppercase tracking-wider">
                 {creatorName}
               </div>
-              <Icon name="add" className="text-on-surface-variant opacity-0 group-hover/header:opacity-100 hover:text-on-surface transition-opacity" size={16} />
+              <Plus className="text-on-surface-variant opacity-0 group-hover/header:opacity-100 hover:text-on-surface transition-opacity" size={16} />
             </div>
             <div className="flex flex-col gap-1">
               {/* Show first 5 chats from this group */}
@@ -133,20 +151,18 @@ export default function Sidebar({
                 <div
                   key={chat.id}
                   onClick={() => handleChatSelect(chat)}
-                  className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all hover:bg-surface-variant group ${
-                    selectedChat?.id === chat.id ? 'bg-primary/10' : ''
-                  }`}
+                  className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all hover:bg-surface-variant group ${selectedChat?.id === chat.id ? 'bg-primary/10' : ''
+                    }`}
                 >
                   <div className="flex-shrink-0">
                     <div className="size-8 rounded-full bg-surface-variant border border-outline flex items-center justify-center">
-                      <Icon 
-                        name={getRequestTypeIcon(chat.metadata?.requestType || 'unknown')} 
-                        size={16} 
-                        className="text-on-surface-variant"
-                      />
+                      {(() => {
+                        const IconComponent = getRequestTypeIcon(chat.metadata?.requestType || 'unknown');
+                        return <IconComponent size={16} className="text-on-surface-variant" />;
+                      })()}
                     </div>
                   </div>
-                  
+
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between mb-1">
                       <h3 className="label-medium text-on-surface truncate pr-2">
@@ -156,7 +172,7 @@ export default function Sidebar({
                         {formatDate(chat.updatedAt)}
                       </span>
                     </div>
-                    
+
                     <div className="flex items-center gap-2">
                       <span className={`label-small ${getStatusColor(chat.metadata?.queueStatus || 'UNKNOWN')}`}>
                         {chat.metadata?.queueStatus || 'UNKNOWN'}
@@ -168,10 +184,10 @@ export default function Sidebar({
                   </div>
                 </div>
               ))}
-              
+
               {/* Show more button for this group */}
               {groupChats.length > 5 && (
-                <button 
+                <button
                   onClick={onShowAllChats}
                   disabled={isLoadingAllChats}
                   className="flex items-center justify-center gap-2 p-2 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-variant transition-all disabled:opacity-50 disabled:cursor-not-allowed"
@@ -183,7 +199,7 @@ export default function Sidebar({
                     </>
                   ) : (
                     <>
-                      <Icon name="expand_more" size={16} />
+                      <ChevronDown size={16} />
                       <span className="label-small">Show {groupChats.length - 5} more</span>
                     </>
                   )}
@@ -196,7 +212,7 @@ export default function Sidebar({
         {/* Show more groups button */}
         {Object.keys(chatGroups).length > 5 && (
           <div className="flex justify-center">
-            <button 
+            <button
               onClick={onShowAllChats}
               disabled={isLoadingAllChats}
               className="flex items-center gap-2 px-3 py-2 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-variant transition-all disabled:opacity-50 disabled:cursor-not-allowed"
@@ -208,7 +224,7 @@ export default function Sidebar({
                 </>
               ) : (
                 <>
-                  <Icon name="expand_more" size={16} />
+                  <ChevronDown size={16} />
                   <span className="label-medium">Show more groups</span>
                 </>
               )}
@@ -219,27 +235,30 @@ export default function Sidebar({
 
       {/* User Footer */}
       <div className="p-3 border-t border-outline bg-surface relative" ref={menuRef}>
-        <button 
+        <button
           className="flex items-center gap-3 w-full p-2 rounded-lg hover:bg-surface-variant transition-colors group"
           onClick={() => setShowUserMenu(!showUserMenu)}
         >
           <div className="relative">
-            <div 
-              className="size-9 rounded-full bg-surface border border-outline flex items-center justify-center text-on-surface label-medium" 
-              style={user?.profilePicture ? { 
-                backgroundImage: `url("http://10.10.60.8:1669${user.profilePicture}")`, 
-                backgroundSize: 'cover' 
+            <div
+              className="size-9 rounded-full bg-surface border border-outline flex items-center justify-center text-on-surface label-medium"
+              style={user?.profilePicture ? {
+                backgroundImage: `url("${getProfileImageUrl(user.profilePicture)}")`,
+                backgroundSize: 'cover'
               } : {}}
             >
-              {!user?.profilePicture && (user?.name?.charAt(0) || user?.uid?.charAt(0) || 'U')}
+              {!user?.profilePicture && getProfileInitial(user?.name, user?.uid)}
             </div>
             <div className="absolute -bottom-0.5 -right-0.5 size-2.5 bg-tertiary border-2 border-background rounded-full" />
           </div>
           <div className="flex flex-col items-start overflow-hidden text-left">
-            <div className="label-medium text-on-surface">{user?.name || user?.uid || 'User'}</div>
+            <div className="label-medium text-on-surface">
+              {user?.name || user?.uid || 'User'}
+              {!user && <span className="text-error"> (No user data)</span>}
+            </div>
             <div className="label-small text-on-surface-variant">{user?.role || 'Member'}</div>
           </div>
-          <Icon name="settings" className="ml-auto text-on-surface-variant group-hover:text-on-surface" />
+          <Settings className="ml-auto text-on-surface-variant group-hover:text-on-surface" />
         </button>
 
         {/* User Menu Dropdown */}
@@ -250,7 +269,7 @@ export default function Sidebar({
                 onClick={handleLogout}
                 className="flex items-center gap-2 w-full p-2 rounded-md hover:bg-surface-variant transition-colors text-on-surface"
               >
-                <Icon name="logout" size={16} />
+                <LogOut size={16} />
                 <span className="label-medium">Sign out</span>
               </button>
             </div>
@@ -262,9 +281,19 @@ export default function Sidebar({
 }
 
 function SidebarItem({ icon, label }: { icon: string, label: string }) {
+  const getIcon = (iconName: string) => {
+    switch (iconName) {
+      case 'tag': return Hash;
+      case 'lock': return Lock;
+      default: return Hash;
+    }
+  };
+
+  const IconComponent = getIcon(icon);
+
   return (
     <a className="flex items-center gap-2.5 px-3 py-1.5 rounded-md text-on-surface-variant hover:bg-surface-variant hover:text-on-surface transition-all group" href="#">
-      <Icon name={icon} className="text-on-surface-variant group-hover:text-on-surface-variant" />
+      <IconComponent className="text-on-surface-variant group-hover:text-on-surface-variant" />
       <span className="label-large">{label}</span>
     </a>
   )
@@ -273,7 +302,7 @@ function SidebarItem({ icon, label }: { icon: string, label: string }) {
 function ThreadItem({ label, isNew }: { label: string, isNew?: boolean }) {
   return (
     <a className={`flex items-center gap-2 p-1.5 -ml-1.5 rounded ${isNew ? 'bg-surface-variant/5 text-on-surface' : 'hover:bg-surface-variant/5 text-on-surface-variant hover:text-on-surface'} transition-colors group/thread`} href="#">
-      <Icon name="subdirectory_arrow_right" className={`rotate-180 ${isNew ? 'text-primary' : 'text-on-surface-variant group-hover/thread:text-on-surface-variant'}`} size={14} />
+      <CornerDownLeft className={`rotate-180 ${isNew ? 'text-primary' : 'text-on-surface-variant group-hover/thread:text-on-surface-variant'}`} size={14} />
       <span className={`label-medium truncate ${isNew ? 'font-medium' : ''}`}>{label}</span>
       {isNew && <span className="ml-auto label-small bg-primary/20 text-on-primary-container px-1 rounded-md">New</span>}
     </a>

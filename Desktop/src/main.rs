@@ -10,16 +10,17 @@ use winit::{
     dpi::LogicalSize,
 };
 use std::sync::Arc;
+use std::process::{Command, Child};
 use wgpu::{Instance, Adapter, Device, Queue};
 
 mod core;
 mod ipc;
 mod context_menu;
 mod network;
+mod auth;
 
 use core::SharedAppState;
 use ipc::handle_ipc_message;
-use network::{ReverseProxy, ProxyConfig};
 
 #[cfg(debug_assertions)]
 const DEV_SERVER_URL: &str = "http://localhost:5173";
@@ -91,11 +92,9 @@ struct App {
     window: Option<Arc<Window>>,
     webview: Option<wry::WebView>,
     state: SharedAppState,
-    wgpu_state: Option<WgpuState>,
     initialization_complete: bool,
     ready_to_show: bool,
-    #[cfg(not(debug_assertions))]
-    reverse_proxy: Option<ReverseProxy>,
+    proxy_process: Option<Child>,
 }
 
 impl App {
@@ -104,27 +103,100 @@ impl App {
             window: None,
             webview: None,
             state: core::create_shared_state(),
-            wgpu_state: None,
             initialization_complete: false,
             ready_to_show: false,
-            #[cfg(not(debug_assertions))]
-            reverse_proxy: None,
+            proxy_process: None,
         }
     }
     
-    async fn preload_wgpu(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        let mut wgpu_state = WgpuState::new();
-        wgpu_state.initialize().await?;
+    fn start_proxy_process(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        println!("🚀 Starting mikoproxy.exe subprocess...");
         
-        // Update state
-        {
-            let mut state = self.state.lock().unwrap();
-            state.wgpu_initialized = true;
-            state.message = "WGPU initialized, loading WebView2...".to_string();
+        // Try to find the mikoproxy.exe in the target directory
+        let exe_paths = [
+            "./target/debug/mikoproxy.exe",
+            "./target/release/mikoproxy.exe", 
+            "mikoproxy.exe",
+            "./mikoproxy.exe"
+        ];
+        
+        let mut proxy_exe_path = None;
+        for path in &exe_paths {
+            if std::path::Path::new(path).exists() {
+                proxy_exe_path = Some(path);
+                break;
+            }
         }
         
-        self.wgpu_state = Some(wgpu_state);
-        Ok(())
+        let exe_path = match proxy_exe_path {
+            Some(path) => {
+                println!("Found mikoproxy.exe at: {}", path);
+                path
+            }
+            None => {
+                println!("⚠️ mikoproxy.exe not found. Trying to build it...");
+                
+                // Try to build the proxy first
+                let build_result = Command::new("cargo")
+                    .args(&["build", "--bin", "mikoproxy"])
+                    .output();
+                
+                match build_result {
+                    Ok(output) => {
+                        if output.status.success() {
+                            println!("✅ Successfully built mikoproxy.exe");
+                            "./target/debug/mikoproxy.exe"
+                        } else {
+                            let stderr = String::from_utf8_lossy(&output.stderr);
+                            return Err(format!("Failed to build mikoproxy: {}", stderr).into());
+                        }
+                    }
+                    Err(e) => {
+                        return Err(format!("Failed to run cargo build: {}", e).into());
+                    }
+                }
+            }
+        };
+        
+        // Start the proxy process with hidden console
+        let mut cmd = Command::new(exe_path);
+        
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            // Hide the console window on Windows
+            cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+        }
+        
+        match cmd.spawn() {
+            Ok(child) => {
+                println!("✅ mikoproxy.exe started successfully (PID: {}) - console hidden", child.id());
+                self.proxy_process = Some(child);
+                
+                // Give the proxy a moment to start up
+                std::thread::sleep(std::time::Duration::from_millis(500));
+                
+                Ok(())
+            }
+            Err(e) => {
+                Err(format!("Failed to start mikoproxy.exe: {}", e).into())
+            }
+        }
+    }
+    
+    fn stop_proxy_process(&mut self) {
+        if let Some(mut child) = self.proxy_process.take() {
+            println!("🛑 Stopping mikoproxy.exe subprocess...");
+            match child.kill() {
+                Ok(_) => {
+                    let _ = child.wait();
+                    println!("✅ mikoproxy.exe stopped successfully");
+                }
+                Err(e) => {
+                    println!("⚠️ Failed to stop mikoproxy.exe: {}", e);
+                }
+            }
+        }
     }
 }
 
@@ -136,7 +208,7 @@ impl ApplicationHandler for App {
             // Create window but keep it hidden until everything is ready
             let window_attributes = Window::default_attributes()
                 .with_title("Workspace")
-                .with_inner_size(LogicalSize::new(1000, 700))
+                .with_inner_size(LogicalSize::new(1200, 800))
                 .with_visible(false); // Keep hidden during preload
             
             let window = Arc::new(event_loop.create_window(window_attributes).unwrap());
@@ -144,6 +216,12 @@ impl ApplicationHandler for App {
             
             // Create WebView2 immediately (but window stays hidden)
             self.create_webview(&window);
+            
+            // Start the proxy process
+            if let Err(e) = self.start_proxy_process() {
+                println!("❌ Failed to start proxy process: {}", e);
+                // Continue anyway - user can start proxy manually
+            }
             
             // Clone for async initialization
             let state_clone = self.state.clone();
@@ -175,7 +253,7 @@ impl ApplicationHandler for App {
                     {
                         let mut state = state_clone.lock().unwrap();
                         state.webview_initialized = true;
-                        state.message = "All systems ready! API calls will go directly to ERP server.".to_string();
+                        state.message = "All systems ready! mikoproxy.exe running on port 8640".to_string();
                     }
                     
                     println!("All initialization complete");
@@ -208,13 +286,15 @@ impl ApplicationHandler for App {
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _window_id: WindowId, event: WindowEvent) {
         match event {
             WindowEvent::CloseRequested => {
+                // Stop the proxy process before exiting
+                self.stop_proxy_process();
                 event_loop.exit();
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 // F12 to toggle DevTools
                 if event.state == winit::event::ElementState::Pressed {
                     if let winit::keyboard::Key::Named(winit::keyboard::NamedKey::F12) = event.logical_key {
-                        if let Some(webview) = &self.webview {
+                        if let Some(_webview) = &self.webview {
                             println!("DevTools should be available via right-click or F12 in WebView2");
                             // DevTools are automatically available when with_devtools(true) is set
                         }
@@ -288,7 +368,11 @@ impl App {
                 r#"
                 console.log('WebView initialized from:', window.location.href);
                 
-                // Override fetch to redirect ALL API calls directly to ERP server
+                // Store session ID for authentication
+                window.sessionId = 'desktop-session';
+                console.log('Fixed session ID set to:', window.sessionId);
+                
+                // Override fetch to use local auth proxy instead of direct ERP calls
                 const originalFetch = window.fetch;
                 window.fetch = function(url, options = {}) {
                     console.log('Fetch intercepted:', url, options);
@@ -297,29 +381,33 @@ impl App {
                     
                     // Handle different URL formats for API calls
                     if (typeof url === 'string') {
-                        // Case 1: Starts with /api
+                        // Case 1: Starts with /api - redirect to local auth proxy
                         if (url.startsWith('/api')) {
-                            newUrl = 'http://10.10.60.8:1669' + url;
+                            newUrl = 'http://localhost:8640' + url;
                         }
                         // Case 2: Relative API calls (api/...)
                         else if (url.startsWith('api/')) {
-                            newUrl = 'http://10.10.60.8:1669/' + url;
+                            newUrl = 'http://localhost:8640/' + url;
                         }
-                        // Case 3: Full miko.app API URLs
-                        else if (url.includes('miko.app/api/')) {
+                        // Case 3: Full ERP server URLs - redirect to local proxy
+                        else if (url.includes('10.10.60.8:1669/api/')) {
                             const apiPath = url.substring(url.indexOf('/api/'));
-                            newUrl = 'http://10.10.60.8:1669' + apiPath;
+                            newUrl = 'http://localhost:8640' + apiPath;
                         }
                         
-                        // If URL was changed, log the redirect
+                        // If URL was changed, log the redirect and add session header
                         if (newUrl !== url) {
                             console.log('Redirecting API call from', url, 'to', newUrl);
                             
-                            // Remove credentials for cross-origin requests to avoid CORS issues
+                            // Add session ID header for authentication
                             const newOptions = { ...options };
-                            if (newOptions.credentials === 'include') {
-                                newOptions.credentials = 'omit';
-                            }
+                            newOptions.headers = {
+                                ...newOptions.headers,
+                                'X-Session-Id': window.sessionId
+                            };
+                            
+                            // Ensure CORS mode is set
+                            newOptions.mode = 'cors';
                             
                             return originalFetch(newUrl, newOptions);
                         }
@@ -328,7 +416,66 @@ impl App {
                     return originalFetch(url, options);
                 };
 
-                console.log('Fetch override installed - ALL API calls will go directly to 10.10.60.8:1669');
+                // Add authentication helper functions
+                window.authManager = {
+                    login: async function(credentials) {
+                        console.log('Logging in via Rust backend...');
+                        try {
+                            const response = await fetch('http://localhost:8640/auth/login', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'X-Session-Id': window.sessionId
+                                },
+                                body: JSON.stringify(credentials)
+                            });
+                            const result = await response.json();
+                            console.log('Login result:', result);
+                            return result;
+                        } catch (error) {
+                            console.error('Login error:', error);
+                            throw error;
+                        }
+                    },
+                    
+                    logout: async function() {
+                        console.log('Logging out via Rust backend...');
+                        try {
+                            const response = await fetch('http://localhost:8640/auth/logout', {
+                                method: 'POST',
+                                headers: {
+                                    'X-Session-Id': window.sessionId
+                                }
+                            });
+                            const result = await response.json();
+                            console.log('Logout result:', result);
+                            return result;
+                        } catch (error) {
+                            console.error('Logout error:', error);
+                            throw error;
+                        }
+                    },
+                    
+                    checkStatus: async function() {
+                        try {
+                            const response = await fetch('http://localhost:8640/auth/status', {
+                                headers: {
+                                    'X-Session-Id': window.sessionId
+                                }
+                            });
+                            const result = await response.json();
+                            console.log('Auth status:', result);
+                            return result;
+                        } catch (error) {
+                            console.error('Auth status error:', error);
+                            return { authenticated: false };
+                        }
+                    }
+                };
+
+                console.log('Authentication system initialized');
+                console.log('Session ID:', window.sessionId);
+                console.log('All API calls will be authenticated via Rust backend proxy');
                 console.log('DevTools: Right-click and select "Inspect" or press F12');
                 "#
             );
@@ -386,7 +533,10 @@ impl App {
                 }
                 
                 // Handle other IPC messages
-                handle_ipc_message(request, state_clone.clone());
+                let state = state_clone.clone();
+                tokio::spawn(async move {
+                    handle_ipc_message(request, state).await;
+                });
             })
             .build(&**window)
             .map_err(|e| {

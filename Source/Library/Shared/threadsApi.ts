@@ -59,27 +59,42 @@ class ThreadsApiService {
 
       const url = `${this.baseUrl}${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
       
+      console.log('🔄 Fetching threads from:', url);
+      
       const response = await authService.authenticatedFetch(url, {
         method: 'GET',
       });
 
+      console.log('📡 Threads API response status:', response.status);
+
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
+        console.error('❌ Threads API error:', errorData);
         throw new Error(errorData.error || `HTTP ${response.status}: Failed to fetch threads`);
       }
 
       const data = await response.json();
+      console.log('📊 Raw threads data:', data);
       
       // Transform the response to match our expected format
-      return {
+      const result = {
         success: true,
         threads: data.chats || data.threads || data,
-        total: data.total || data.length || 0,
+        total: data.total || (data.chats || data.threads || data)?.length || 0,
         page: data.page || 1,
         limit: data.limit || 50
       };
+      
+      console.log('✅ Processed threads result:', {
+        threadCount: result.threads.length,
+        total: result.total,
+        page: result.page,
+        limit: result.limit
+      });
+      
+      return result;
     } catch (error) {
-      console.error('Error fetching threads:', error);
+      console.error('❌ Error fetching threads:', error);
       throw error;
     }
   }

@@ -11,6 +11,10 @@ path = "src/main.rs"
 name = "minimal"
 path = "src/minimal.rs"
 
+[[bin]]
+name = "mikoproxy"
+path = "test/testproxy.rs"
+
 [dependencies]
 wry = "0.53"
 winit = "0.30"
@@ -25,6 +29,8 @@ axum = "0.7"
 reqwest = { version = "0.12", features = ["json"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["cors"] }
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1.0", features = ["v4"] }
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58", features = [

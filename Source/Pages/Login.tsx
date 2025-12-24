@@ -1,6 +1,9 @@
 // Source/Pages/Login.tsx
 import React, { useState } from 'react';
 import authService from '../Library/Authentication/jwt';
+import { debugAuthState } from '../Library/Authentication/debug';
+import { threadsApiService } from '../Library/Shared/threadsApi';
+import { messagesApiService } from '../Library/Shared/messagesApi';
 
 interface LoginPageProps {
   onLoginSuccess: () => void;
@@ -11,6 +14,70 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [testResult, setTestResult] = useState('');
+
+  const testAPIs = async () => {
+    setTestResult('Testing APIs...');
+    try {
+      // Test threads API
+      console.log('Testing threads API...');
+      const threadsResponse = await threadsApiService.getThreads({ limit: 5 });
+      console.log('Threads test result:', threadsResponse);
+      
+      let messageTest = 'No threads to test messages';
+      if (threadsResponse.threads.length > 0) {
+        // Test messages API with first thread
+        const firstThread = threadsResponse.threads[0];
+        const identifier = messagesApiService.getMessageIdentifier(firstThread);
+        console.log('Testing messages API with identifier:', identifier);
+        
+        const messagesResponse = await messagesApiService.getMessages(identifier, { limit: 5 });
+        console.log('Messages test result:', messagesResponse);
+        messageTest = `Messages: ${messagesResponse.messages.length} found`;
+      }
+      
+      setTestResult(`✅ API Test Results:
+Threads: ${threadsResponse.threads.length} found
+${messageTest}
+Check console for detailed logs`);
+    } catch (error) {
+      console.error('API test failed:', error);
+      setTestResult(`❌ API test failed: ${error}`);
+    }
+  };
+
+  const testProxy = async () => {
+    setTestResult('Testing proxy server...');
+    try {
+      // Test health endpoint
+      const healthResponse = await fetch('http://localhost:8640/health');
+      if (healthResponse.ok) {
+        const healthData = await healthResponse.json();
+        
+        // Test session info
+        const sessionResponse = await fetch('http://localhost:8640/sessions');
+        const sessionData = sessionResponse.ok ? await sessionResponse.json() : null;
+        
+        // Test auth status
+        const authResponse = await fetch('http://localhost:8640/auth/status', {
+          headers: {
+            'X-Session-Id': (window as any).sessionId || 'desktop-session'
+          }
+        });
+        const authData = authResponse.ok ? await authResponse.json() : null;
+        
+        setTestResult(`✅ Proxy server is running on port 8640!
+Status: ${healthData.status}
+Sessions: ${sessionData?.totalSessions || 0}
+Current session authenticated: ${authData?.authenticated || false}
+Storage file: ${sessionData?.storageFile || 'N/A'}`);
+      } else {
+        setTestResult(`❌ Proxy server responded with status: ${healthResponse.status}`);
+      }
+    } catch (error) {
+      setTestResult(`❌ Cannot connect to proxy server on port 8640: ${error}`);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -24,12 +91,24 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
     }
 
     try {
-      await authService.login({
+      const result = await authService.login({
         identifier: identifier.trim(),
         password: password || undefined,
       });
       
-      onLoginSuccess();
+      if (result.success) {
+        console.log('Login successful, user data:', result.user);
+        
+        // Force refresh auth state to ensure it's loaded
+        authService.refreshAuthState();
+        
+        // Small delay to ensure state is updated
+        setTimeout(() => {
+          onLoginSuccess();
+        }, 100);
+      } else {
+        setError('Login failed. Please check your credentials.');
+      }
     } catch (error) {
       console.error('Login failed:', error);
       setError(error instanceof Error ? error.message : 'Login failed. Please try again.');
@@ -40,10 +119,6 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-4 transition-colors duration-300">
-      {/* MD3 Card: 
-        - Rounded-3xl (approx 24-28px)
-        - Surface color background
-      */}
       <div className="w-full max-w-sm">
         
         {/* Header Section */}
@@ -56,7 +131,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-6">
           
-          {/* Username/UID Field (Outlined Variant) */}
+          {/* Username/UID Field */}
           <div className="group relative">
             <input
               type="text"
@@ -67,7 +142,6 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
               onChange={(e) => setIdentifier(e.target.value)}
               disabled={isLoading}
             />
-            {/* Floating Label Simulation */}
             <label
               htmlFor="identifier"
               className="body-medium text-on-surface-variant absolute left-3 top-0 -translate-y-1/2 bg-surface px-1 transition-all 
@@ -77,7 +151,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
             </label>
           </div>
 
-          {/* Password Field (Outlined Variant) */}
+          {/* Password Field */}
           <div className="group relative">
             <input
               type="password"
@@ -104,9 +178,49 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
             </div>
           )}
 
+          {/* Test Buttons */}
+          <div className="mt-4 flex flex-col gap-2">
+            <button
+              type="button"
+              onClick={testProxy}
+              className="label-medium w-full text-primary hover:text-primary/80 hover:underline"
+            >
+              Test Proxy Server
+            </button>
+            <button
+              type="button"
+              onClick={testAPIs}
+              className="label-medium w-full text-secondary hover:text-secondary/80 hover:underline"
+            >
+              Test APIs (Threads & Messages)
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                debugAuthState();
+                console.log('Current auth state:', {
+                  isAuthenticated: authService.isAuthenticated(),
+                  user: authService.getUser(),
+                  token: authService.getToken() ? 'Present' : 'None'
+                });
+                // Also check proxy session
+                authService.checkProxySession().then(proxyStatus => {
+                  console.log('Proxy session status:', proxyStatus);
+                });
+              }}
+              className="label-medium w-full text-tertiary hover:text-tertiary/80 hover:underline"
+            >
+              Debug Auth State
+            </button>
+            {testResult && (
+              <div className="mt-2 p-2 rounded bg-surface-variant text-on-surface-variant text-sm whitespace-pre-line">
+                {testResult}
+              </div>
+            )}
+          </div>
+
           {/* Actions */}
           <div className="mt-2 flex flex-col gap-4">
-            {/* Primary Button: Pill shape (rounded-full) */}
             <button
               type="submit"
               disabled={isLoading}
@@ -115,7 +229,6 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
               {isLoading ? 'Signing in...' : 'Login'}
             </button>
 
-            {/* Text Button */}
             <button
               type="button"
               className="label-large text-primary hover:text-primary/80 hover:underline"

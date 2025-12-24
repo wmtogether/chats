@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import Icon from '../Components/Icon'
+import { ArrowLeft, Search, SearchX, Palette, Ruler, CheckCircle, Settings, Eye, Package, Briefcase } from 'lucide-react'
 import { type Thread } from '../Library/Shared/threadsApi'
 
 type Chat = Thread
@@ -62,14 +62,14 @@ export default function AllChats({ chats: allChats, onChatSelect, onBack, select
 
   const getRequestTypeIcon = (requestType: string) => {
     switch (requestType) {
-      case 'design': return 'palette'
-      case 'dimension': return 'straighten'
-      case 'checkfile': return 'check_circle'
-      case 'adjustdesign': return 'tune'
-      case 'proof': return 'visibility'
+      case 'design': return Palette
+      case 'dimension': return Ruler
+      case 'checkfile': return CheckCircle
+      case 'adjustdesign': return Settings
+      case 'proof': return Eye
       case 'sample-i': 
-      case 'sample-t': return 'inventory'
-      default: return 'work'
+      case 'sample-t': return Package
+      default: return Briefcase
     }
   }
 
@@ -155,7 +155,7 @@ export default function AllChats({ chats: allChats, onChatSelect, onBack, select
           onClick={onBack}
           className="flex items-center justify-center size-10 rounded-lg hover:bg-surface-variant transition-colors"
         >
-          <Icon name="arrow_back" size={20} className="text-on-surface" />
+          <ArrowLeft size={20} className="text-on-surface" />
         </button>
         <div className="flex-1">
           <h1 className="title-large text-on-surface">All Chats</h1>
@@ -176,7 +176,7 @@ export default function AllChats({ chats: allChats, onChatSelect, onBack, select
         <div className="flex flex-col gap-4 p-6 border-b border-outline">
           {/* Search */}
           <div className="relative">
-            <Icon name="search" size={20} className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant" />
+            <Search size={20} className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant" />
             <input
               type="text"
               placeholder="Search chats..."
@@ -232,7 +232,7 @@ export default function AllChats({ chats: allChats, onChatSelect, onBack, select
           </div>
         ) : filteredChats.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-center">
-            <Icon name="search_off" size={48} className="text-on-surface-variant mb-4" />
+            <SearchX size={48} className="text-on-surface-variant mb-4" />
             <h3 className="title-medium text-on-surface mb-2">No chats found</h3>
             <p className="body-medium text-on-surface-variant">
               Try adjusting your search or filter criteria
@@ -254,11 +254,10 @@ export default function AllChats({ chats: allChats, onChatSelect, onBack, select
                   {/* Icon */}
                   <div className="flex-shrink-0">
                     <div className="size-10 rounded-full bg-surface-variant border border-outline flex items-center justify-center">
-                      <Icon 
-                        name={getRequestTypeIcon(chat.metadata?.requestType || 'unknown')} 
-                        size={20} 
-                        className="text-on-surface-variant"
-                      />
+                      {(() => {
+                        const IconComponent = getRequestTypeIcon(chat.metadata?.requestType || 'unknown');
+                        return <IconComponent size={20} className="text-on-surface-variant" />;
+                      })()}
                     </div>
                   </div>
                   
