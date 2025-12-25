@@ -77,7 +77,7 @@ export default function ChatHeader({ selectedChat, onLogout, chatCount }: ChatHe
   }
 
   return (
-    <header className="flex items-center gap-4 p-4 border-b border-outline shrink-0 z-30 bg-surface relative">
+    <header className="flex items-center gap-4 p-4 border-b border-outline shrink-0 z-20 bg-surface relative">
       <div className="flex items-center gap-3">
         {selectedChat ? (
           <>
@@ -118,7 +118,7 @@ export default function ChatHeader({ selectedChat, onLogout, chatCount }: ChatHe
             </div>
           </button>
           {showUserMenu && (
-            <div className="absolute top-full right-0 mt-2 w-48 bg-background border border-outline rounded-lg shadow-xl z-[9999]">
+            <div className="absolute top-full right-0 mt-2 w-48 bg-background border border-outline rounded-lg shadow-xl z-50">
               <div className="p-2">
                 <div className="px-2 py-1">
                   <p className="label-medium text-on-surface">

@@ -3,6 +3,7 @@ import authService from '../Library/Authentication/jwt'
 import { threadsApiService, type Thread } from '../Library/Shared/threadsApi'
 import { getProfileImageUrl, getProfileInitial } from '../Library/Shared/profileUtils'
 import { useState, useEffect, useRef } from 'react'
+import NewChatDialog from './NewChatDialog'
 
 // Use Thread as Chat since they have the same structure
 type ChatType = Thread;
@@ -13,6 +14,13 @@ interface SidebarProps {
   onChatSelect: (chat: ChatType) => void;
   onShowAllChats: () => void;
   isLoadingAllChats: boolean;
+  onCreateChat?: (chatData: {
+    name: string;
+    requestType: string;
+    customerId?: string;
+    customerName?: string;
+    description?: string;
+  }) => void;
 }
 
 export default function Sidebar({
@@ -20,10 +28,12 @@ export default function Sidebar({
   selectedChat,
   onChatSelect,
   onShowAllChats,
-  isLoadingAllChats = false
+  isLoadingAllChats = false,
+  onCreateChat
 }: SidebarProps) {
   const [user, setUser] = useState(authService.getUser());
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showNewChatDialog, setShowNewChatDialog] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   // Group chats by createdByName from the props
@@ -72,6 +82,18 @@ export default function Sidebar({
     onChatSelect(chat);
   };
 
+  const handleCreateChat = (chatData: {
+    name: string;
+    requestType: string;
+    customerId?: string;
+    customerName?: string;
+    description?: string;
+  }) => {
+    if (onCreateChat) {
+      onCreateChat(chatData);
+    }
+  };
+
   const formatDate = (dateString: string) => {
     const date = new Date(dateString)
     const now = new Date()
@@ -116,7 +138,7 @@ export default function Sidebar({
     }
   }
   return (
-    <aside className="w-[350px] bg-surface flex flex-col border-r border-outline shrink-0 z-20 select-none">
+    <aside className="w-[350px] bg-surface flex flex-col border-r border-outline shrink-0 z-10 select-none">
       {/* Workspace Header */}
 
       {/* Navigation Switcher */}
@@ -129,7 +151,13 @@ export default function Sidebar({
             Direct Messages
           </button>
         </div>
-        <button className="border p-1 bg-surface rounded-lg border-outline w-12 flex items-center justify-center">
+
+        {/* add chat dialog */}
+        <button 
+          className="border p-1 bg-surface rounded-lg border-outline w-12 flex items-center justify-center hover:bg-surface-variant transition-colors"
+          onClick={() => setShowNewChatDialog(true)}
+          title="Create new chat"
+        >
           <Plus width={16} height={16} />
         </button>
       </div>
@@ -263,7 +291,7 @@ export default function Sidebar({
 
         {/* User Menu Dropdown */}
         {showUserMenu && (
-          <div className="absolute bottom-full left-3 right-3 mb-2 bg-surface border border-outline rounded-lg shadow-lg z-50">
+          <div className="absolute bottom-full left-3 right-3 mb-2 bg-surface border border-outline rounded-lg shadow-lg z-30">
             <div className="p-2">
               <button
                 onClick={handleLogout}
@@ -276,6 +304,13 @@ export default function Sidebar({
           </div>
         )}
       </div>
+
+      {/* New Chat Dialog */}
+      <NewChatDialog
+        open={showNewChatDialog}
+        onOpenChange={setShowNewChatDialog}
+        onCreateChat={handleCreateChat}
+      />
     </aside>
   )
 }

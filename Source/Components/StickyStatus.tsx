@@ -96,7 +96,7 @@ export default function StickyStatus({ selectedChat, onStatusUpdate }: StickySta
 
   if (!selectedChat) {
     return (
-      <div className="sticky top-0 z-20 px-6 pt-6 pb-8 bg-gradient-to-b from-background via-background to-transparent pointer-events-none select-none">
+      <div className="sticky top-0 z-10 px-6 pt-6 pb-8 bg-gradient-to-b from-background via-background to-transparent pointer-events-none select-none">
         <div className="pointer-events-auto relative overflow-hidden rounded-xl bg-surface border border-outline shadow-[0_8px_30px_rgb(0,0,0,0.12)] flex items-center justify-center p-8 group">
           <div className="text-center">
             <MessageCircle className="text-on-surface-variant mb-2" size={32} />
@@ -110,7 +110,7 @@ export default function StickyStatus({ selectedChat, onStatusUpdate }: StickySta
   // If no queue data and not a queue chat, show basic chat info
   if (!selectedChat.metadata?.queueId) {
     return (
-      <div className="sticky top-0 z-20 px-6 pt-6 pb-8 bg-gradient-to-b from-background via-background to-transparent pointer-events-none select-none">
+      <div className="sticky top-0 z-10 px-6 pt-6 pb-8 bg-gradient-to-b from-background via-background to-transparent pointer-events-none select-none">
         <div className="pointer-events-auto relative overflow-hidden rounded-xl bg-surface border border-outline shadow-[0_8px_30px_rgb(0,0,0,0.12)] flex items-center justify-between p-4 group">
           <div className="flex items-center gap-4 relative z-10">
             <div className="size-12 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
@@ -132,7 +132,7 @@ export default function StickyStatus({ selectedChat, onStatusUpdate }: StickySta
   // Show loading state
   if (isLoading) {
     return (
-      <div className="sticky top-0 z-20 px-6 pt-6 pb-8 bg-gradient-to-b from-background via-background to-transparent pointer-events-none select-none">
+      <div className="sticky top-0 z-10 px-6 pt-6 pb-8 bg-gradient-to-b from-background via-background to-transparent pointer-events-none select-none">
         <div className="pointer-events-auto relative overflow-hidden rounded-xl bg-surface border border-outline shadow-[0_8px_30px_rgb(0,0,0,0.12)] flex items-center justify-center p-8 group">
           <div className="text-center">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
@@ -152,7 +152,7 @@ export default function StickyStatus({ selectedChat, onStatusUpdate }: StickySta
   const assignedTo = queueData?.assignedToName;
 
   return (
-    <div className="sticky top-0 z-20 px-6 pt-6 pb-8 bg-gradient-to-b from-background via-background to-transparent pointer-events-none select-none">
+    <div className="sticky top-0 z-10 px-6 pt-6 pb-8 bg-gradient-to-b from-background via-background to-transparent pointer-events-none select-none">
       <div className="pointer-events-auto relative rounded-xl bg-surface border border-outline shadow-[0_8px_30px_rgb(0,0,0,0.12)] flex items-center justify-between p-4 group overflow-visible">
         <div className={`absolute inset-0 bg-gradient-to-r from-current/5 to-transparent pointer-events-none ${queueApiService.getStatusColor(status)}`} />
         
@@ -211,7 +211,7 @@ export default function StickyStatus({ selectedChat, onStatusUpdate }: StickySta
 
           {/* Status Dropdown */}
           {showStatusDropdown && !isUpdating && (
-            <div className="absolute top-full right-0 mt-2 w-56 bg-surface border border-outline rounded-lg shadow-xl z-[9999]">
+            <div className="absolute top-full right-0 mt-2 w-56 bg-surface border border-outline rounded-lg shadow-xl z-50">
               <div className="p-2">
                 <div className="text-xs font-medium text-on-surface-variant uppercase tracking-wider px-2 py-1 mb-1">
                   Change Status
@@ -247,7 +247,7 @@ export default function StickyStatus({ selectedChat, onStatusUpdate }: StickySta
         {/* Click outside to close dropdown */}
         {showStatusDropdown && (
           <div 
-            className="fixed inset-0 z-[9998]" 
+            className="fixed inset-0 z-40" 
             onClick={() => setShowStatusDropdown(false)}
           />
         )}

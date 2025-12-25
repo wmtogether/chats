@@ -301,6 +301,62 @@ export default function Main() {
     dispatch({ type: 'HIDE_ALL_CHATS' });
   };
 
+  const handleCreateChat = async (chatData: {
+    name: string;
+    requestType: string;
+    customerId?: string;
+    customerName?: string;
+    description?: string;
+  }) => {
+    console.log('🆕 Creating new chat:', chatData);
+    
+    try {
+      // Create a new queue (which automatically creates a chat channel)
+      // Following the same pattern as the original NewChatDialog
+      const queueResponse = await fetch('/api/queue', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'X-Session-Id': (window as any).sessionId || 'desktop-session'
+        },
+        body: JSON.stringify({
+          jobName: chatData.name,
+          requestType: chatData.requestType,
+          notes: chatData.description || null,
+          priority: 'normal',
+          customerId: chatData.customerId || null,
+          customerName: chatData.customerName || null,
+        }),
+      });
+
+      if (!queueResponse.ok) {
+        throw new Error('Failed to create queue');
+      }
+
+      const queueData = await queueResponse.json();
+      console.log('✅ Queue created successfully:', queueData);
+      
+      // Refresh the threads list to include the new chat
+      const response = await threadsApiService.getThreads({ limit: 50 });
+      dispatch({ type: 'SET_CHATS', payload: response.threads });
+      
+      // Find and select the newly created chat
+      const newChat = response.threads.find(thread => 
+        thread.metadata?.queueId === queueData.queue?.id
+      );
+      
+      if (newChat) {
+        console.log('✅ New chat found and selected:', newChat);
+        dispatch({ type: 'SELECT_CHAT', payload: newChat });
+        await loadMessagesForChat(newChat);
+      }
+      
+    } catch (error) {
+      console.error('❌ Failed to create chat:', error);
+      // You could show a toast notification here
+    }
+  };
+
   const handleSendMessage = async (content: string, attachments?: any[]) => {
     if (!selectedChat) {
       console.warn('⚠️ No chat selected for sending message');
@@ -376,6 +432,7 @@ export default function Main() {
         onChatSelect={handleChatSelect}
         onShowAllChats={handleShowAllChats}
         isLoadingAllChats={isLoadingAllChats}
+        onCreateChat={handleCreateChat}
       />
 
       {showAllChats ? (

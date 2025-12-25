@@ -18,9 +18,11 @@ mod ipc;
 mod context_menu;
 mod network;
 mod auth;
+mod menubar;
 
 use core::SharedAppState;
 use ipc::handle_ipc_message;
+use menubar::{MenuBar, apply_modern_menu_theme, enable_window_animations};
 
 // Include the icon at compile time
 const ICON_BYTES: &[u8] = include_bytes!("../../Library/Shared/Icons/icon.ico");
@@ -172,6 +174,7 @@ struct App {
     initialization_complete: bool,
     ready_to_show: bool,
     proxy_process: Option<Child>,
+    native_menubar: Option<MenuBar>,
 }
 
 impl App {
@@ -183,6 +186,7 @@ impl App {
             initialization_complete: false,
             ready_to_show: false,
             proxy_process: None,
+            native_menubar: None,
         }
     }
     
@@ -299,6 +303,129 @@ impl App {
             }
         }
     }
+    
+    fn handle_menu_action(&self, action: &str) {
+        println!("Menu action triggered: {}", action);
+        
+        match action {
+            // File menu actions
+            "new_chat" => {
+                if let Some(webview) = &self.webview {
+                    let _ = webview.evaluate_script("window.dispatchEvent(new CustomEvent('menuAction', { detail: { action: 'new_chat' } }));");
+                }
+            }
+            "new_window" => {
+                println!("New window requested - would spawn new instance");
+            }
+            "settings" => {
+                if let Some(webview) = &self.webview {
+                    let _ = webview.evaluate_script("window.dispatchEvent(new CustomEvent('menuAction', { detail: { action: 'settings' } }));");
+                }
+            }
+            
+            // Edit menu actions
+            "undo" | "redo" | "cut" | "copy" | "paste" | "select_all" => {
+                if let Some(webview) = &self.webview {
+                    let script = format!("document.execCommand('{}');", action);
+                    let _ = webview.evaluate_script(&script);
+                }
+            }
+            "find" => {
+                if let Some(webview) = &self.webview {
+                    let _ = webview.evaluate_script("if (window.find) window.find(); else alert('Find functionality not available');");
+                }
+            }
+            
+            // View menu actions
+            "toggle_sidebar" => {
+                if let Some(webview) = &self.webview {
+                    let _ = webview.evaluate_script("window.dispatchEvent(new CustomEvent('menuAction', { detail: { action: 'toggle_sidebar' } }));");
+                }
+            }
+            "toggle_devtools" => {
+                println!("DevTools can be accessed via right-click or F12");
+            }
+            "zoom_in" => {
+                if let Some(webview) = &self.webview {
+                    let _ = webview.evaluate_script("document.body.style.zoom = (parseFloat(document.body.style.zoom || 1) + 0.1).toString();");
+                }
+            }
+            "zoom_out" => {
+                if let Some(webview) = &self.webview {
+                    let _ = webview.evaluate_script("document.body.style.zoom = Math.max(0.5, parseFloat(document.body.style.zoom || 1) - 0.1).toString();");
+                }
+            }
+            "reset_zoom" => {
+                if let Some(webview) = &self.webview {
+                    let _ = webview.evaluate_script("document.body.style.zoom = '1';");
+                }
+            }
+            "fullscreen" => {
+                if let Some(_window) = &self.window {
+                    // Toggle fullscreen mode
+                    println!("Fullscreen toggle requested");
+                }
+            }
+            
+            // Tools menu actions
+            "clear_history" => {
+                if let Some(webview) = &self.webview {
+                    let _ = webview.evaluate_script("if (confirm('Clear all chat history? This cannot be undone.')) { window.dispatchEvent(new CustomEvent('menuAction', { detail: { action: 'clear_history' } })); }");
+                }
+            }
+            "network_diagnostics" => {
+                println!("Network diagnostics - checking proxy connection...");
+                // Could add actual network diagnostics here
+            }
+            
+            // Help menu actions
+            "shortcuts" => {
+                if let Some(webview) = &self.webview {
+                    let shortcuts_info = r#"
+                        alert('Keyboard Shortcuts:\n\n' +
+                              'Ctrl+N - New Chat\n' +
+                              'Ctrl+B - Toggle Sidebar\n' +
+                              'Ctrl+F - Find\n' +
+                              'Ctrl+, - Settings\n' +
+                              'F11 - Fullscreen\n' +
+                              'F12 - DevTools\n' +
+                              'Alt+F4 - Exit');
+                    "#;
+                    let _ = webview.evaluate_script(shortcuts_info);
+                }
+            }
+            "about" => {
+                if let Some(webview) = &self.webview {
+                    let about_info = format!(
+                        "alert('Workspace v0.1.0\\n\\nBuilt with Rust + WebView2\\nDark mode: {}\\n\\nA modern desktop chat application with native Win32 menus.');",
+                        if menubar::is_system_dark_mode() { "Enabled" } else { "Disabled" }
+                    );
+                    let _ = webview.evaluate_script(&about_info);
+                }
+            }
+            "documentation" => {
+                if let Some(webview) = &self.webview {
+                    let _ = webview.evaluate_script("window.open('https://github.com/your-repo/docs', '_blank');");
+                }
+            }
+            "report_issue" => {
+                if let Some(webview) = &self.webview {
+                    let _ = webview.evaluate_script("window.open('https://github.com/your-repo/issues', '_blank');");
+                }
+            }
+            "exit" => {
+                std::process::exit(0);
+            }
+            _ => {
+                println!("Unhandled menu action: {}", action);
+                // Forward unknown actions to the webview
+                if let Some(webview) = &self.webview {
+                    let script = format!("window.dispatchEvent(new CustomEvent('menuAction', {{ detail: {{ action: '{}' }} }}));", action);
+                    let _ = webview.evaluate_script(&script);
+                }
+            }
+        }
+    }
 }
 
 impl ApplicationHandler for App {
@@ -410,6 +537,7 @@ impl ApplicationHandler for App {
                     }
                 }
             }
+            // Note: Menu commands are handled via Windows message loop, not winit events
             _ => {}
         }
     }
@@ -638,6 +766,42 @@ impl App {
             if let Err(e) = context_menu::init_window_theme(window_handle) {
                 println!("Warning: Failed to initialize window theme: {:?}", e);
             }
+            
+            // Apply modern menu theme with dark mode
+            if let Err(e) = apply_modern_menu_theme(window_handle) {
+                println!("Warning: Failed to apply modern menu theme: {:?}", e);
+            }
+
+            // Enable window animations and effects
+            if let Err(e) = enable_window_animations(window_handle) {
+                println!("Warning: Failed to enable window animations: {:?}", e);
+            }
+        }
+
+        // Initialize native Win32 menubar
+        match menubar::create_app_menubar() {
+            Ok(menu) => {
+                if let Err(e) = menu.attach_to_window(window_handle) {
+                    println!("Warning: Failed to attach native menubar: {:?}", e);
+                } else {
+                    println!("✅ Native Win32 menubar attached");
+                    
+                    // Apply menu colors based on system theme
+                    #[cfg(windows)]
+                    {
+                        if let Err(e) = menubar::apply_menu_colors(window_handle) {
+                            println!("Warning: Failed to apply menu colors: {:?}", e);
+                        } else {
+                            println!("✅ Menu colors applied based on system theme");
+                        }
+                    }
+                    
+                    self.native_menubar = Some(menu);
+                }
+            }
+            Err(e) => {
+                println!("Warning: Failed to create native menubar: {:?}", e);
+            }
         }
 
         let webview = webview_builder
@@ -645,30 +809,42 @@ impl App {
             .with_ipc_handler(move |request: http::Request<String>| {
                 let body = request.body();
                 
-                // Try to parse as JSON for context menu coordinates
+                // Try to parse as JSON for context menu coordinates and menu actions
                 if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(body) {
                     if let Some(action) = parsed.get("action").and_then(|v| v.as_str()) {
-                        if action == "show_context_menu" {
-                            if let (Some(x), Some(y)) = (
-                                parsed.get("x").and_then(|v| v.as_i64()),
-                                parsed.get("y").and_then(|v| v.as_i64())
-                            ) {
-                                #[cfg(windows)]
-                                {
-                                    if let Err(e) = context_menu::show_context_menu(window_handle, x as i32, y as i32) {
-                                        println!("Failed to show context menu: {:?}", e);
+                        match action {
+                            "show_context_menu" => {
+                                if let (Some(x), Some(y)) = (
+                                    parsed.get("x").and_then(|v| v.as_i64()),
+                                    parsed.get("y").and_then(|v| v.as_i64())
+                                ) {
+                                    #[cfg(windows)]
+                                    {
+                                        if let Err(e) = context_menu::show_context_menu(window_handle, x as i32, y as i32) {
+                                            println!("Failed to show context menu: {:?}", e);
+                                        }
                                     }
-                                }
-                                
-                                #[cfg(not(windows))]
-                                {
-                                    println!("Context menu requested at ({}, {})", x, y);
-                                    if let Err(e) = context_menu::show_context_menu(x as i32, y as i32) {
-                                        println!("Failed to show context menu: {:?}", e);
+                                    
+                                    #[cfg(not(windows))]
+                                    {
+                                        println!("Context menu requested at ({}, {})", x, y);
+                                        if let Err(e) = context_menu::show_context_menu(x as i32, y as i32) {
+                                            println!("Failed to show context menu: {:?}", e);
+                                        }
                                     }
+                                    return;
                                 }
-                                return;
                             }
+                            "menu_action" => {
+                                if let Some(menu_id) = parsed.get("menu_id").and_then(|v| v.as_str()) {
+                                    // Handle webview menu actions
+                                    println!("WebView menu action: {}", menu_id);
+                                    // Note: We can't call self.handle_menu_action here due to closure constraints
+                                    // The webview menubar handles most actions directly via JavaScript
+                                    return;
+                                }
+                            }
+                            _ => {}
                         }
                     }
                 }
