@@ -10,6 +10,8 @@
     "postbuild": "bun run Library/Shared/Scripts/postbuild.ts",
     "build-installer": "bun run Library/Shared/Scripts/build-installer.ts",
     "build-all": "bun run build && bun run build-installer",
+    "typecheck": "tsc --noEmit",
+    "test": "bun run typecheck && cargo test --manifest-path Desktop/Cargo.toml",
     "preview": "vite preview"
   },
   "devDependencies": {

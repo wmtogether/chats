@@ -127,48 +127,9 @@ begin
   end;
 end;
 
-// Check if WebView2 Runtime is available (system-wide or bundled)
-function IsWebView2Available(): Boolean;
-var
-  RegKey: String;
-  Version: String;
-begin
-  Result := False;
-  
-  // Check if WebView2 Runtime is installed system-wide
-  RegKey := 'SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}';
-  if RegQueryStringValue(HKLM, RegKey, 'pv', Version) then
-  begin
-    Result := True;
-    Log('System WebView2 Runtime found: ' + Version);
-  end
-  else
-  begin
-    // Check 32-bit registry
-    RegKey := 'SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}';
-    if RegQueryStringValue(HKLM, RegKey, 'pv', Version) then
-    begin
-      Result := True;
-      Log('System WebView2 Runtime found (32-bit): ' + Version);
-    end
-    else
-    begin
-      Log('System WebView2 Runtime not found - will use bundled runtime');
-      Result := True; // We're bundling the runtime, so it's always available
-    end;
-  end;
-end;
-
 function InitializeSetup(): Boolean;
 begin
   Result := True;
-  
-  // Check WebView2 availability
-  if not IsWebView2Available() then
-  begin
-    MsgBox('WebView2 Runtime is required but not found. The installer will include a bundled runtime.', mbInformation, MB_OK);
-  end;
-  
   Log('Installation target: ' + ExpandConstant('{localappdata}') + '\Miko\Workspace');
 end;
 
