@@ -2,7 +2,9 @@
 use crate::core::SharedAppState;
 use serde_json;
 
-pub async fn handle_ipc_message(request: http::Request<String>, state: SharedAppState) {
+pub mod dialog;
+
+pub fn handle_ipc_message(request: http::Request<String>, state: SharedAppState) {
     let body = request.body();
     
     // Try to parse as JSON for structured commands
@@ -16,6 +18,35 @@ pub async fn handle_ipc_message(request: http::Request<String>, state: SharedApp
                         parsed.get("y").and_then(|v| v.as_i64())
                     ) {
                         println!("Context menu requested at ({}, {})", x, y);
+                    }
+                    return;
+                }
+                "confirm_logout" => {
+                    // Handle logout confirmation dialog
+                    println!("Showing logout confirmation dialog...");
+                    
+                    match dialog::show_confirmation_dialog_sync(
+                        "Sign out", 
+                        "Are you sure you want to sign out?", 
+                        "Sign out", 
+                        "Cancel"
+                    ) {
+                        Ok(result) => {
+                            println!("Logout confirmation result: {}", result);
+                            if result {
+                                println!("User confirmed logout - setting logout flag");
+                                // Set a flag in the app state to trigger logout
+                                {
+                                    let mut state = state.lock().unwrap();
+                                    state.message = "trigger_logout".to_string();
+                                }
+                            } else {
+                                println!("User cancelled logout");
+                            }
+                        }
+                        Err(e) => {
+                            println!("Dialog error: {}", e);
+                        }
                     }
                     return;
                 }

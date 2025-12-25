@@ -26,12 +26,18 @@ use ipc::handle_ipc_message;
 const ICON_BYTES: &[u8] = include_bytes!("../../Library/Shared/Icons/icon.ico");
 
 fn load_window_icon() -> Option<Icon> {
-    // Parse ICO file and extract the best icon
+    // First try to load from embedded bytes
+    println!("Attempting to load window icon from embedded bytes ({} bytes)", ICON_BYTES.len());
+    
     match ico::IconDir::read(std::io::Cursor::new(ICON_BYTES)) {
         Ok(icon_dir) => {
+            println!("ICO file parsed successfully, {} entries found", icon_dir.entries().len());
+            
             // Find the best icon (largest size, highest bit depth)
             if let Some(entry) = icon_dir.entries().iter()
                 .max_by_key(|entry| (entry.width() as u32, entry.height() as u32, entry.bits_per_pixel())) {
+                
+                println!("Selected icon entry: {}x{} @ {} bpp", entry.width(), entry.height(), entry.bits_per_pixel());
                 
                 match entry.decode() {
                     Ok(image) => {
@@ -39,13 +45,15 @@ fn load_window_icon() -> Option<Icon> {
                         let width = image.width();
                         let height = image.height();
                         
+                        println!("Icon decoded to RGBA: {}x{}, {} bytes", width, height, rgba_data.len());
+                        
                         match Icon::from_rgba(rgba_data, width, height) {
                             Ok(icon) => {
                                 println!("✅ Window icon loaded successfully ({}x{})", width, height);
                                 return Some(icon);
                             }
                             Err(e) => {
-                                println!("⚠️ Failed to create icon from RGBA data: {}", e);
+                                println!("⚠️ Failed to create winit icon from RGBA data: {}", e);
                             }
                         }
                     }
@@ -58,10 +66,37 @@ fn load_window_icon() -> Option<Icon> {
             }
         }
         Err(e) => {
-            println!("⚠️ Failed to parse ICO file: {}", e);
+            println!("⚠️ Failed to parse embedded ICO file: {}", e);
         }
     }
-    None
+    
+    // Fallback: try to create a simple colored icon
+    println!("Creating fallback icon...");
+    let size = 32;
+    let mut rgba_data = Vec::with_capacity((size * size * 4) as usize);
+    
+    for y in 0..size {
+        for x in 0..size {
+            // Create a simple gradient icon
+            let r = ((x as f32 / size as f32) * 255.0) as u8;
+            let g = ((y as f32 / size as f32) * 255.0) as u8;
+            let b = 128;
+            let a = 255;
+            
+            rgba_data.extend_from_slice(&[r, g, b, a]);
+        }
+    }
+    
+    match Icon::from_rgba(rgba_data, size, size) {
+        Ok(icon) => {
+            println!("✅ Fallback icon created successfully ({}x{})", size, size);
+            Some(icon)
+        }
+        Err(e) => {
+            println!("⚠️ Failed to create fallback icon: {}", e);
+            None
+        }
+    }
 }
 
 #[cfg(debug_assertions)]
@@ -226,6 +261,30 @@ impl App {
         }
     }
     
+    fn check_logout_trigger(&mut self) {
+        if let Some(webview) = &self.webview {
+            let state = self.state.lock().unwrap();
+            if state.message == "trigger_logout" {
+                println!("Logout trigger detected - executing JavaScript");
+                let js_code = r#"
+                    console.log('Backend confirmed logout - triggering frontend logout');
+                    if (window.triggerLogout) {
+                        window.triggerLogout();
+                    } else {
+                        console.error('triggerLogout function not found');
+                    }
+                "#;
+                if let Err(e) = webview.evaluate_script(js_code) {
+                    println!("Failed to execute logout script: {}", e);
+                }
+                // Clear the trigger flag
+                drop(state);
+                let mut state = self.state.lock().unwrap();
+                state.message = "logout_triggered".to_string();
+            }
+        }
+    }
+    
     fn stop_proxy_process(&mut self) {
         if let Some(mut child) = self.proxy_process.take() {
             println!("🛑 Stopping mikoproxy.exe subprocess...");
@@ -331,6 +390,9 @@ impl ApplicationHandler for App {
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _window_id: WindowId, event: WindowEvent) {
+        // Check for logout trigger
+        self.check_logout_trigger();
+        
         match event {
             WindowEvent::CloseRequested => {
                 // Stop the proxy process before exiting
@@ -520,10 +582,42 @@ impl App {
                     }
                 };
 
+                // Add native dialog helper
+                window.nativeDialog = {
+                    confirmLogout: function() {
+                        // Send IPC message to show logout confirmation
+                        try {
+                            window.ipc.postMessage(JSON.stringify({
+                                action: 'confirm_logout'
+                            }));
+                            // The native dialog is synchronous and blocks, so we return false here
+                            // The actual logout will be handled by the backend if user confirms
+                            return false; // Don't proceed with logout in frontend
+                        } catch (error) {
+                            console.error('IPC error, using browser confirm:', error);
+                            return confirm('Are you sure you want to sign out?');
+                        }
+                    }
+                };
+
                 console.log('Authentication system initialized');
                 console.log('Session ID:', window.sessionId);
                 console.log('All API calls will be authenticated via Rust backend proxy');
                 console.log('DevTools: Right-click and select "Inspect" or press F12');
+                
+                // Add logout trigger function that can be called from backend
+                window.triggerLogout = function() {
+                    console.log('triggerLogout called from backend');
+                    // Find and trigger the logout function
+                    if (window.appLogout) {
+                        window.appLogout();
+                    } else {
+                        console.log('appLogout not found, dispatching custom event');
+                        window.dispatchEvent(new CustomEvent('nativeLogout'));
+                    }
+                };
+                
+                console.log('Native logout trigger initialized');
                 "#
             );
 
@@ -581,9 +675,7 @@ impl App {
                 
                 // Handle other IPC messages
                 let state = state_clone.clone();
-                tokio::spawn(async move {
-                    handle_ipc_message(request, state).await;
-                });
+                handle_ipc_message(request, state);
             })
             .build(&**window)
             .map_err(|e| {

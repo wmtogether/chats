@@ -30,8 +30,24 @@ export default function ChatHeader({ selectedChat, onLogout, chatCount }: ChatHe
       }
     }, 1000);
 
-    return () => clearInterval(interval);
-  }, [user]);
+    // Set up native logout listener
+    const handleNativeLogout = () => {
+      console.log('Native logout event received');
+      onLogout();
+    };
+
+    // Set up global logout function
+    (window as any).appLogout = onLogout;
+    
+    // Listen for native logout event
+    window.addEventListener('nativeLogout', handleNativeLogout);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('nativeLogout', handleNativeLogout);
+      delete (window as any).appLogout;
+    };
+  }, [user, onLogout]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -113,7 +129,19 @@ export default function ChatHeader({ selectedChat, onLogout, chatCount }: ChatHe
                 </div>
                 <hr className="my-2 border-outline" />
                 <button
-                  onClick={onLogout}
+                  onClick={() => {
+                    // Show native confirmation dialog - don't call onLogout here
+                    try {
+                      (window as any).nativeDialog?.confirmLogout();
+                      // The backend will call triggerLogout if user confirms
+                    } catch (error) {
+                      console.error('Dialog error:', error);
+                      // Fallback to browser confirm
+                      if (confirm('Are you sure you want to sign out?')) {
+                        onLogout();
+                      }
+                    }
+                  }}
                   className="flex items-center gap-2 w-full p-2 rounded-md hover:bg-error/10 text-error transition-colors"
                 >
                   <LogOut size={16} />
