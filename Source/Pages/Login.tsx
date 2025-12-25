@@ -177,48 +177,7 @@ Storage file: ${sessionData?.storageFile || 'N/A'}`);
               <p className="body-medium text-on-error-container">{error}</p>
             </div>
           )}
-
-          {/* Test Buttons */}
-          <div className="mt-4 flex flex-col gap-2">
-            <button
-              type="button"
-              onClick={testProxy}
-              className="label-medium w-full text-primary hover:text-primary/80 hover:underline"
-            >
-              Test Proxy Server
-            </button>
-            <button
-              type="button"
-              onClick={testAPIs}
-              className="label-medium w-full text-secondary hover:text-secondary/80 hover:underline"
-            >
-              Test APIs (Threads & Messages)
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                debugAuthState();
-                console.log('Current auth state:', {
-                  isAuthenticated: authService.isAuthenticated(),
-                  user: authService.getUser(),
-                  token: authService.getToken() ? 'Present' : 'None'
-                });
-                // Also check proxy session
-                authService.checkProxySession().then(proxyStatus => {
-                  console.log('Proxy session status:', proxyStatus);
-                });
-              }}
-              className="label-medium w-full text-tertiary hover:text-tertiary/80 hover:underline"
-            >
-              Debug Auth State
-            </button>
-            {testResult && (
-              <div className="mt-2 p-2 rounded bg-surface-variant text-on-surface-variant text-sm whitespace-pre-line">
-                {testResult}
-              </div>
-            )}
-          </div>
-
+          
           {/* Actions */}
           <div className="mt-2 flex flex-col gap-4">
             <button

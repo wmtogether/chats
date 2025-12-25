@@ -12,6 +12,8 @@ import { debugAuthState } from './Library/Authentication/debug';
 import { threadsApiService } from './Library/Shared/threadsApi';
 import { messagesApiService, type MessageData as ApiMessageData } from './Library/Shared/messagesApi';
 import { getProfileImageUrl } from './Library/Shared/profileUtils';
+import { connectRedis, disconnectRedis, isRedisConnected, pingRedis } from './Library/redis/client';
+import { subscribe, unsubscribe, chatEvents, threadEvents, notificationEvents, userEvents, type PubSubMessage } from './Library/redis/pubsub';
 import type { Thread } from './Library/Shared/threadsApi'
 
 // The 'Chat' type is now an alias for the 'Thread' type from the API service.
@@ -37,6 +39,7 @@ interface AppState {
   messages: ApiMessageData[];
   isLoadingMessages: boolean;
   lastSelectedChatId: number | null;
+  redisConnected: boolean;
 }
 
 type AppAction =
@@ -51,7 +54,8 @@ type AppAction =
   | { type: 'SET_MESSAGES'; payload: ApiMessageData[] }
   | { type: 'SET_MESSAGES_LOADING'; payload: boolean }
   | { type: 'ADD_MESSAGE'; payload: ApiMessageData }
-  | { type: 'SET_LAST_SELECTED_CHAT'; payload: number | null };
+  | { type: 'SET_LAST_SELECTED_CHAT'; payload: number | null }
+  | { type: 'SET_REDIS_CONNECTED'; payload: boolean };
 
 const initialState: AppState = {
   isLoggedIn: false,
@@ -63,6 +67,7 @@ const initialState: AppState = {
   messages: [],
   isLoadingMessages: false,
   lastSelectedChatId: null,
+  redisConnected: false,
 };
 
 function appReducer(state: AppState, action: AppAction): AppState {
@@ -97,6 +102,8 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, messages: [...state.messages, action.payload] };
     case 'SET_LAST_SELECTED_CHAT':
       return { ...state, lastSelectedChatId: action.payload };
+    case 'SET_REDIS_CONNECTED':
+      return { ...state, redisConnected: action.payload };
     default:
       return state;
   }
@@ -104,7 +111,97 @@ function appReducer(state: AppState, action: AppAction): AppState {
 
 export default function Main() {
   const [state, dispatch] = useReducer(appReducer, initialState);
-  const { isLoggedIn, isLoading, chats, selectedChat, showAllChats, isLoadingAllChats, messages, isLoadingMessages, lastSelectedChatId } = state;
+  const { isLoggedIn, isLoading, chats, selectedChat, showAllChats, isLoadingAllChats, messages, isLoadingMessages, lastSelectedChatId, redisConnected } = state;
+
+  // Initialize Redis connection
+  useEffect(() => {
+    const initializeRedis = async () => {
+      try {
+        console.log('🔌 Connecting to Redis...');
+        await connectRedis();
+        
+        // Test the connection
+        const pingResult = await pingRedis();
+        if (pingResult) {
+          console.log('✅ Redis connected and responding');
+          dispatch({ type: 'SET_REDIS_CONNECTED', payload: true });
+          
+          // Set up real-time subscriptions
+          await setupRealtimeSubscriptions();
+        } else {
+          console.warn('⚠️ Redis connected but not responding to ping');
+        }
+      } catch (error) {
+        console.error('❌ Failed to connect to Redis:', error);
+        dispatch({ type: 'SET_REDIS_CONNECTED', payload: false });
+      }
+    };
+
+    initializeRedis();
+
+    // Cleanup on unmount
+    return () => {
+      console.log('🔌 Disconnecting from Redis...');
+      disconnectRedis().catch(console.error);
+    };
+  }, []);
+
+  // Set up real-time subscriptions
+  const setupRealtimeSubscriptions = async () => {
+    try {
+      // Subscribe to chat messages
+      await subscribe('chat:message', (message: PubSubMessage) => {
+        console.log('📨 Real-time message received:', message);
+        
+        // Check if the message is for the currently selected chat
+        if (selectedChat && message.data.channelId === selectedChat.channelId) {
+          // Add the message to the current chat
+          const newMessage: ApiMessageData = {
+            id: parseInt(message.data.message.id) || Date.now(),
+            messageId: message.data.message.id || Date.now().toString(),
+            channelId: message.data.channelId,
+            userId: parseInt(message.data.message.userId || '0'),
+            userName: message.data.message.userName || 'Unknown User',
+            userRole: message.data.message.userRole || 'member',
+            profilePicture: message.data.message.profilePicture,
+            content: message.data.message.content,
+            createdAt: new Date(message.timestamp).toISOString(),
+            attachments: message.data.message.attachments || [],
+            reactions: message.data.message.reactions || []
+          };
+          
+          dispatch({ type: 'ADD_MESSAGE', payload: newMessage });
+        }
+      });
+
+      // Subscribe to thread updates
+      await subscribe('thread:update', (message: PubSubMessage) => {
+        console.log('🔄 Thread update received:', message);
+        // Refresh threads list when there are updates
+        refreshThreads();
+      });
+
+      // Subscribe to notifications
+      await subscribe('notification', (message: PubSubMessage) => {
+        console.log('🔔 Notification received:', message);
+        // Handle notifications (could show toast, update UI, etc.)
+      });
+
+      console.log('✅ Real-time subscriptions set up successfully');
+    } catch (error) {
+      console.error('❌ Failed to set up real-time subscriptions:', error);
+    }
+  };
+
+  // Refresh threads from API
+  const refreshThreads = async () => {
+    try {
+      const response = await threadsApiService.getThreads({ limit: 50 });
+      dispatch({ type: 'SET_CHATS', payload: response.threads });
+    } catch (error) {
+      console.error('❌ Failed to refresh threads:', error);
+    }
+  };
 
   // Load last selected chat ID from localStorage on component mount
   useEffect(() => {
@@ -380,6 +477,28 @@ export default function Main() {
         if (response.success) {
           console.log('✅ Message sent successfully');
           dispatch({ type: 'ADD_MESSAGE', payload: response.message });
+          
+          // Publish real-time event if Redis is connected
+          if (redisConnected) {
+            try {
+              await chatEvents.newMessage(
+                selectedChat.channelId || selectedChat.channelName,
+                {
+                  id: response.message.messageId,
+                  content: response.message.content,
+                  userId: response.message.userId.toString(),
+                  userName: response.message.userName,
+                  profilePicture: response.message.profilePicture,
+                  attachments: response.message.attachments || [],
+                  reactions: response.message.reactions || []
+                },
+                response.message.userId.toString()
+              );
+              console.log('📡 Real-time message event published');
+            } catch (redisError) {
+              console.warn('⚠️ Failed to publish real-time message event:', redisError);
+            }
+          }
         }
       } else {
         console.error('❌ No valid identifier for sending message to chat:', selectedChat);
@@ -445,7 +564,7 @@ export default function Main() {
         />
       ) : (
         <main className="flex-1 flex flex-col min-w-0 bg-surface relative">
-          <ChatHeader selectedChat={selectedChat} onLogout={handleLogout} chatCount={chats.length} />
+          <ChatHeader selectedChat={selectedChat} onLogout={handleLogout} chatCount={chats.length} redisConnected={redisConnected} />
 
           <div className="flex-1 overflow-y-auto flex flex-col relative" id="message-container">
             <StickyStatus 

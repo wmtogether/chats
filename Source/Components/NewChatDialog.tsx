@@ -222,21 +222,6 @@ export default function NewChatDialog({ open, onOpenChange, onCreateChat }: NewC
                             </div>
 
                             {/* Description */}
-                            <div className="space-y-2">
-                                <span className="body-medium text-on-surface font-medium">
-                                    รายละเอียด (ไม่บังคับ)
-                                </span>
-                                <div className='pt-2'>
-                                    <textarea
-                                        value={description}
-                                        onChange={(e) => setDescription(e.target.value)}
-                                        placeholder="ระบุรายละเอียดหรือข้อกำหนดเพิ่มเติม..."
-                                        rows={3}
-                                        className="w-full px-3 py-3 bg-surface-variant/50 border border-outline-variant rounded-xl text-on-surface placeholder:text-on-surface-variant focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all resize-none body-small"
-                                        disabled={isCreating}
-                                    />
-                                </div>
-                            </div>
                         </div>
 
                         {/* Right Column - Request Types */}

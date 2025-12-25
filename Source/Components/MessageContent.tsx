@@ -4,6 +4,7 @@ import { QueueAcceptedCard } from './MetaCards/QueueAcceptedCard';
 import { QueuePreviewCard } from './MetaCards/QueuePreviewCard';
 import { FileCheckCard } from './MetaCards/FileCheckCard';
 import { ReqTypeChangeCard } from './MetaCards/ReqTypeChangeCard';
+import { Hyperlink } from './MetaCards/Hyperlink';
 
 interface MessageContentProps {
   content: string;
@@ -149,12 +150,48 @@ export function MessageContent({
     ...designMatches.map(m => ({ ...m, type: 'design' as const })),
   ].sort((a, b) => a.index - b.index);
 
+  // Detect URLs in the content
+  const urlRegex = /(https?:\/\/[^\s<>"{}|\\^`[\]]+)/gi;
+  const urlMatches: Array<{ index: number; url: string; fullMatch: string }> = [];
+  let urlMatchResult: RegExpExecArray | null;
+  
+  while ((urlMatchResult = urlRegex.exec(content)) !== null) {
+    // Check if this URL is not already part of a markdown link or other pattern
+    const beforeUrl = content.substring(0, urlMatchResult.index);
+    const afterUrl = content.substring(urlMatchResult.index + urlMatchResult[0].length);
+    
+    // Skip if URL is part of markdown link syntax [text](url)
+    if (beforeUrl.endsWith('](') || beforeUrl.endsWith('(') && afterUrl.startsWith(')')) {
+      continue;
+    }
+    
+    // Skip if URL overlaps with existing matches
+    const overlaps = allMatches.some(match => 
+      urlMatchResult!.index >= match.index && 
+      urlMatchResult!.index < match.index + match.fullMatch.length
+    );
+    
+    if (!overlaps) {
+      urlMatches.push({
+        index: urlMatchResult.index,
+        url: urlMatchResult[0],
+        fullMatch: urlMatchResult[0],
+      });
+    }
+  }
+
+  // Add URL matches to all matches and re-sort
+  const allMatchesWithUrls = [
+    ...allMatches,
+    ...urlMatches.map(m => ({ ...m, type: 'url' as const })),
+  ].sort((a, b) => a.index - b.index);
+
   // If we have matches, render with preview cards
-  if (allMatches.length > 0) {
+  if (allMatchesWithUrls.length > 0) {
     const parts: React.ReactNode[] = [];
     let lastIndex = 0;
 
-    allMatches.forEach((match, i) => {
+    allMatchesWithUrls.forEach((match, i) => {
       // Add text before this match
       if (match.index > lastIndex) {
         const textBefore = content.substring(lastIndex, match.index);
@@ -167,7 +204,7 @@ export function MessageContent({
         }
       }
 
-      // Add preview card
+      // Add preview card or component based on match type
       if (match.type === 'queue') {
         parts.push(
           <div key={`queue-${i}`} className="my-2">
@@ -188,6 +225,12 @@ export function MessageContent({
             <span className="body-small text-on-surface-variant">
               🎨 ออกแบบ #{(match as any).designId} (ลิงก์ไปยังระบบ ERP)
             </span>
+          </div>
+        );
+      } else if (match.type === 'url') {
+        parts.push(
+          <div key={`url-${i}`}>
+            <Hyperlink url={(match as any).url} />
           </div>
         );
       }
@@ -214,7 +257,60 @@ export function MessageContent({
     );
   }
 
-  // No matches found, return plain text with highlighting
+  // No matches found, check for standalone URLs in plain text
+  const standaloneUrlRegex = /(https?:\/\/[^\s<>"{}|\\^`[\]]+)/gi;
+  const standaloneUrlMatches = Array.from(content.matchAll(standaloneUrlRegex));
+  
+  if (standaloneUrlMatches.length > 0) {
+    const parts: React.ReactNode[] = [];
+    let lastIndex = 0;
+
+    standaloneUrlMatches.forEach((match, i) => {
+      const url = match[0];
+      const index = match.index!;
+
+      // Add text before this URL
+      if (index > lastIndex) {
+        const textBefore = content.substring(lastIndex, index);
+        if (textBefore.trim()) {
+          parts.push(
+            <span key={`text-${i}`}>
+              {renderTextWithHighlight(textBefore, `before-${i}`, normalizedQuery)}
+            </span>
+          );
+        }
+      }
+
+      // Add URL preview
+      parts.push(
+        <div key={`url-${i}`}>
+          <Hyperlink url={url} />
+        </div>
+      );
+
+      lastIndex = index + url.length;
+    });
+
+    // Add remaining text
+    if (lastIndex < content.length) {
+      const textEnd = content.substring(lastIndex);
+      if (textEnd.trim()) {
+        parts.push(
+          <span key="text-end">
+            {renderTextWithHighlight(textEnd, 'end', normalizedQuery)}
+          </span>
+        );
+      }
+    }
+
+    return (
+      <div className="body-medium text-on-surface leading-relaxed">
+        {parts}
+      </div>
+    );
+  }
+
+  // No URLs or other matches found, return plain text with highlighting
   return (
     <div className="body-medium text-on-surface leading-relaxed whitespace-pre-wrap break-words">
       {renderTextWithHighlight(content, 'full', normalizedQuery)}

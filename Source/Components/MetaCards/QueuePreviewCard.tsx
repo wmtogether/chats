@@ -3,24 +3,10 @@ import { Card, CardContent, CardHeader } from '../ui/card';
 import { Badge } from '../ui/badge';
 import { Loader2, ListTodo, Clock, CheckCircle, XCircle, AlertCircle, User } from 'lucide-react';
 import { cn } from '../../Library/utils';
-import { queueApiService } from '../../Library/Shared/queueApi';
+import { queueApiService, type QueueStatus } from '../../Library/Shared/queueApi';
 
 interface QueuePreviewCardProps {
   queueId: string;
-}
-
-interface QueueData {
-  id: number;
-  jobName: string;
-  requestType: string;
-  status: string;
-  priority: string;
-  notes: string | null;
-  createdByName: string | null;
-  createdAt: string;
-  assignedToName: string | null;
-  customerId: string | null;
-  customerName: string | null;
 }
 
 const STATUS_CONFIG: Record<string, { label: string; icon: any; color: string; bgColor: string }> = {
@@ -75,7 +61,7 @@ const STATUS_CONFIG: Record<string, { label: string; icon: any; color: string; b
 };
 
 export function QueuePreviewCard({ queueId }: QueuePreviewCardProps) {
-  const [queue, setQueue] = useState<QueueData | null>(null);
+  const [queue, setQueue] = useState<QueueStatus | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(false);
 
@@ -162,6 +148,7 @@ export function QueuePreviewCard({ queueId }: QueuePreviewCardProps) {
           </div>
         )}
 
+        {/* Notes section - not available in QueueStatus type
         {queue.notes && (
           <div className="p-3 rounded-lg bg-surface-variant/30 border border-outline/30">
             <p className="body-small text-on-surface-variant line-clamp-2">
@@ -169,6 +156,7 @@ export function QueuePreviewCard({ queueId }: QueuePreviewCardProps) {
             </p>
           </div>
         )}
+        */}
 
         <div className="flex items-center justify-between body-small text-on-surface-variant pt-2 border-t border-outline/30">
           <span>สร้างโดย: {queue.createdByName || 'ไม่ระบุ'}</span>

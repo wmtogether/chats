@@ -19,10 +19,12 @@ mod context_menu;
 mod network;
 mod auth;
 mod menubar;
+mod hooks;
 
 use core::SharedAppState;
 use ipc::handle_ipc_message;
 use menubar::{MenuBar, apply_modern_menu_theme, enable_window_animations};
+use hooks::{init_notifications, init_redis, connect_redis, show_notification};
 
 // Include the icon at compile time
 const ICON_BYTES: &[u8] = include_bytes!("../../Library/Shared/Icons/icon.ico");
@@ -449,6 +451,47 @@ impl ApplicationHandler for App {
             
             // Create WebView2 immediately (but window stays hidden)
             self.create_webview(&window);
+            
+            // Initialize notifications
+            #[cfg(windows)]
+            {
+                use windows::Win32::Foundation::HWND;
+                use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+                
+                match window.window_handle().unwrap().as_raw() {
+                    RawWindowHandle::Win32(handle) => {
+                        let hwnd = HWND(handle.hwnd.get() as *mut std::ffi::c_void);
+                        init_notifications(hwnd);
+                        println!("✅ Notifications initialized");
+                    }
+                    _ => println!("⚠️ Non-Win32 window handle, notifications not initialized"),
+                }
+            }
+            
+            // Initialize Redis
+            match init_redis() {
+                Ok(_) => {
+                    println!("✅ Redis manager initialized");
+                    
+                    // Connect to Redis synchronously
+                    match connect_redis() {
+                        Ok(_) => {
+                            println!("✅ Redis connected successfully");
+                            
+                            // Show connection notification
+                            if let Err(e) = show_notification("Miko Workspace", "Connected to real-time messaging") {
+                                println!("⚠️ Failed to show notification: {}", e);
+                            }
+                        }
+                        Err(e) => {
+                            println!("❌ Failed to connect to Redis: {}", e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    println!("❌ Failed to initialize Redis: {}", e);
+                }
+            }
             
             // Start the proxy process
             if let Err(e) = self.start_proxy_process() {

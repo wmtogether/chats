@@ -15,7 +15,7 @@ export default defineConfig({
         changeOrigin: true,
         secure: false,
         configure: (proxy, _options) => {
-          proxy.on('proxyReq', (proxyReq, req, _res) => {
+          proxy.on('proxyReq', (proxyReq, _req, _res) => {
             // Add CORS headers to proxy requests
             proxyReq.setHeader('Access-Control-Allow-Origin', '*');
             proxyReq.setHeader('Access-Control-Allow-Credentials', 'true');
@@ -28,5 +28,18 @@ export default defineConfig({
     outDir: 'Distribution',
     assetsInlineLimit: 0, // Ensure fonts are properly handled
   },
-  assetsInclude: ['**/*.ttf', '**/*.otf', '**/*.woff', '**/*.woff2']
+  assetsInclude: ['**/*.ttf', '**/*.otf', '**/*.woff', '**/*.woff2'],
+  define: {
+    global: 'globalThis',
+  },
+  resolve: {
+    alias: {
+      buffer: 'buffer',
+      process: 'process/browser',
+      util: 'util',
+    },
+  },
+  optimizeDeps: {
+    include: ['buffer', 'process'],
+  },
 })
