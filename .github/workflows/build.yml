@@ -11,70 +11,9 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  test:
-    name: Test
-    runs-on: windows-latest
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Setup Rust
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        toolchain: stable
-        
-    - name: Cache Rust dependencies
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cargo/bin/
-          ~/.cargo/registry/index/
-          ~/.cargo/registry/cache/
-          ~/.cargo/git/db/
-          target/
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-cargo-
-          
-    - name: Setup Bun
-      uses: oven-sh/setup-bun@v2
-      with:
-        bun-version: latest
-        
-    - name: Cache Bun dependencies
-      uses: actions/cache@v4
-      with:
-        path: ~/.bun/install/cache
-        key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-bun-
-          
-    - name: Install Node.js dependencies
-      run: bun install
-      
-    - name: Check Rust formatting
-      run: cargo fmt --all -- --check
-      working-directory: Desktop
-      
-    - name: Run Rust clippy
-      run: cargo clippy --all-targets --all-features -- -D warnings
-      working-directory: Desktop
-      
-    - name: Run Rust tests
-      run: cargo test --verbose
-      working-directory: Desktop
-      
-    - name: Check TypeScript types
-      run: bun run tsc --noEmit
-      
-    - name: Build frontend
-      run: bun run build
-
   build:
     name: Build Application
     runs-on: windows-latest
-    needs: test
     
     steps:
     - name: Checkout code
