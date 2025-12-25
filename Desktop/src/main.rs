@@ -5,7 +5,7 @@ use wry::WebViewBuilderExtWindows;
 use winit::{
     event::WindowEvent,
     event_loop::{ActiveEventLoop, EventLoop},
-    window::{Window, WindowId},
+    window::{Window, WindowId, Icon},
     application::ApplicationHandler,
     dpi::LogicalSize,
 };
@@ -21,6 +21,48 @@ mod auth;
 
 use core::SharedAppState;
 use ipc::handle_ipc_message;
+
+// Include the icon at compile time
+const ICON_BYTES: &[u8] = include_bytes!("../../Library/Shared/Icons/icon.ico");
+
+fn load_window_icon() -> Option<Icon> {
+    // Parse ICO file and extract the best icon
+    match ico::IconDir::read(std::io::Cursor::new(ICON_BYTES)) {
+        Ok(icon_dir) => {
+            // Find the best icon (largest size, highest bit depth)
+            if let Some(entry) = icon_dir.entries().iter()
+                .max_by_key(|entry| (entry.width() as u32, entry.height() as u32, entry.bits_per_pixel())) {
+                
+                match entry.decode() {
+                    Ok(image) => {
+                        let rgba_data = image.rgba_data().to_vec();
+                        let width = image.width();
+                        let height = image.height();
+                        
+                        match Icon::from_rgba(rgba_data, width, height) {
+                            Ok(icon) => {
+                                println!("✅ Window icon loaded successfully ({}x{})", width, height);
+                                return Some(icon);
+                            }
+                            Err(e) => {
+                                println!("⚠️ Failed to create icon from RGBA data: {}", e);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        println!("⚠️ Failed to decode icon entry: {}", e);
+                    }
+                }
+            } else {
+                println!("⚠️ No icon entries found in ICO file");
+            }
+        }
+        Err(e) => {
+            println!("⚠️ Failed to parse ICO file: {}", e);
+        }
+    }
+    None
+}
 
 #[cfg(debug_assertions)]
 const DEV_SERVER_URL: &str = "http://localhost:5173";
@@ -206,10 +248,15 @@ impl ApplicationHandler for App {
             println!("Starting initialization...");
             
             // Create window but keep it hidden until everything is ready
-            let window_attributes = Window::default_attributes()
+            let mut window_attributes = Window::default_attributes()
                 .with_title("Workspace")
                 .with_inner_size(LogicalSize::new(1200, 800))
                 .with_visible(false); // Keep hidden during preload
+            
+            // Set window icon
+            if let Some(icon) = load_window_icon() {
+                window_attributes = window_attributes.with_window_icon(Some(icon));
+            }
             
             let window = Arc::new(event_loop.create_window(window_attributes).unwrap());
             self.window = Some(window.clone());

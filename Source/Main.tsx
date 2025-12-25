@@ -36,6 +36,7 @@ interface AppState {
   isLoadingAllChats: boolean;
   messages: ApiMessageData[];
   isLoadingMessages: boolean;
+  lastSelectedChatId: number | null;
 }
 
 type AppAction =
@@ -49,7 +50,8 @@ type AppAction =
   | { type: 'SET_ALL_CHATS_LOADING'; payload: boolean }
   | { type: 'SET_MESSAGES'; payload: ApiMessageData[] }
   | { type: 'SET_MESSAGES_LOADING'; payload: boolean }
-  | { type: 'ADD_MESSAGE'; payload: ApiMessageData };
+  | { type: 'ADD_MESSAGE'; payload: ApiMessageData }
+  | { type: 'SET_LAST_SELECTED_CHAT'; payload: number | null };
 
 const initialState: AppState = {
   isLoggedIn: false,
@@ -60,6 +62,7 @@ const initialState: AppState = {
   isLoadingAllChats: false,
   messages: [],
   isLoadingMessages: false,
+  lastSelectedChatId: null,
 };
 
 function appReducer(state: AppState, action: AppAction): AppState {
@@ -67,11 +70,17 @@ function appReducer(state: AppState, action: AppAction): AppState {
     case 'LOGIN_SUCCESS':
       return { ...state, isLoggedIn: true };
     case 'LOGOUT':
-      return { ...state, isLoggedIn: false, selectedChat: null, messages: [] };
+      return { ...state, isLoggedIn: false, selectedChat: null, messages: [], lastSelectedChatId: null };
     case 'SET_CHATS':
       return { ...state, chats: action.payload, selectedChat: state.selectedChat ? action.payload.find(c => c.id === state.selectedChat!.id) || null : null };
     case 'SELECT_CHAT':
-      return { ...state, selectedChat: action.payload, showAllChats: false, messages: [], isLoadingMessages: action.payload !== null };
+      // Save selected chat ID to localStorage
+      if (action.payload) {
+        localStorage.setItem('lastSelectedChatId', action.payload.id.toString());
+      } else {
+        localStorage.removeItem('lastSelectedChatId');
+      }
+      return { ...state, selectedChat: action.payload, showAllChats: false, messages: [], isLoadingMessages: action.payload !== null, lastSelectedChatId: action.payload?.id || null };
     case 'SHOW_ALL_CHATS':
       return { ...state, showAllChats: true, isLoadingAllChats: true };
     case 'HIDE_ALL_CHATS':
@@ -86,6 +95,8 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, isLoadingMessages: action.payload };
     case 'ADD_MESSAGE':
       return { ...state, messages: [...state.messages, action.payload] };
+    case 'SET_LAST_SELECTED_CHAT':
+      return { ...state, lastSelectedChatId: action.payload };
     default:
       return state;
   }
@@ -93,7 +104,63 @@ function appReducer(state: AppState, action: AppAction): AppState {
 
 export default function Main() {
   const [state, dispatch] = useReducer(appReducer, initialState);
-  const { isLoggedIn, isLoading, chats, selectedChat, showAllChats, isLoadingAllChats, messages, isLoadingMessages } = state;
+  const { isLoggedIn, isLoading, chats, selectedChat, showAllChats, isLoadingAllChats, messages, isLoadingMessages, lastSelectedChatId } = state;
+
+  // Load last selected chat ID from localStorage on component mount
+  useEffect(() => {
+    const savedChatId = localStorage.getItem('lastSelectedChatId');
+    if (savedChatId) {
+      dispatch({ type: 'SET_LAST_SELECTED_CHAT', payload: parseInt(savedChatId, 10) });
+    }
+  }, []);
+
+  // Function to load messages for a selected chat
+  const loadMessagesForChat = async (chat: Thread) => {
+    try {
+      const identifier = messagesApiService.getMessageIdentifier(chat);
+      console.log('📋 Loading messages for chat:', chat.channelName, 'with identifier:', identifier);
+      
+      if (identifier) {
+        const response = await messagesApiService.getMessages(identifier, { limit: 100 });
+        dispatch({ type: 'SET_MESSAGES', payload: response.messages });
+        console.log('✅ Messages loaded:', response.messages.length, 'messages');
+      } else {
+        console.warn('⚠️ No valid identifier found for chat:', chat);
+        dispatch({ type: 'SET_MESSAGES', payload: [] });
+      }
+    } catch (error) {
+      console.error("❌ Failed to fetch messages:", error);
+      dispatch({ type: 'SET_MESSAGES_LOADING', payload: false });
+    }
+  };
+
+  // Auto-select chat when chats are loaded
+  useEffect(() => {
+    if (chats.length > 0 && !selectedChat) {
+      let chatToSelect: Thread | null = null;
+
+      // Try to restore last selected chat
+      if (lastSelectedChatId) {
+        chatToSelect = chats.find(chat => chat.id === lastSelectedChatId) || null;
+        console.log('Attempting to restore last selected chat:', lastSelectedChatId, chatToSelect ? 'found' : 'not found');
+      }
+
+      // If no saved chat or saved chat not found, select the first chat (most recent)
+      if (!chatToSelect && chats.length > 0) {
+        // Sort by updatedAt to get the most recent chat first
+        const sortedChats = [...chats].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+        chatToSelect = sortedChats[0];
+        console.log('Selecting first/most recent chat:', chatToSelect.channelName);
+      }
+
+      if (chatToSelect) {
+        console.log('🚀 Auto-selecting chat and loading messages:', chatToSelect.channelName);
+        dispatch({ type: 'SELECT_CHAT', payload: chatToSelect });
+        // Load messages for the auto-selected chat
+        loadMessagesForChat(chatToSelect);
+      }
+    }
+  }, [chats, selectedChat, lastSelectedChatId]);
 
   // Check authentication and fetch initial data
   useEffect(() => {
@@ -148,11 +215,7 @@ export default function Main() {
           const response = await threadsApiService.getThreads({ limit: 50 }); // Fetch initial chats
           console.log('Threads response:', response);
           dispatch({ type: 'SET_CHATS', payload: response.threads });
-          if (response.threads.length > 0) {
-            // Select the most recently updated chat by default
-            const latestChat = response.threads.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())[0];
-            dispatch({ type: 'SELECT_CHAT', payload: latestChat });
-          }
+          // Chat selection is now handled by the useEffect above
         } catch (error) {
           console.error("Failed to fetch data:", error);
           // If we get 401, the token might be invalid
@@ -194,10 +257,7 @@ export default function Main() {
       const response = await threadsApiService.getThreads({ limit: 50 });
       console.log('Threads response after login:', response);
       dispatch({ type: 'SET_CHATS', payload: response.threads });
-      if (response.threads.length > 0) {
-        const latestChat = response.threads.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())[0];
-        dispatch({ type: 'SELECT_CHAT', payload: latestChat });
-      }
+      // Chat selection is now handled by the useEffect above
     } catch (error) {
       console.error("Failed to fetch threads after login:", error);
     }
@@ -220,22 +280,8 @@ export default function Main() {
     
     dispatch({ type: 'SELECT_CHAT', payload: chat });
     
-    // Load messages for the selected chat using UUID or channelId mapping
-    try {
-      const identifier = messagesApiService.getMessageIdentifier(chat);
-      console.log('📋 Using identifier for messages:', identifier);
-      
-      if (identifier) {
-        const response = await messagesApiService.getMessages(identifier, { limit: 100 });
-        dispatch({ type: 'SET_MESSAGES', payload: response.messages });
-      } else {
-        console.warn('⚠️ No valid identifier found for chat:', chat);
-        dispatch({ type: 'SET_MESSAGES', payload: [] });
-      }
-    } catch (error) {
-      console.error("❌ Failed to fetch messages:", error);
-      dispatch({ type: 'SET_MESSAGES_LOADING', payload: false });
-    }
+    // Load messages for the selected chat
+    await loadMessagesForChat(chat);
   };
 
   const handleShowAllChats = async () => {
