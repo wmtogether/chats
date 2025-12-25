@@ -559,9 +559,38 @@ impl App {
 
         let mut webview_builder = WebViewBuilder::new();
 
-        // Add WebView2 arguments to disable CORS and web security
+        // Configure WebView2 runtime path using environment variables
         #[cfg(windows)]
         {
+            // In release builds, use the bundled WebView2 runtime
+            #[cfg(not(debug_assertions))]
+            {
+                let app_dir = std::env::current_exe()
+                    .ok()
+                    .and_then(|exe| exe.parent().map(|p| p.to_path_buf()))
+                    .unwrap_or_else(|| std::env::current_dir().unwrap());
+                
+                // Check if msedgewebview2.exe exists in the app directory (bundled runtime)
+                let webview2_exe = app_dir.join("msedgewebview2.exe");
+                
+                if webview2_exe.exists() {
+                    println!("Using bundled WebView2 runtime at: {}", app_dir.display());
+                    // Set environment variable to use the bundled WebView2 runtime
+                    std::env::set_var("WEBVIEW2_BROWSER_EXECUTABLE_FOLDER", &app_dir);
+                } else {
+                    println!("Bundled WebView2 runtime not found, falling back to system WebView2");
+                }
+            }
+            
+            // In debug builds, use global WebView2 for development
+            #[cfg(debug_assertions)]
+            {
+                println!("Development mode: Using global WebView2 runtime");
+                // Remove any custom WebView2 path for development
+                std::env::remove_var("WEBVIEW2_BROWSER_EXECUTABLE_FOLDER");
+            }
+            
+            // Add WebView2 arguments to disable CORS and web security
             webview_builder = webview_builder
                 .with_additional_browser_args("--disable-web-security --disable-features=VizDisplayCompositor --allow-running-insecure-content --disable-site-isolation-trials");
         }

@@ -25,63 +25,63 @@ const REQUEST_TYPES: {
 }[] = [
         {
             id: 'design',
-            label: 'Design Request',
+            label: 'งานออกแบบใหม่', // Design Request
             description: 'Create new design or artwork',
             icon: Palette,
             color: 'bg-primary/12 text-primary border-primary/20 hover:bg-primary/16',
         },
         {
             id: 'dimension',
-            label: 'Dimension Check',
+            label: 'เช็คระยะ/ขนาด', // Dimension Check
             description: 'Verify measurements and specifications',
             icon: Ruler,
             color: 'bg-secondary/12 text-secondary border-secondary/20 hover:bg-secondary/16',
         },
         {
             id: 'adjustdesign',
-            label: 'Design Adjustment',
+            label: 'แก้ไขแบบ', // Design Adjustment
             description: 'Modify existing design',
             icon: Edit,
             color: 'bg-tertiary/12 text-tertiary border-tertiary/20 hover:bg-tertiary/16',
         },
         {
             id: 'checkfile',
-            label: 'File Review',
+            label: 'เช็คไฟล์', // File Review
             description: 'Review and validate files',
             icon: FileCheck,
             color: 'bg-error/12 text-error border-error/20 hover:bg-error/16',
         },
         {
             id: 'proof',
-            label: 'Proof Review',
+            label: 'ตรวจสอบปรู๊ฟ', // Proof Review
             description: 'Review proof before production',
             icon: Eye,
             color: 'bg-outline/12 text-on-surface border-outline/20 hover:bg-outline/16',
         },
         {
             id: 'sample-i',
-            label: 'Sample Type I',
+            label: 'ตัวอย่าง (Internal)', // Sample Type I
             description: 'Internal sample request',
             icon: Package,
             color: 'bg-surface-variant/12 text-on-surface-variant border-surface-variant/20 hover:bg-surface-variant/16',
         },
         {
             id: 'sample-t',
-            label: 'Sample Type T',
+            label: 'ตัวอย่าง (Testing)', // Sample Type T
             description: 'Test sample request',
             icon: Package,
             color: 'bg-inverse-surface/12 text-inverse-on-surface border-inverse-surface/20 hover:bg-inverse-surface/16',
         },
         {
             id: 'general',
-            label: 'General Request',
+            label: 'เรื่องทั่วไป', // General Request
             description: 'General discussion or inquiry',
             icon: Briefcase,
             color: 'bg-on-surface/12 text-on-surface border-on-surface/20 hover:bg-on-surface/16',
         },
         {
             id: 'consultation',
-            label: 'Consultation',
+            label: 'ขอคำปรึกษา', // Consultation
             description: 'Expert advice and consultation',
             icon: Settings,
             color: 'bg-primary-container/12 text-on-primary-container border-primary-container/20 hover:bg-primary-container/16',
@@ -166,8 +166,8 @@ export default function NewChatDialog({ open, onOpenChange, onCreateChat }: NewC
                             <MessageSquarePlus size={24} className="text-on-primary-container" />
                         </div>
                         <div>
-                            <h2 className="headline-small text-on-surface">Create New Chat</h2>
-                            <p className="body-medium text-on-surface-variant">Start a new conversation with your team</p>
+                            <h2 className="headline-small text-on-surface">สร้างแชทใหม่</h2>
+                            <p className="body-medium text-on-surface-variant">เริ่มการสนทนาใหม่กับทีมของคุณ</p>
                         </div>
                     </div>
                 </div>
@@ -180,14 +180,14 @@ export default function NewChatDialog({ open, onOpenChange, onCreateChat }: NewC
                             {/* Chat Name */}
                             <div className="space-y-2">
                                 <label className="body-medium text-on-surface font-medium">
-                                    Chat Name *
+                                    ชื่อแชท *
                                 </label>
                                 <div className="relative pt-2">
                                     <input
                                         type="text"
                                         value={chatName}
                                         onChange={(e) => setChatName(e.target.value)}
-                                        placeholder="Enter chat name..."
+                                        placeholder="ระบุชื่อแชท..."
                                         className="w-full px-3 py-3 bg-surface-variant/50 border border-outline rounded-xl text-on-surface placeholder:text-on-surface-variant focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all body-medium"
                                         disabled={isCreating}
                                         autoFocus
@@ -198,7 +198,7 @@ export default function NewChatDialog({ open, onOpenChange, onCreateChat }: NewC
                             {/* Customer Information */}
                             <div className="space-y-3">
                                 <label className="body-medium text-on-surface font-medium">
-                                    Customer Information (Optional)
+                                    ข้อมูลลูกค้า (ไม่บังคับ)
                                 </label>
 
                                 <div className="space-y-2 pt-2">
@@ -206,7 +206,7 @@ export default function NewChatDialog({ open, onOpenChange, onCreateChat }: NewC
                                         type="text"
                                         value={customerId}
                                         onChange={(e) => setCustomerId(e.target.value)}
-                                        placeholder="Customer ID"
+                                        placeholder="รหัสลูกค้า (Customer ID)"
                                         className="w-full px-3 py-2.5 bg-surface-variant/50 border border-outline-variant rounded-lg text-on-surface placeholder:text-on-surface-variant focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all body-small"
                                         disabled={isCreating}
                                     />
@@ -214,7 +214,7 @@ export default function NewChatDialog({ open, onOpenChange, onCreateChat }: NewC
                                         type="text"
                                         value={customerName}
                                         onChange={(e) => setCustomerName(e.target.value)}
-                                        placeholder="Customer Name"
+                                        placeholder="ชื่อลูกค้า (Customer Name)"
                                         className="w-full px-3 py-2.5 bg-surface-variant/50 border border-outline-variant rounded-lg text-on-surface placeholder:text-on-surface-variant focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all body-small"
                                         disabled={isCreating}
                                     />
@@ -224,13 +224,13 @@ export default function NewChatDialog({ open, onOpenChange, onCreateChat }: NewC
                             {/* Description */}
                             <div className="space-y-2">
                                 <span className="body-medium text-on-surface font-medium">
-                                    Description (Optional)
+                                    รายละเอียด (ไม่บังคับ)
                                 </span>
                                 <div className='pt-2'>
                                     <textarea
                                         value={description}
                                         onChange={(e) => setDescription(e.target.value)}
-                                        placeholder="Add any additional details or requirements..."
+                                        placeholder="ระบุรายละเอียดหรือข้อกำหนดเพิ่มเติม..."
                                         rows={3}
                                         className="w-full px-3 py-3 bg-surface-variant/50 border border-outline-variant rounded-xl text-on-surface placeholder:text-on-surface-variant focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all resize-none body-small"
                                         disabled={isCreating}
@@ -242,7 +242,7 @@ export default function NewChatDialog({ open, onOpenChange, onCreateChat }: NewC
                         {/* Right Column - Request Types */}
                         <div className="lg:col-span-3 space-y-3">
                             <span className="body-medium text-on-surface font-medium">
-                                Request Type
+                                ประเภทคำขอ
                             </span>
                             <div className="grid grid-cols-3 gap-3 pt-2">
                                 {REQUEST_TYPES.map((type) => {
@@ -291,7 +291,7 @@ export default function NewChatDialog({ open, onOpenChange, onCreateChat }: NewC
                             disabled={isCreating}
                             className="px-6 py-2.5 bg-surface border border-outline rounded-xl text-on-surface hover:bg-surface-variant/50 transition-all disabled:opacity-50 label-medium font-medium min-w-[100px]"
                         >
-                            Cancel
+                            ยกเลิก
                         </button>
                         <button
                             type="button"
@@ -302,10 +302,10 @@ export default function NewChatDialog({ open, onOpenChange, onCreateChat }: NewC
                             {isCreating ? (
                                 <div className="flex items-center justify-center gap-2">
                                     <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                                    Creating...
+                                    กำลังสร้าง...
                                 </div>
                             ) : (
-                                'Create Chat'
+                                'สร้างแชท'
                             )}
                         </button>
                     </div>

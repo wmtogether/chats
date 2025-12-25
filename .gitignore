@@ -1,6 +1,7 @@
 /target
 /Distribution
 /erp
+/Runtime
 # dependencies (bun install)
 node_modules
 
