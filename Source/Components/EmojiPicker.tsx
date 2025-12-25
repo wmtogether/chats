@@ -55,6 +55,8 @@ export default function CustomEmojiPicker({ onEmojiSelect, onClose, isOpen }: Em
   const [search, setSearch] = useState('');
   const [activeCategory, setActiveCategory] = useState('smileys');
 
+
+
   // --- Filtering Logic ---
   const filteredData = useMemo(() => {
     if (!search) return EMOJI_DATA;
@@ -81,23 +83,40 @@ export default function CustomEmojiPicker({ onEmojiSelect, onClose, isOpen }: Em
 
     const updatePosition = () => {
       if (pickerRef.current && isOpen) {
-        const rect = pickerRef.current.getBoundingClientRect();
-        const viewportWidth = window.innerWidth;
-        const viewportHeight = window.innerHeight;
-        
-        // Get the parent element (should be the emoji button container)
         const parent = pickerRef.current.parentElement;
         const parentRect = parent?.getBoundingClientRect();
         
-        const wouldOverflowRight = rect.right > viewportWidth - 20;
-        const wouldOverflowBottom = rect.bottom > viewportHeight - 20;
-        const wouldOverflowTop = parentRect ? parentRect.top - rect.height < 20 : false;
+        if (!parentRect) return;
         
-        if (wouldOverflowRight && wouldOverflowBottom) setPosition('top-left');
-        else if (wouldOverflowRight && wouldOverflowTop) setPosition('bottom-left');
-        else if (wouldOverflowRight) setPosition('bottom-left');
-        else if (wouldOverflowBottom) setPosition('top-right');
-        else setPosition('bottom-right');
+        const viewportWidth = window.innerWidth;
+        const viewportHeight = window.innerHeight;
+        
+        // Picker dimensions
+        const pickerWidth = 320;
+        const pickerHeight = 400;
+        
+        // Check if there's enough space above
+        const spaceAbove = parentRect.top;
+        const spaceBelow = viewportHeight - parentRect.bottom;
+        
+        // Check if there's enough space to the right
+        const spaceRight = viewportWidth - parentRect.left;
+        
+        // Prefer showing above the button (bottom-full)
+        const showAbove = spaceAbove >= pickerHeight + 10;
+        
+        // Prefer aligning to the right edge of the button
+        const alignRight = spaceRight < pickerWidth;
+        
+        if (showAbove && alignRight) {
+          setPosition('bottom-left'); // Above button, aligned to right
+        } else if (showAbove) {
+          setPosition('bottom-right'); // Above button, aligned to left
+        } else if (alignRight) {
+          setPosition('top-left'); // Below button, aligned to right
+        } else {
+          setPosition('top-right'); // Below button, aligned to left
+        }
       }
     };
 
@@ -125,22 +144,28 @@ export default function CustomEmojiPicker({ onEmojiSelect, onClose, isOpen }: Em
     }
   };
 
-  if (!isOpen) return null;
+  if (!isOpen) {
+
+    return null;
+  }
+
+
 
   const getPositionClasses = () => {
     switch (position) {
-      case 'bottom-left': return 'bottom-full right-0 mb-2';
-      case 'top-right': return 'top-full left-0 mt-2';
-      case 'top-left': return 'top-full right-0 mt-2';
-      default: return 'bottom-full right-0 mb-2'; // Changed from left-0 to right-0
+      case 'bottom-left': return 'bottom-full right-0 mb-1';
+      case 'top-right': return 'top-full left-0 mt-1';
+      case 'top-left': return 'top-full right-0 mt-1';
+      case 'bottom-right': return 'bottom-full left-0 mb-1';
+      default: return 'bottom-full right-0 mb-1'; // Default to bottom-left for chat input
     }
   };
 
   return (
     <div 
       ref={pickerRef}
-      className={`absolute ${getPositionClasses()} z-50 flex flex-col w-[350px] h-[450px] 
-      bg-surface border border-outline-variant rounded-[24px] shadow-elevation-3 overflow-hidden`}
+      className={`absolute ${getPositionClasses()} z-[9999] flex flex-col w-[320px] h-[400px] 
+      bg-surface border border-outline-variant rounded-[20px] shadow-elevation-3 overflow-hidden`}
       style={{ animation: 'fadeIn 0.2s ease-out' }}
     >
       {/* --- Header / Search --- */}
@@ -189,15 +214,17 @@ export default function CustomEmojiPicker({ onEmojiSelect, onClose, isOpen }: Em
             <h3 className="text-xs font-semibold text-on-surface-variant uppercase tracking-wider mb-2 ml-2 sticky top-0 bg-surface/90 backdrop-blur-sm p-1 z-10">
               {category.name}
             </h3>
-            <div className="grid grid-cols-7 gap-1">
+            <div className="grid grid-cols-6 gap-1">
               {category.emojis.map((emoji, index) => (
                 <button
                   key={`${category.id}-${index}`}
-                  onClick={() => {
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
                     onEmojiSelect(emoji);
                     onClose();
                   }}
-                  className="aspect-square text-xl flex items-center justify-center rounded-full 
+                  className="aspect-square text-lg flex items-center justify-center rounded-full 
                   hover:bg-surface-variant transition-colors cursor-pointer select-none"
                 >
                   {emoji}

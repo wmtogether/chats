@@ -50,6 +50,124 @@ pub fn handle_ipc_message(request: http::Request<String>, state: SharedAppState)
                     }
                     return;
                 }
+                "show_dialog" => {
+                    // Handle generic dialog requests
+                    if let Some(dialog_type) = parsed.get("type").and_then(|v| v.as_str()) {
+                        let title = parsed.get("title").and_then(|v| v.as_str()).unwrap_or("Dialog");
+                        let message = parsed.get("message").and_then(|v| v.as_str()).unwrap_or("");
+                        let request_id = parsed.get("requestId").and_then(|v| v.as_str()).unwrap_or("unknown");
+                        
+                        println!("🔔 Showing dialog: type={}, title={}, requestId={}", dialog_type, title, request_id);
+                        println!("🔔 Full IPC payload: {}", body);
+                        
+                        match dialog_type {
+                            "confirm" => {
+                                let ok_text = parsed.get("okText").and_then(|v| v.as_str()).unwrap_or("OK");
+                                let cancel_text = parsed.get("cancelText").and_then(|v| v.as_str()).unwrap_or("Cancel");
+                                
+                                match dialog::show_confirmation_dialog_sync(title, message, ok_text, cancel_text) {
+                                    Ok(result) => {
+                                        println!("✅ Confirmation dialog result: {}", result);
+                                        // Store result in app state with request ID
+                                        {
+                                            let mut state = state.lock().unwrap();
+                                            state.message = format!("dialog_result:{}:{}", request_id, result);
+                                        }
+                                    }
+                                    Err(e) => {
+                                        println!("❌ Dialog error: {}", e);
+                                        {
+                                            let mut state = state.lock().unwrap();
+                                            state.message = format!("dialog_result:{}:false", request_id);
+                                        }
+                                    }
+                                }
+                            }
+                            "info" => {
+                                match dialog::show_info_dialog(title, message) {
+                                    Ok(_) => {
+                                        println!("✅ Info dialog shown");
+                                        {
+                                            let mut state = state.lock().unwrap();
+                                            state.message = format!("dialog_result:{}:ok", request_id);
+                                        }
+                                    }
+                                    Err(e) => {
+                                        println!("❌ Dialog error: {}", e);
+                                    }
+                                }
+                            }
+                            "error" => {
+                                match dialog::show_error_dialog(title, message) {
+                                    Ok(_) => {
+                                        println!("✅ Error dialog shown");
+                                        {
+                                            let mut state = state.lock().unwrap();
+                                            state.message = format!("dialog_result:{}:ok", request_id);
+                                        }
+                                    }
+                                    Err(e) => {
+                                        println!("❌ Dialog error: {}", e);
+                                    }
+                                }
+                            }
+                            "warning" => {
+                                match dialog::show_warning_dialog(title, message) {
+                                    Ok(_) => {
+                                        println!("✅ Warning dialog shown");
+                                        {
+                                            let mut state = state.lock().unwrap();
+                                            state.message = format!("dialog_result:{}:ok", request_id);
+                                        }
+                                    }
+                                    Err(e) => {
+                                        println!("❌ Dialog error: {}", e);
+                                    }
+                                }
+                            }
+                            "ok_cancel" => {
+                                match dialog::show_ok_cancel_dialog(title, message) {
+                                    Ok(result) => {
+                                        println!("✅ OK/Cancel dialog result: {}", result);
+                                        {
+                                            let mut state = state.lock().unwrap();
+                                            state.message = format!("dialog_result:{}:{}", request_id, result);
+                                        }
+                                    }
+                                    Err(e) => {
+                                        println!("❌ Dialog error: {}", e);
+                                        {
+                                            let mut state = state.lock().unwrap();
+                                            state.message = format!("dialog_result:{}:false", request_id);
+                                        }
+                                    }
+                                }
+                            }
+                            "yes_no_cancel" => {
+                                match dialog::show_yes_no_cancel_dialog(title, message) {
+                                    Ok(result) => {
+                                        println!("✅ Yes/No/Cancel dialog result: {}", result);
+                                        {
+                                            let mut state = state.lock().unwrap();
+                                            state.message = format!("dialog_result:{}:{}", request_id, result);
+                                        }
+                                    }
+                                    Err(e) => {
+                                        println!("❌ Dialog error: {}", e);
+                                        {
+                                            let mut state = state.lock().unwrap();
+                                            state.message = format!("dialog_result:{}:2", request_id); // Cancel
+                                        }
+                                    }
+                                }
+                            }
+                            _ => {
+                                println!("❌ Unknown dialog type: {}", dialog_type);
+                            }
+                        }
+                    }
+                    return;
+                }
                 _ => {
                     println!("Unknown structured IPC action: {}", action);
                 }

@@ -12,21 +12,14 @@ import { debugAuthState } from './Library/Authentication/debug';
 import { threadsApiService } from './Library/Shared/threadsApi';
 import { messagesApiService, type MessageData as ApiMessageData } from './Library/Shared/messagesApi';
 import { getProfileImageUrl } from './Library/Shared/profileUtils';
-import { connectRedis, disconnectRedis, isRedisConnected, pingRedis } from './Library/redis/client';
-import { subscribe, unsubscribe, chatEvents, threadEvents, notificationEvents, userEvents, type PubSubMessage } from './Library/redis/pubsub';
+import { useRedis } from './Library/hooks/useRedis';
+import type { PubSubMessage } from './Library/redis/direct-pubsub';
 import type { Thread } from './Library/Shared/threadsApi'
 
 // The 'Chat' type is now an alias for the 'Thread' type from the API service.
 export type { Thread as Chat };
 
 // Types
-interface User {
-  id: string
-  name: string
-  avatarUrl?: string
-  initial?: string
-  color?: string
-}
 
 // State management with useReducer
 interface AppState {
@@ -39,7 +32,7 @@ interface AppState {
   messages: ApiMessageData[];
   isLoadingMessages: boolean;
   lastSelectedChatId: number | null;
-  redisConnected: boolean;
+  replyingTo: { messageId: string; userName: string; content: string } | null;
 }
 
 type AppAction =
@@ -54,8 +47,10 @@ type AppAction =
   | { type: 'SET_MESSAGES'; payload: ApiMessageData[] }
   | { type: 'SET_MESSAGES_LOADING'; payload: boolean }
   | { type: 'ADD_MESSAGE'; payload: ApiMessageData }
+  | { type: 'UPDATE_MESSAGE'; payload: { messageId: string; updates: Partial<ApiMessageData> } }
+  | { type: 'DELETE_MESSAGE'; payload: string }
   | { type: 'SET_LAST_SELECTED_CHAT'; payload: number | null }
-  | { type: 'SET_REDIS_CONNECTED'; payload: boolean };
+  | { type: 'SET_REPLYING_TO'; payload: { messageId: string; userName: string; content: string } | null };
 
 const initialState: AppState = {
   isLoggedIn: false,
@@ -67,7 +62,7 @@ const initialState: AppState = {
   messages: [],
   isLoadingMessages: false,
   lastSelectedChatId: null,
-  redisConnected: false,
+  replyingTo: null,
 };
 
 function appReducer(state: AppState, action: AppAction): AppState {
@@ -75,7 +70,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
     case 'LOGIN_SUCCESS':
       return { ...state, isLoggedIn: true };
     case 'LOGOUT':
-      return { ...state, isLoggedIn: false, selectedChat: null, messages: [], lastSelectedChatId: null };
+      return { ...state, isLoggedIn: false, selectedChat: null, messages: [], lastSelectedChatId: null, replyingTo: null };
     case 'SET_CHATS':
       return { ...state, chats: action.payload, selectedChat: state.selectedChat ? action.payload.find(c => c.id === state.selectedChat!.id) || null : null };
     case 'SELECT_CHAT':
@@ -85,7 +80,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
       } else {
         localStorage.removeItem('lastSelectedChatId');
       }
-      return { ...state, selectedChat: action.payload, showAllChats: false, messages: [], isLoadingMessages: action.payload !== null, lastSelectedChatId: action.payload?.id || null };
+      return { ...state, selectedChat: action.payload, showAllChats: false, messages: [], isLoadingMessages: action.payload !== null, lastSelectedChatId: action.payload?.id || null, replyingTo: null };
     case 'SHOW_ALL_CHATS':
       return { ...state, showAllChats: true, isLoadingAllChats: true };
     case 'HIDE_ALL_CHATS':
@@ -100,10 +95,24 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, isLoadingMessages: action.payload };
     case 'ADD_MESSAGE':
       return { ...state, messages: [...state.messages, action.payload] };
+    case 'UPDATE_MESSAGE':
+      return { 
+        ...state, 
+        messages: state.messages.map(msg =>
+          msg.messageId === action.payload.messageId
+            ? { ...msg, ...action.payload.updates }
+            : msg
+        )
+      };
+    case 'DELETE_MESSAGE':
+      return { 
+        ...state, 
+        messages: state.messages.filter(msg => msg.messageId !== action.payload)
+      };
     case 'SET_LAST_SELECTED_CHAT':
       return { ...state, lastSelectedChatId: action.payload };
-    case 'SET_REDIS_CONNECTED':
-      return { ...state, redisConnected: action.payload };
+    case 'SET_REPLYING_TO':
+      return { ...state, replyingTo: action.payload };
     default:
       return state;
   }
@@ -111,47 +120,42 @@ function appReducer(state: AppState, action: AppAction): AppState {
 
 export default function Main() {
   const [state, dispatch] = useReducer(appReducer, initialState);
-  const { isLoggedIn, isLoading, chats, selectedChat, showAllChats, isLoadingAllChats, messages, isLoadingMessages, lastSelectedChatId, redisConnected } = state;
+  const { isLoggedIn, isLoading, chats, selectedChat, showAllChats, isLoadingAllChats, messages, isLoadingMessages, lastSelectedChatId, replyingTo } = state;
+  
+  // Use global Redis hook
+  const redis = useRedis();
+  const redisConnected = redis.state.connected;
 
-  // Initialize Redis connection
+  // Set up real-time subscriptions when Redis connects
   useEffect(() => {
-    const initializeRedis = async () => {
-      try {
-        console.log('🔌 Connecting to Redis...');
-        await connectRedis();
-        
-        // Test the connection
-        const pingResult = await pingRedis();
-        if (pingResult) {
-          console.log('✅ Redis connected and responding');
-          dispatch({ type: 'SET_REDIS_CONNECTED', payload: true });
-          
-          // Set up real-time subscriptions
-          await setupRealtimeSubscriptions();
-        } else {
-          console.warn('⚠️ Redis connected but not responding to ping');
-        }
-      } catch (error) {
-        console.error('❌ Failed to connect to Redis:', error);
-        dispatch({ type: 'SET_REDIS_CONNECTED', payload: false });
+    if (redis.state.connected) {
+      console.log('✅ Redis connected, setting up subscriptions...');
+      setupRealtimeSubscriptions();
+    }
+  }, [redis.state.connected]);
+
+  // Subscribe to specific channels for the selected chat
+  const subscribeToChat = async (chat: Thread) => {
+    if (!redisConnected) return;
+    
+    try {
+      // Direct Redis doesn't need channel subscription like Socket.IO
+      // The subscription is handled by the direct Redis client
+      const channelId = chat.channelId || chat.channelName;
+      if (channelId) {
+        console.log('🔔 Direct Redis ready for chat channel:', channelId);
       }
-    };
+    } catch (error) {
+      console.error('❌ Failed to prepare direct Redis for chat channels:', error);
+    }
+  };
 
-    initializeRedis();
-
-    // Cleanup on unmount
-    return () => {
-      console.log('🔌 Disconnecting from Redis...');
-      disconnectRedis().catch(console.error);
-    };
-  }, []);
-
-  // Set up real-time subscriptions
+  // Set up real-time subscriptions for the selected chat
   const setupRealtimeSubscriptions = async () => {
     try {
       // Subscribe to chat messages
-      await subscribe('chat:message', (message: PubSubMessage) => {
-        console.log('📨 Real-time message received:', message);
+      await redis.subscribe('chat:message', (message: PubSubMessage) => {
+        console.log('📨 Real-time message received via Redis hook:', message);
         
         // Check if the message is for the currently selected chat
         if (selectedChat && message.data.channelId === selectedChat.channelId) {
@@ -174,22 +178,73 @@ export default function Main() {
         }
       });
 
+      // Subscribe to message edits
+      await redis.subscribe('chat:edit', (message: PubSubMessage) => {
+        console.log('✏️ Real-time message edit received via Redis hook:', message);
+        
+        // Check if the edit is for the currently selected chat
+        if (selectedChat && message.data.channelId === selectedChat.channelId) {
+          // Update the message in the current chat
+          dispatch({ 
+            type: 'UPDATE_MESSAGE', 
+            payload: { 
+              messageId: message.data.messageId, 
+              updates: { 
+                content: message.data.content,
+                attachments: message.data.attachments || [],
+                editedAt: message.data.editedAt
+              }
+            }
+          });
+        }
+      });
+
+      // Subscribe to message deletions
+      await redis.subscribe('chat:delete', (message: PubSubMessage) => {
+        console.log('🗑️ Real-time message delete received via Redis hook:', message);
+        
+        // Check if the deletion is for the currently selected chat
+        if (selectedChat && message.data.channelId === selectedChat.channelId) {
+          // Remove the message from the current chat
+          dispatch({ type: 'DELETE_MESSAGE', payload: message.data.messageId });
+        }
+      });
+
+      // Subscribe to message reactions
+      await redis.subscribe('chat:reaction', (message: PubSubMessage) => {
+        console.log('😀 Real-time reaction received via Redis hook:', message);
+        
+        // Check if the reaction is for the currently selected chat
+        if (selectedChat && message.data.channelId === selectedChat.channelId) {
+          // Update the message reactions
+          dispatch({ 
+            type: 'UPDATE_MESSAGE', 
+            payload: { 
+              messageId: message.data.messageId, 
+              updates: { 
+                reactions: message.data.reactions
+              }
+            }
+          });
+        }
+      });
+
       // Subscribe to thread updates
-      await subscribe('thread:update', (message: PubSubMessage) => {
-        console.log('🔄 Thread update received:', message);
+      await redis.subscribe('thread:update', (message: PubSubMessage) => {
+        console.log('🔄 Thread update received via Redis hook:', message);
         // Refresh threads list when there are updates
         refreshThreads();
       });
 
       // Subscribe to notifications
-      await subscribe('notification', (message: PubSubMessage) => {
-        console.log('🔔 Notification received:', message);
+      await redis.subscribe('notification', (message: PubSubMessage) => {
+        console.log('🔔 Notification received via Redis hook:', message);
         // Handle notifications (could show toast, update UI, etc.)
       });
 
-      console.log('✅ Real-time subscriptions set up successfully');
+      console.log('✅ Redis hook real-time subscriptions set up successfully');
     } catch (error) {
-      console.error('❌ Failed to set up real-time subscriptions:', error);
+      console.error('❌ Failed to set up Redis hook real-time subscriptions:', error);
     }
   };
 
@@ -253,6 +308,12 @@ export default function Main() {
       if (chatToSelect) {
         console.log('🚀 Auto-selecting chat and loading messages:', chatToSelect.channelName);
         dispatch({ type: 'SELECT_CHAT', payload: chatToSelect });
+        
+        // Subscribe to real-time updates for this chat
+        if (redisConnected) {
+          subscribeToChat(chatToSelect).catch(console.error);
+        }
+        
         // Load messages for the auto-selected chat
         loadMessagesForChat(chatToSelect);
       }
@@ -377,6 +438,11 @@ export default function Main() {
     
     dispatch({ type: 'SELECT_CHAT', payload: chat });
     
+    // Subscribe to real-time updates for this chat
+    if (redisConnected) {
+      await subscribeToChat(chat);
+    }
+    
     // Load messages for the selected chat
     await loadMessagesForChat(chat);
   };
@@ -454,7 +520,44 @@ export default function Main() {
     }
   };
 
-  const handleSendMessage = async (content: string, attachments?: any[]) => {
+  const handleUpdateChat = async (chatId: number, updates: Partial<Thread>) => {
+    console.log('🔄 Updating chat in main:', chatId, updates);
+    
+    // Update the chat in the local state
+    dispatch({
+      type: 'SET_CHATS',
+      payload: chats.map(chat =>
+        chat.id === chatId ? { ...chat, ...updates } : chat
+      )
+    });
+  };
+
+  const handleDeleteChat = async (chatId: number) => {
+    console.log('🗑️ Deleting chat from main:', chatId);
+    
+    // Remove the chat from local state
+    dispatch({
+      type: 'SET_CHATS',
+      payload: chats.filter(chat => chat.id !== chatId)
+    });
+    
+    // If the deleted chat was selected, clear selection
+    if (selectedChat?.id === chatId) {
+      dispatch({ type: 'SELECT_CHAT', payload: null });
+    }
+  };
+
+  const handleRefreshChats = async () => {
+    console.log('🔄 Refreshing chats from real-time update...');
+    try {
+      const response = await threadsApiService.getThreads({ limit: 50 });
+      dispatch({ type: 'SET_CHATS', payload: response.threads });
+    } catch (error) {
+      console.error('❌ Failed to refresh chats:', error);
+    }
+  };
+
+  const handleSendMessage = async (content: string, attachments?: any[], replyTo?: { messageId: string; userName: string; content: string }) => {
     if (!selectedChat) {
       console.warn('⚠️ No chat selected for sending message');
       return;
@@ -463,7 +566,8 @@ export default function Main() {
     console.log('📤 Sending message to chat:', {
       chatId: selectedChat.id,
       channelName: selectedChat.channelName,
-      content: content.substring(0, 50) + (content.length > 50 ? '...' : '')
+      content: content.substring(0, 50) + (content.length > 50 ? '...' : ''),
+      replyTo: replyTo ? `Reply to: ${replyTo.userName}` : 'No reply'
     });
 
     try {
@@ -471,17 +575,27 @@ export default function Main() {
       if (identifier) {
         const response = await messagesApiService.sendMessage(identifier, {
           content,
-          attachments
+          attachments,
+          replyToId: replyTo?.messageId
         });
         
         if (response.success) {
           console.log('✅ Message sent successfully');
           dispatch({ type: 'ADD_MESSAGE', payload: response.message });
           
+          // Clear reply state after sending
+          if (replyTo) {
+            dispatch({ type: 'SET_REPLYING_TO', payload: null });
+          }
+          
           // Publish real-time event if Redis is connected
           if (redisConnected) {
             try {
-              await chatEvents.newMessage(
+              // Get current user ID from auth service
+              const currentUser = authService.getUser();
+              const userId = currentUser?.id?.toString() || 'unknown';
+              
+              await redis.publish.newMessage(
                 selectedChat.channelId || selectedChat.channelName,
                 {
                   id: response.message.messageId,
@@ -492,7 +606,7 @@ export default function Main() {
                   attachments: response.message.attachments || [],
                   reactions: response.message.reactions || []
                 },
-                response.message.userId.toString()
+                userId
               );
               console.log('📡 Real-time message event published');
             } catch (redisError) {
@@ -505,6 +619,190 @@ export default function Main() {
       }
     } catch (error) {
       console.error("❌ Failed to send message:", error);
+    }
+  };
+
+  const handleReply = (messageId: string, userName: string, content: string) => {
+    console.log('💬 Setting reply to:', { messageId, userName, content: content.substring(0, 50) });
+    dispatch({ type: 'SET_REPLYING_TO', payload: { messageId, userName, content } });
+  };
+
+  const handleCancelReply = () => {
+    console.log('❌ Cancelling reply');
+    dispatch({ type: 'SET_REPLYING_TO', payload: null });
+  };
+
+  const handleReaction = async (messageId: string, emoji: string) => {
+    if (!selectedChat) {
+      console.warn('⚠️ No chat selected for adding reaction');
+      return;
+    }
+
+    console.log('😀 Adding reaction:', { messageId, emoji });
+    
+    try {
+      const identifier = messagesApiService.getMessageIdentifier(selectedChat);
+      if (identifier) {
+        const response = await messagesApiService.addReaction(identifier, messageId, emoji);
+        
+        if (response.success) {
+          console.log('✅ Reaction added successfully');
+          
+          // Update the message reactions in local state
+          dispatch({ 
+            type: 'UPDATE_MESSAGE', 
+            payload: { 
+              messageId, 
+              updates: { 
+                reactions: response.reactions
+              }
+            }
+          });
+          
+          // Publish real-time reaction event if Redis is connected
+          if (redisConnected) {
+            try {
+              // Get current user ID from auth service
+              const currentUser = authService.getUser();
+              const userId = currentUser?.id?.toString() || 'unknown';
+              
+              await redis.publish.messageReaction(
+                selectedChat.channelId || selectedChat.channelName,
+                messageId,
+                response.reactions,
+                userId
+              );
+              console.log('📡 Real-time reaction event published');
+            } catch (redisError) {
+              console.warn('⚠️ Failed to publish real-time reaction event:', redisError);
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error("❌ Failed to add reaction:", error);
+    }
+  };
+
+  const handleEditMessage = async (messageId: string, newContent: string, attachments?: string[]) => {
+    if (!selectedChat) {
+      console.warn('⚠️ No chat selected for editing message');
+      return;
+    }
+
+    console.log('✏️ Editing message:', { messageId, newContent: newContent.substring(0, 50) });
+    
+    try {
+      const identifier = messagesApiService.getMessageIdentifier(selectedChat);
+      if (identifier) {
+        const response = await messagesApiService.editMessage(identifier, messageId, {
+          content: newContent,
+          attachments
+        });
+        
+        if (response.success) {
+          console.log('✅ Message edited successfully');
+          
+          // Update the message in the local state
+          dispatch({ 
+            type: 'UPDATE_MESSAGE', 
+            payload: { 
+              messageId, 
+              updates: { 
+                content: newContent, 
+                attachments: attachments || [],
+                editedAt: response.message.editedAt 
+              }
+            }
+          });
+          
+          // Publish real-time edit event if Redis is connected
+          if (redisConnected) {
+            try {
+              // Get current user ID from auth service
+              const currentUser = authService.getUser();
+              const userId = currentUser?.id?.toString() || 'unknown';
+              
+              await redis.publish.messageEdited(
+                selectedChat.channelId || selectedChat.channelName,
+                messageId,
+                newContent,
+                response.message.editedAt || new Date().toISOString(),
+                attachments,
+                userId
+              );
+              console.log('📡 Real-time message edit event published');
+            } catch (redisError) {
+              console.warn('⚠️ Failed to publish real-time edit event:', redisError);
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error("❌ Failed to edit message:", error);
+    }
+  };
+
+  const handleDeleteMessage = async (messageId: string) => {
+    if (!selectedChat) {
+      console.warn('⚠️ No chat selected for deleting message');
+      return;
+    }
+
+    console.log('🗑️ Deleting message:', messageId);
+    console.log('📋 Selected chat:', {
+      id: selectedChat.id,
+      uuid: selectedChat.uuid,
+      channelId: selectedChat.channelId,
+      channelName: selectedChat.channelName
+    });
+    
+    try {
+      const identifier = messagesApiService.getMessageIdentifier(selectedChat);
+      console.log('🔍 Using identifier for deletion:', identifier);
+      
+      if (identifier) {
+        console.log('📡 Making DELETE API call...');
+        const response = await messagesApiService.deleteMessage(identifier, messageId);
+        console.log('📡 DELETE API response:', response);
+        
+        if (response.success) {
+          console.log('✅ Message deleted successfully from API');
+          
+          // Remove the message from the local state
+          console.log('🔄 Updating local state to remove message:', messageId);
+          dispatch({ type: 'DELETE_MESSAGE', payload: messageId });
+          console.log('✅ Local state updated');
+          
+          // Publish real-time delete event if Redis is connected
+          if (redisConnected) {
+            try {
+              // Get current user ID from auth service
+              const currentUser = authService.getUser();
+              const userId = currentUser?.id?.toString() || 'unknown';
+              
+              await redis.publish.messageDeleted(
+                selectedChat.channelId || selectedChat.channelName,
+                messageId,
+                userId
+              );
+              console.log('📡 Real-time message delete event published');
+            } catch (redisError) {
+              console.warn('⚠️ Failed to publish real-time delete event:', redisError);
+            }
+          }
+        } else {
+          console.error('❌ API returned success: false');
+        }
+      } else {
+        console.error('❌ No valid identifier found for chat');
+      }
+    } catch (error) {
+      console.error("❌ Failed to delete message:", error);
+      console.error("❌ Error details:", {
+        message: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined
+      });
     }
   };
 
@@ -552,6 +850,9 @@ export default function Main() {
         onShowAllChats={handleShowAllChats}
         isLoadingAllChats={isLoadingAllChats}
         onCreateChat={handleCreateChat}
+        onUpdateChat={handleUpdateChat}
+        onDeleteChat={handleDeleteChat}
+        onRefreshChats={handleRefreshChats}
       />
 
       {showAllChats ? (
@@ -629,8 +930,14 @@ export default function Main() {
                             }),
                             content: message.content,
                             attachments: message.attachments || [],
-                            reactions: message.reactions || []
-                          }} 
+                            reactions: message.reactions || [],
+                            editedAt: message.editedAt,
+                            replyTo: message.replyTo
+                          }}
+                          onReply={handleReply}
+                          onReaction={handleReaction}
+                          onEdit={handleEditMessage}
+                          onDelete={handleDeleteMessage}
                         />
                       ))}
                     </div>
@@ -652,7 +959,11 @@ export default function Main() {
             </div>
           </div>
 
-          <ChatInput onSendMessage={handleSendMessage} />
+          <ChatInput 
+            onSendMessage={handleSendMessage} 
+            replyingTo={replyingTo}
+            onCancelReply={handleCancelReply}
+          />
         </main>
       )}
     </div>

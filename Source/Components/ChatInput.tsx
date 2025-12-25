@@ -8,6 +8,10 @@ interface Attachment {
   type: 'file' | 'image' | 'gif';
   preview?: string;
   size: number;
+  uploadedUrl?: string;
+  uploadProgress?: number;
+  uploadStatus?: 'pending' | 'uploading' | 'completed' | 'error';
+  uploadError?: string;
 }
 
 interface ReplyingTo {
@@ -17,7 +21,7 @@ interface ReplyingTo {
 }
 
 interface ChatInputProps {
-  onSendMessage?: (content: string, attachments?: Attachment[], replyTo?: ReplyingTo) => void;
+  onSendMessage?: (content: string, attachments?: string[], replyTo?: ReplyingTo) => void;
   replyingTo?: ReplyingTo | null;
   onCancelReply?: () => void;
 }
@@ -147,7 +151,12 @@ export default function ChatInput({ onSendMessage, replyingTo, onCancelReply }: 
       // If it's a checkpoint, send it with special formatting
       const messageToSend = isCheckpoint ? '---CHECKPOINT---' : trimmedMessage;
 
-      onSendMessage(messageToSend, attachments, replyingTo || undefined);
+      // Extract uploaded URLs from attachments
+      const uploadedUrls = attachments
+        .filter(att => att.uploadedUrl)
+        .map(att => att.uploadedUrl!);
+
+      onSendMessage(messageToSend, uploadedUrls, replyingTo || undefined);
       setMessage('');
       setAttachments([]);
       if (onCancelReply) onCancelReply();
@@ -177,6 +186,8 @@ export default function ChatInput({ onSendMessage, replyingTo, onCancelReply }: 
     } else {
       setMessage(prev => prev + emoji);
     }
+    // Close the emoji picker after selection
+    setShowEmojiPicker(false);
   };
 
   const validateFile = (file: File): string | null => {
@@ -193,7 +204,9 @@ export default function ChatInput({ onSendMessage, replyingTo, onCancelReply }: 
         file,
         type: file.type.startsWith('image/gif') ? 'gif' :
           file.type.startsWith('image/') ? 'image' : 'file',
-        size: file.size
+        size: file.size,
+        uploadProgress: 0,
+        uploadStatus: 'pending'
       };
 
       // Create preview for images and GIFs
@@ -207,6 +220,169 @@ export default function ChatInput({ onSendMessage, replyingTo, onCancelReply }: 
       } else {
         resolve(attachment);
       }
+    });
+  };
+
+  const uploadFiles = async (attachmentsToUpload: Attachment[]) => {
+    try {
+      for (const attachment of attachmentsToUpload) {
+        const file = attachment.file;
+        const isLargeFile = file.size >= 50 * 1024 * 1024; // 50MB threshold
+        
+        // Set uploading status
+        setAttachments(prev => 
+          prev.map(att => 
+            att.id === attachment.id 
+              ? { ...att, uploadStatus: 'uploading', uploadProgress: 0 }
+              : att
+          )
+        );
+        
+        try {
+          let uploadedUrl: string;
+          
+          if (isLargeFile) {
+            // Use TUS for files >= 50MB with progress tracking
+            uploadedUrl = await uploadLargeFileWithProgress(file, attachment.id);
+          } else {
+            // Use /api/fileupload for files < 50MB with progress tracking
+            uploadedUrl = await uploadFileWithProgress(file, attachment.id);
+          }
+          
+          // Update attachment with uploaded URL and completed status
+          setAttachments(prev => 
+            prev.map(att => 
+              att.id === attachment.id 
+                ? { 
+                    ...att, 
+                    uploadedUrl: uploadedUrl,
+                    uploadStatus: 'completed',
+                    uploadProgress: 100
+                  }
+                : att
+            )
+          );
+          
+        } catch (error) {
+          console.error(`Failed to upload ${file.name}:`, error);
+          
+          // Update attachment with error status
+          setAttachments(prev => 
+            prev.map(att => 
+              att.id === attachment.id 
+                ? { 
+                    ...att, 
+                    uploadStatus: 'error',
+                    uploadError: error instanceof Error ? error.message : 'Upload failed'
+                  }
+                : att
+            )
+          );
+        }
+      }
+      
+    } catch (error) {
+      console.error('Upload error:', error);
+    }
+  };
+
+  const uploadFileWithProgress = (file: File, attachmentId: string): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('chatAttachment', 'true');
+      
+      const xhr = new XMLHttpRequest();
+      
+      // Track upload progress
+      xhr.upload.addEventListener('progress', (e) => {
+        if (e.lengthComputable) {
+          const progress = Math.round((e.loaded / e.total) * 100);
+          setAttachments(prev => 
+            prev.map(att => 
+              att.id === attachmentId 
+                ? { ...att, uploadProgress: progress }
+                : att
+            )
+          );
+        }
+      });
+      
+      xhr.addEventListener('load', () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const data = JSON.parse(xhr.responseText);
+            resolve(data.url);
+          } catch (error) {
+            reject(new Error('Invalid response format'));
+          }
+        } else {
+          reject(new Error(`Upload failed with status ${xhr.status}`));
+        }
+      });
+      
+      xhr.addEventListener('error', () => {
+        reject(new Error('Network error during upload'));
+      });
+      
+      xhr.addEventListener('timeout', () => {
+        reject(new Error('Upload timeout'));
+      });
+      
+      xhr.open('POST', '/api/fileupload');
+      xhr.timeout = 300000; // 5 minutes timeout
+      xhr.send(formData);
+    });
+  };
+
+  const uploadLargeFileWithProgress = (file: File, attachmentId: string): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      // For now, use the same endpoint as regular files
+      // TODO: Implement proper TUS client for resumable uploads
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('chatAttachment', 'true');
+      
+      const xhr = new XMLHttpRequest();
+      
+      // Track upload progress
+      xhr.upload.addEventListener('progress', (e) => {
+        if (e.lengthComputable) {
+          const progress = Math.round((e.loaded / e.total) * 100);
+          setAttachments(prev => 
+            prev.map(att => 
+              att.id === attachmentId 
+                ? { ...att, uploadProgress: progress }
+                : att
+            )
+          );
+        }
+      });
+      
+      xhr.addEventListener('load', () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const data = JSON.parse(xhr.responseText);
+            resolve(data.url);
+          } catch (error) {
+            reject(new Error('Invalid response format'));
+          }
+        } else {
+          reject(new Error(`Large file upload failed with status ${xhr.status}`));
+        }
+      });
+      
+      xhr.addEventListener('error', () => {
+        reject(new Error('Network error during large file upload'));
+      });
+      
+      xhr.addEventListener('timeout', () => {
+        reject(new Error('Large file upload timeout'));
+      });
+      
+      xhr.open('POST', '/api/fileupload');
+      xhr.timeout = 600000; // 10 minutes timeout for large files
+      xhr.send(formData);
     });
   };
 
@@ -250,6 +426,9 @@ export default function ChatInput({ onSendMessage, replyingTo, onCancelReply }: 
 
     if (newAttachments.length > 0) {
       setAttachments(prev => [...prev, ...newAttachments]);
+      
+      // Upload files immediately after adding them
+      await uploadFiles(newAttachments);
     }
 
     setShowAttachmentDropdown(false);
@@ -259,6 +438,22 @@ export default function ChatInput({ onSendMessage, replyingTo, onCancelReply }: 
     const inputRef = type === 'image' ? imageInputRef :
       type === 'gif' ? gifInputRef : fileInputRef;
     inputRef.current?.click();
+  };
+
+  const retryUpload = async (attachmentId: string) => {
+    const attachment = attachments.find(att => att.id === attachmentId);
+    if (!attachment) return;
+    
+    // Reset status and retry upload
+    setAttachments(prev => 
+      prev.map(att => 
+        att.id === attachmentId 
+          ? { ...att, uploadStatus: 'uploading', uploadProgress: 0, uploadError: undefined }
+          : att
+      )
+    );
+    
+    await uploadFiles([attachment]);
   };
 
   const removeAttachment = (id: string) => {
@@ -338,16 +533,33 @@ export default function ChatInput({ onSendMessage, replyingTo, onCancelReply }: 
           {attachments.map((attachment) => (
             <div key={attachment.id} className="relative bg-surface-container border border-outline-variant rounded-2xl p-3 flex items-center gap-3 max-w-xs">
               {attachment.preview ? (
-                <img
-                  src={attachment.preview}
-                  alt={attachment.file.name}
-                  className="w-10 h-10 object-cover rounded-xl"
-                />
+                <div className="relative">
+                  <img
+                    src={attachment.preview}
+                    alt={attachment.file.name}
+                    className={`w-10 h-10 object-cover rounded-xl ${
+                      attachment.uploadStatus === 'uploading' ? 'opacity-50' : ''
+                    }`}
+                  />
+                  {attachment.uploadStatus === 'uploading' && (
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+                    </div>
+                  )}
+                </div>
               ) : (
-                <div className="w-10 h-10 bg-surface-variant rounded-xl flex items-center justify-center">
+                <div className={`w-10 h-10 bg-surface-variant rounded-xl flex items-center justify-center relative ${
+                  attachment.uploadStatus === 'uploading' ? 'opacity-50' : ''
+                }`}>
                   <File size={20} className="text-on-surface-variant" />
+                  {attachment.uploadStatus === 'uploading' && (
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+                    </div>
+                  )}
                 </div>
               )}
+              
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-medium text-on-surface truncate">
                   {attachment.file.name}
@@ -355,14 +567,64 @@ export default function ChatInput({ onSendMessage, replyingTo, onCancelReply }: 
                 <div className="text-xs text-on-surface-variant">
                   {formatFileSize(attachment.size)}
                 </div>
+                
+                {/* Upload Status */}
+                {attachment.uploadStatus === 'uploading' && (
+                  <div className="mt-1">
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 bg-surface-variant rounded-full h-1.5 overflow-hidden">
+                        <div 
+                          className="bg-primary h-full transition-all duration-300 ease-out"
+                          style={{ width: `${attachment.uploadProgress || 0}%` }}
+                        />
+                      </div>
+                      <span className="text-xs text-on-surface-variant font-medium">
+                        {attachment.uploadProgress || 0}%
+                      </span>
+                    </div>
+                  </div>
+                )}
+                
+                {attachment.uploadStatus === 'completed' && (
+                  <div className="text-xs text-green-600 font-medium mt-1">
+                    ✓ Uploaded
+                  </div>
+                )}
+                
+                {attachment.uploadStatus === 'error' && (
+                  <div className="mt-1">
+                    <div className="text-xs text-error font-medium">
+                      ✗ Upload failed
+                    </div>
+                    {attachment.uploadError && (
+                      <div className="text-xs text-error opacity-75">
+                        {attachment.uploadError}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
-              <button
-                onClick={() => removeAttachment(attachment.id)}
-                className="p-1.5 hover:bg-error-container rounded-full text-on-surface-variant hover:text-error transition-colors"
-                title="Remove attachment"
-              >
-                <X size={14} />
-              </button>
+              
+              <div className="flex flex-col gap-1">
+                {attachment.uploadStatus === 'error' && (
+                  <button
+                    onClick={() => retryUpload(attachment.id)}
+                    className="p-1.5 hover:bg-primary-container rounded-full text-primary transition-colors"
+                    title="Retry upload"
+                  >
+                    <Upload size={14} />
+                  </button>
+                )}
+                
+                <button
+                  onClick={() => removeAttachment(attachment.id)}
+                  disabled={attachment.uploadStatus === 'uploading'}
+                  className="p-1.5 hover:bg-error-container rounded-full text-on-surface-variant hover:text-error transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Remove attachment"
+                >
+                  <X size={14} />
+                </button>
+              </div>
             </div>
           ))}
         </div>
@@ -516,7 +778,10 @@ export default function ChatInput({ onSendMessage, replyingTo, onCancelReply }: 
               <ActionButton
                 icon="sentiment_satisfied"
                 title="Add emoji"
-                onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                onClick={() => {
+                  console.log('Emoji button clicked, current state:', showEmojiPicker);
+                  setShowEmojiPicker(!showEmojiPicker);
+                }}
                 active={showEmojiPicker}
               />
               <CustomEmojiPicker
@@ -529,10 +794,25 @@ export default function ChatInput({ onSendMessage, replyingTo, onCancelReply }: 
             {/* Send Button */}
             <button
               onClick={handleSend}
-              disabled={!message.trim() && attachments.length === 0}
+              disabled={
+                (!message.trim() && attachments.length === 0) ||
+                attachments.some(att => att.uploadStatus === 'uploading') ||
+                attachments.some(att => att.uploadStatus === 'error')
+              }
               className="flex items-center justify-center w-12 h-12 rounded-full bg-primary hover:bg-primary/90 text-on-primary shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-surface-variant disabled:text-on-surface-variant"
+              title={
+                attachments.some(att => att.uploadStatus === 'uploading') 
+                  ? 'Uploading files...' 
+                  : attachments.some(att => att.uploadStatus === 'error')
+                  ? 'Fix upload errors before sending'
+                  : 'Send message'
+              }
             >
-              <Send size={20} />
+              {attachments.some(att => att.uploadStatus === 'uploading') ? (
+                <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <Send size={20} />
+              )}
             </button>
           </div>
         </div>
@@ -567,7 +847,23 @@ export default function ChatInput({ onSendMessage, replyingTo, onCancelReply }: 
         <span className="label-small text-on-surface-variant">
           <strong>Enter</strong> to send, <strong>Shift + Enter</strong> for new line, <strong>Ctrl + V</strong> to paste files
           {attachments.length > 0 && (
-            <span className="ml-2">• {attachments.length} file{attachments.length > 1 ? 's' : ''} attached</span>
+            <>
+              <span className="ml-2">• {attachments.length} file{attachments.length > 1 ? 's' : ''} attached</span>
+              {(() => {
+                const uploading = attachments.filter(att => att.uploadStatus === 'uploading').length;
+                const completed = attachments.filter(att => att.uploadStatus === 'completed').length;
+                const errors = attachments.filter(att => att.uploadStatus === 'error').length;
+                
+                if (uploading > 0) {
+                  return <span className="ml-2 text-primary">• Uploading {uploading} file{uploading > 1 ? 's' : ''}...</span>;
+                } else if (errors > 0) {
+                  return <span className="ml-2 text-error">• {errors} upload error{errors > 1 ? 's' : ''}</span>;
+                } else if (completed === attachments.length && completed > 0) {
+                  return <span className="ml-2 text-green-600">• All files uploaded</span>;
+                }
+                return null;
+              })()}
+            </>
           )}
         </span>
       </div>

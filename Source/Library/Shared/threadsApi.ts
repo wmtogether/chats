@@ -2,10 +2,11 @@
 import authService from '../Authentication/jwt';
 
 export interface ThreadMetadata {
-  queueId: number;
-  queueStatus: string;
-  requestType: string;
-  createdByName: string;
+  queueId?: number;
+  queueStatus?: string;
+  requestType?: string;
+  createdByName?: string;
+  archived?: boolean;
 }
 
 export interface Thread {
@@ -114,6 +115,76 @@ class ThreadsApiService {
       return data.thread || data;
     } catch (error) {
       console.error('Error fetching thread:', error);
+      throw error;
+    }
+  }
+
+  async updateThread(id: number, updates: Partial<Thread>): Promise<{ success: boolean; thread?: Thread }> {
+    try {
+      console.log('✏️ Updating thread:', id, 'with:', updates);
+      
+      const response = await authService.authenticatedFetch(`${this.baseUrl}/${id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(updates),
+      });
+
+      console.log('📡 Update thread response status:', response.status);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error('❌ Update thread failed:', errorData);
+        throw new Error(errorData.error || 'Failed to update thread');
+      }
+
+      const data = await response.json();
+      console.log('✅ Thread updated successfully:', data);
+
+      return {
+        success: true,
+        thread: data.thread || data
+      };
+    } catch (error) {
+      console.error('❌ Update thread error:', error);
+      throw error;
+    }
+  }
+
+  async deleteThread(id: number): Promise<{ success: boolean }> {
+    try {
+      console.log('🗑️ Deleting thread:', id);
+      
+      const response = await authService.authenticatedFetch(`${this.baseUrl}/${id}`, {
+        method: 'DELETE',
+      });
+
+      console.log('📡 Delete thread response status:', response.status);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ Delete thread failed - Response text:', errorText);
+        
+        let errorData;
+        try {
+          errorData = JSON.parse(errorText);
+        } catch {
+          errorData = { error: errorText };
+        }
+        
+        console.error('❌ Delete thread failed - Parsed error:', errorData);
+        throw new Error(errorData.error || `HTTP ${response.status}: Failed to delete thread`);
+      }
+
+      const responseText = await response.text();
+      console.log('✅ Delete thread success - Response text:', responseText);
+      
+      console.log('✅ Thread deleted successfully');
+
+      return { success: true };
+    } catch (error) {
+      console.error('❌ Delete thread error:', error);
       throw error;
     }
   }

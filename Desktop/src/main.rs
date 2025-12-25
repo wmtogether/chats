@@ -291,6 +291,45 @@ impl App {
         }
     }
     
+    fn check_dialog_results(&mut self) {
+        if let Some(webview) = &self.webview {
+            let state = self.state.lock().unwrap();
+            if state.message.starts_with("dialog_result:") || state.message.starts_with("dialog_result_immediate:") {
+                println!("📡 Dialog result detected: {}", state.message);
+                
+                // Parse the dialog result: "dialog_result:requestId:result" or "dialog_result_immediate:requestId:result"
+                let parts: Vec<&str> = state.message.splitn(3, ':').collect();
+                if parts.len() == 3 {
+                    let request_id = parts[1];
+                    let result = parts[2];
+                    
+                    println!("📡 Setting dialog result for request {}: {}", request_id, result);
+                    
+                    // Set the result in the window object for the frontend to pick up
+                    let js_code = format!(
+                        r#"
+                        console.log('📡 Backend setting dialog result for request {}: {}');
+                        window.dialogResult_{} = '{}';
+                        console.log('📡 Verification - window.dialogResult_{} =', window.dialogResult_{});
+                        "#,
+                        request_id, result, request_id, result, request_id, request_id
+                    );
+                    
+                    if let Err(e) = webview.evaluate_script(&js_code) {
+                        println!("❌ Failed to execute dialog result script: {}", e);
+                    } else {
+                        println!("✅ Dialog result set in frontend");
+                    }
+                }
+                
+                // Clear the result flag
+                drop(state);
+                let mut state = self.state.lock().unwrap();
+                state.message = "dialog_result_processed".to_string();
+            }
+        }
+    }
+    
     fn stop_proxy_process(&mut self) {
         if let Some(mut child) = self.proxy_process.take() {
             println!("🛑 Stopping mikoproxy.exe subprocess...");
@@ -560,8 +599,9 @@ impl ApplicationHandler for App {
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _window_id: WindowId, event: WindowEvent) {
-        // Check for logout trigger
+        // Check for logout trigger and dialog results on every window event
         self.check_logout_trigger();
+        self.check_dialog_results();
         
         match event {
             WindowEvent::CloseRequested => {

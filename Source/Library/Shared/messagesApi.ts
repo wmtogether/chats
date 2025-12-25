@@ -16,6 +16,11 @@ export interface MessageData {
   reactions?: any[];
   editedAt?: string;
   createdAt: string;
+  replyTo?: {
+    messageId: string;
+    userName: string;
+    content: string;
+  };
 }
 
 export interface MessagesResponse {
@@ -121,6 +126,7 @@ class MessagesApiService {
     content?: string;
     attachments?: any[];
     tags?: string[];
+    replyToId?: string;
   }): Promise<{ success: boolean; message: MessageData }> {
     try {
       console.log('📤 Sending message to:', identifier);
@@ -151,6 +157,141 @@ class MessagesApiService {
       };
     } catch (error) {
       console.error('❌ Error sending message:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Edit a message
+   */
+  async editMessage(identifier: string, messageId: string, messageData: {
+    content?: string;
+    attachments?: string[];
+  }): Promise<{ success: boolean; message: MessageData }> {
+    try {
+      console.log('📝 Editing message:', messageId, 'in:', identifier);
+      console.log('📝 Edit data:', messageData);
+      
+      const response = await authService.authenticatedFetch(`${this.baseUrl}/${identifier}/messages/${messageId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(messageData),
+      });
+
+      console.log('📡 Edit message response status:', response.status);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error('❌ Edit message failed:', errorData);
+        throw new Error(errorData.error || 'Failed to edit message');
+      }
+
+      const data = await response.json();
+      console.log('✅ Message edited successfully:', data);
+
+      return {
+        success: true,
+        message: data.message
+      };
+    } catch (error) {
+      console.error('❌ Edit message error:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Delete a message
+   */
+  async deleteMessage(identifier: string, messageId: string): Promise<{ success: boolean }> {
+    try {
+      console.log('🗑️ API: Deleting message:', messageId, 'in:', identifier);
+      console.log('🔍 API: Request details:', {
+        url: `${this.baseUrl}/${identifier}/messages/${messageId}`,
+        method: 'DELETE',
+        identifier,
+        messageId
+      });
+      
+      const response = await authService.authenticatedFetch(`${this.baseUrl}/${identifier}/messages/${messageId}`, {
+        method: 'DELETE',
+      });
+
+      console.log('📡 API: Delete message response status:', response.status);
+      console.log('📡 API: Response headers:', Object.fromEntries(response.headers.entries()));
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ API: Delete message failed - Response text:', errorText);
+        
+        let errorData;
+        try {
+          errorData = JSON.parse(errorText);
+        } catch {
+          errorData = { error: errorText };
+        }
+        
+        console.error('❌ API: Delete message failed - Parsed error:', errorData);
+        throw new Error(errorData.error || `HTTP ${response.status}: Failed to delete message`);
+      }
+
+      const responseText = await response.text();
+      console.log('✅ API: Delete message success - Response text:', responseText);
+      
+      let responseData;
+      try {
+        responseData = responseText ? JSON.parse(responseText) : { success: true };
+      } catch {
+        responseData = { success: true }; // Assume success if no JSON response
+      }
+      
+      console.log('✅ API: Message deleted successfully - Parsed response:', responseData);
+
+      return { success: true };
+    } catch (error) {
+      console.error('❌ API: Delete message error:', error);
+      console.error('❌ API: Error type:', typeof error);
+      console.error('❌ API: Error details:', {
+        message: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Add or remove a reaction to a message
+   */
+  async addReaction(identifier: string, messageId: string, emoji: string): Promise<{ success: boolean; reactions: any[] }> {
+    try {
+      console.log('😀 Adding reaction:', emoji, 'to message:', messageId, 'in:', identifier);
+      
+      const response = await authService.authenticatedFetch(`${this.baseUrl}/${identifier}/messages/${messageId}/reactions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ emoji }),
+      });
+
+      console.log('📡 Add reaction response status:', response.status);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error('❌ Add reaction failed:', errorData);
+        throw new Error(errorData.error || 'Failed to add reaction');
+      }
+
+      const data = await response.json();
+      console.log('✅ Reaction added successfully:', data);
+
+      return {
+        success: true,
+        reactions: data.reactions || []
+      };
+    } catch (error) {
+      console.error('❌ Add reaction error:', error);
       throw error;
     }
   }

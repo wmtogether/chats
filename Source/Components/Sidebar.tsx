@@ -1,9 +1,13 @@
-import { Plus, ChevronDown, Settings, LogOut, CornerDownLeft, Hash, Lock, Palette, Ruler, CheckCircle, Eye, Package, Briefcase } from 'lucide-react'
+import { Plus, ChevronDown, Settings, LogOut, Palette, Ruler, CheckCircle, Eye, Package, Briefcase, MoreHorizontal, Edit, Trash2, Archive } from 'lucide-react'
 import authService from '../Library/Authentication/jwt'
 import { threadsApiService, type Thread } from '../Library/Shared/threadsApi'
 import { getProfileImageUrl, getProfileInitial } from '../Library/Shared/profileUtils'
 import { useState, useEffect, useRef } from 'react'
 import NewChatDialog from './NewChatDialog'
+import EditChatDialog from './EditChatDialog'
+import { useRedis } from '../Library/hooks/useRedis'
+import { directThreadEvents } from '../Library/redis/direct-pubsub'
+import { showConfirmDialog } from '../Library/Native/dialog'
 
 // Use Thread as Chat since they have the same structure
 type ChatType = Thread;
@@ -21,6 +25,9 @@ interface SidebarProps {
     customerName?: string;
     description?: string;
   }) => void;
+  onUpdateChat?: (chatId: number, updates: Partial<ChatType>) => void;
+  onDeleteChat?: (chatId: number) => void;
+  onRefreshChats?: () => void;
 }
 
 export default function Sidebar({
@@ -29,15 +36,184 @@ export default function Sidebar({
   onChatSelect,
   onShowAllChats,
   isLoadingAllChats = false,
-  onCreateChat
+  onCreateChat,
+  onUpdateChat,
+  onDeleteChat,
+  onRefreshChats
 }: SidebarProps) {
   const [user, setUser] = useState(authService.getUser());
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showNewChatDialog, setShowNewChatDialog] = useState(false);
+  const [showEditChatDialog, setShowEditChatDialog] = useState(false);
+  const [editingChat, setEditingChat] = useState<ChatType | null>(null);
+  const [chatMenus, setChatMenus] = useState<{ [key: number]: boolean }>({});
   const menuRef = useRef<HTMLDivElement>(null);
+  const chatMenuRefs = useRef<{ [key: number]: HTMLDivElement | null }>({});
+  
+  // Use Redis hook for real-time updates
+  const redis = useRedis();
 
   // Group chats by createdByName from the props
   const chatGroups = threadsApiService.groupThreadsByCreator(chats);
+
+  // Set up real-time subscriptions for chat list updates
+  useEffect(() => {
+    if (redis.state.connected) {
+      console.log('🔔 Setting up chat list real-time subscriptions...');
+      
+      // Subscribe to thread updates
+      redis.subscribe('thread:new', (message) => {
+        console.log('📨 New thread created:', message);
+        if (onRefreshChats) {
+          onRefreshChats();
+        }
+      });
+
+      redis.subscribe('thread:update', (message) => {
+        console.log('📨 Thread updated:', message);
+        if (onRefreshChats) {
+          onRefreshChats();
+        }
+      });
+
+      redis.subscribe('thread:delete', (message) => {
+        console.log('📨 Thread deleted:', message);
+        if (onRefreshChats) {
+          onRefreshChats();
+        }
+      });
+    }
+  }, [redis.state.connected, onRefreshChats]);
+
+  // Handle chat menu visibility
+  const toggleChatMenu = (chatId: number, event: React.MouseEvent) => {
+    event.stopPropagation();
+    setChatMenus(prev => ({
+      ...prev,
+      [chatId]: !prev[chatId]
+    }));
+  };
+
+  const closeChatMenu = (chatId: number) => {
+    setChatMenus(prev => ({
+      ...prev,
+      [chatId]: false
+    }));
+  };
+
+  // CRUD Operations
+  const handleEditChat = async (chat: ChatType) => {
+    closeChatMenu(chat.id);
+    setEditingChat(chat);
+    setShowEditChatDialog(true);
+  };
+
+  const handleSaveEditChat = async (newName: string) => {
+    if (!editingChat) return;
+    
+    try {
+      console.log('✏️ Editing chat:', editingChat.id, 'to:', newName);
+      
+      // Update via API
+      const response = await threadsApiService.updateThread(editingChat.id, {
+        channelName: newName
+      });
+      
+      if (response.success && onUpdateChat) {
+        onUpdateChat(editingChat.id, { channelName: newName });
+        
+        // Publish real-time update
+        if (redis.state.connected) {
+          await directThreadEvents.updated({
+            ...editingChat,
+            channelName: newName
+          }, user?.id?.toString());
+        }
+      }
+    } catch (error) {
+      console.error('❌ Failed to edit chat:', error);
+    } finally {
+      setEditingChat(null);
+    }
+  };
+
+  const handleDeleteChat = async (chat: ChatType) => {
+    closeChatMenu(chat.id);
+    
+    try {
+      const confirmed = await showConfirmDialog({
+        title: 'Delete Chat',
+        message: `Are you sure you want to delete "${chat.channelName}"? This action cannot be undone.`,
+        okText: 'Delete',
+        cancelText: 'Cancel'
+      });
+      
+      if (confirmed) {
+        console.log('🗑️ Deleting chat:', chat.id);
+        
+        // Delete via API
+        const response = await threadsApiService.deleteThread(chat.id);
+        
+        if (response.success && onDeleteChat) {
+          onDeleteChat(chat.id);
+          
+          // Publish real-time update
+          if (redis.state.connected) {
+            await directThreadEvents.deleted(
+              chat.id.toString(),
+              user?.id?.toString()
+            );
+          }
+        }
+      }
+    } catch (error) {
+      console.error('❌ Failed to delete chat:', error);
+    }
+  };
+
+  const handleArchiveChat = async (chat: ChatType) => {
+    closeChatMenu(chat.id);
+    
+    try {
+      console.log('📦 Archiving chat:', chat.id);
+      
+      // Archive via API (assuming there's an archive status)
+      const response = await threadsApiService.updateThread(chat.id, {
+        metadata: {
+          ...chat.metadata,
+          archived: true
+        }
+      });
+      
+      if (response.success && onUpdateChat) {
+        onUpdateChat(chat.id, {
+          metadata: {
+            queueId: chat.metadata?.queueId || 0,
+            queueStatus: chat.metadata?.queueStatus || 'UNKNOWN',
+            requestType: chat.metadata?.requestType || 'unknown',
+            createdByName: chat.metadata?.createdByName || chat.createdByName,
+            archived: true
+          }
+        });
+        
+        // Publish real-time update
+        if (redis.state.connected) {
+          await directThreadEvents.updated({
+            ...chat,
+            metadata: {
+              queueId: chat.metadata?.queueId || 0,
+              queueStatus: chat.metadata?.queueStatus || 'UNKNOWN',
+              requestType: chat.metadata?.requestType || 'unknown',
+              createdByName: chat.metadata?.createdByName || chat.createdByName,
+              archived: true
+            }
+          }, user?.id?.toString());
+        }
+      }
+    } catch (error) {
+      console.error('❌ Failed to archive chat:', error);
+    }
+  };
 
   useEffect(() => {
     // Refresh user data from auth service
@@ -62,16 +238,25 @@ export default function Sidebar({
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setShowUserMenu(false);
       }
+      
+      // Close chat menus when clicking outside
+      Object.keys(chatMenus).forEach(chatIdStr => {
+        const chatId = parseInt(chatIdStr);
+        const menuRef = chatMenuRefs.current[chatId];
+        if (menuRef && !menuRef.contains(event.target as Node)) {
+          closeChatMenu(chatId);
+        }
+      });
     };
 
-    if (showUserMenu) {
+    if (showUserMenu || Object.values(chatMenus).some(Boolean)) {
       document.addEventListener('mousedown', handleClickOutside);
     }
 
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [showUserMenu]);
+  }, [showUserMenu, chatMenus]);
 
   const handleLogout = () => {
     authService.logout();
@@ -178,37 +363,80 @@ export default function Sidebar({
               {groupChats.slice(0, 5).map((chat: ChatType) => (
                 <div
                   key={chat.id}
-                  onClick={() => handleChatSelect(chat)}
-                  className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all hover:bg-surface-variant group ${selectedChat?.id === chat.id ? 'bg-primary/10' : ''
+                  className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all hover:bg-surface-variant group relative ${selectedChat?.id === chat.id ? 'bg-primary/10' : ''
                     }`}
                 >
-                  <div className="flex-shrink-0">
-                    <div className="size-8 rounded-full bg-surface-variant border border-outline flex items-center justify-center">
-                      {(() => {
-                        const IconComponent = getRequestTypeIcon(chat.metadata?.requestType || 'unknown');
-                        return <IconComponent size={16} className="text-on-surface-variant" />;
-                      })()}
+                  <div 
+                    className="flex-1 flex items-center gap-3 min-w-0"
+                    onClick={() => handleChatSelect(chat)}
+                  >
+                    <div className="flex-shrink-0">
+                      <div className="size-8 rounded-full bg-surface-variant border border-outline flex items-center justify-center">
+                        {(() => {
+                          const IconComponent = getRequestTypeIcon(chat.metadata?.requestType || 'unknown');
+                          return <IconComponent size={16} className="text-on-surface-variant" />;
+                        })()}
+                      </div>
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between mb-1">
+                        <h3 className="label-medium text-on-surface truncate pr-2">
+                          {chat.channelName}
+                        </h3>
+                        <span className="label-small text-on-surface-variant flex-shrink-0">
+                          {formatDate(chat.updatedAt)}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <span className={`label-small ${getStatusColor(chat.metadata?.queueStatus || 'UNKNOWN')}`}>
+                          {chat.metadata?.queueStatus || 'UNKNOWN'}
+                        </span>
+                        <span className="label-small text-on-surface-variant">
+                          #{chat.metadata?.queueId || 'N/A'}
+                        </span>
+                      </div>
                     </div>
                   </div>
 
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between mb-1">
-                      <h3 className="label-medium text-on-surface truncate pr-2">
-                        {chat.channelName}
-                      </h3>
-                      <span className="label-small text-on-surface-variant flex-shrink-0">
-                        {formatDate(chat.updatedAt)}
-                      </span>
-                    </div>
+                  {/* Chat Menu Button */}
+                  <div className="relative" ref={el => { chatMenuRefs.current[chat.id] = el; }}>
+                    <button
+                      onClick={(e) => toggleChatMenu(chat.id, e)}
+                      className="p-1 rounded-md opacity-0 group-hover:opacity-100 hover:bg-surface-container transition-all"
+                      title="Chat options"
+                    >
+                      <MoreHorizontal size={16} className="text-on-surface-variant" />
+                    </button>
 
-                    <div className="flex items-center gap-2">
-                      <span className={`label-small ${getStatusColor(chat.metadata?.queueStatus || 'UNKNOWN')}`}>
-                        {chat.metadata?.queueStatus || 'UNKNOWN'}
-                      </span>
-                      <span className="label-small text-on-surface-variant">
-                        #{chat.metadata?.queueId || 'N/A'}
-                      </span>
-                    </div>
+                    {/* Chat Menu Dropdown */}
+                    {chatMenus[chat.id] && (
+                      <div className="absolute right-0 top-full mt-1 bg-surface-container border border-outline-variant rounded-2xl shadow-lg py-2 z-50 min-w-[160px]">
+                        <button
+                          onClick={() => handleEditChat(chat)}
+                          className="w-full px-4 py-2 text-left hover:bg-surface-variant flex items-center gap-3 text-on-surface"
+                        >
+                          <Edit size={16} />
+                          <span className="text-xs">Edit name</span>
+                        </button>
+                        <button
+                          onClick={() => handleArchiveChat(chat)}
+                          className="w-full px-4 py-2 text-left hover:bg-surface-variant flex items-center gap-3 text-on-surface"
+                        >
+                          <Archive size={16} />
+                          <span className="text-xs">Archive</span>
+                        </button>
+                        <div className="border-t border-outline-variant my-1" />
+                        <button
+                          onClick={() => handleDeleteChat(chat)}
+                          className="w-full px-4 py-2 text-left hover:bg-error-container flex items-center gap-3 text-error"
+                        >
+                          <Trash2 size={16} />
+                          <span className="text-xs">Delete</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
@@ -291,7 +519,7 @@ export default function Sidebar({
 
         {/* User Menu Dropdown */}
         {showUserMenu && (
-          <div className="absolute bottom-full left-3 right-3 mb-2 bg-surface border border-outline rounded-lg shadow-lg z-30">
+          <div className="absolute bottom-full left-3 right-3 mb-2 bg-surface border border-outline rounded-lg shadow-lg z-40">
             <div className="p-2">
               <button
                 onClick={handleLogout}
@@ -311,35 +539,14 @@ export default function Sidebar({
         onOpenChange={setShowNewChatDialog}
         onCreateChat={handleCreateChat}
       />
+
+      {/* Edit Chat Dialog */}
+      <EditChatDialog
+        open={showEditChatDialog}
+        onOpenChange={setShowEditChatDialog}
+        chatName={editingChat?.channelName || ''}
+        onSave={handleSaveEditChat}
+      />
     </aside>
-  )
-}
-
-function SidebarItem({ icon, label }: { icon: string, label: string }) {
-  const getIcon = (iconName: string) => {
-    switch (iconName) {
-      case 'tag': return Hash;
-      case 'lock': return Lock;
-      default: return Hash;
-    }
-  };
-
-  const IconComponent = getIcon(icon);
-
-  return (
-    <a className="flex items-center gap-2.5 px-3 py-1.5 rounded-md text-on-surface-variant hover:bg-surface-variant hover:text-on-surface transition-all group" href="#">
-      <IconComponent className="text-on-surface-variant group-hover:text-on-surface-variant" />
-      <span className="label-large">{label}</span>
-    </a>
-  )
-}
-
-function ThreadItem({ label, isNew }: { label: string, isNew?: boolean }) {
-  return (
-    <a className={`flex items-center gap-2 p-1.5 -ml-1.5 rounded ${isNew ? 'bg-surface-variant/5 text-on-surface' : 'hover:bg-surface-variant/5 text-on-surface-variant hover:text-on-surface'} transition-colors group/thread`} href="#">
-      <CornerDownLeft className={`rotate-180 ${isNew ? 'text-primary' : 'text-on-surface-variant group-hover/thread:text-on-surface-variant'}`} size={14} />
-      <span className={`label-medium truncate ${isNew ? 'font-medium' : ''}`}>{label}</span>
-      {isNew && <span className="ml-auto label-small bg-primary/20 text-on-primary-container px-1 rounded-md">New</span>}
-    </a>
   )
 }

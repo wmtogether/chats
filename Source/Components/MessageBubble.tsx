@@ -2,6 +2,8 @@ import React, { useState } from 'react'
 import { Smile, Reply, Image as ImageIcon, MoreHorizontal, Copy, Edit, Trash2, MapPin } from 'lucide-react'
 import Avatar from './Avatar'
 import MessageContent from './MessageContent'
+import CustomEmojiPicker from './EmojiPicker'
+import { showConfirmDialog, showInputDialog } from '../Library/Native/dialog'
 
 interface User {
   id: string
@@ -19,6 +21,7 @@ interface MessageData {
   attachments?: string[]
   reactions?: { emoji: string; count: number; active?: boolean }[]
   isHighlighted?: boolean
+  editedAt?: string
   replyTo?: {
     messageId: string
     userName: string
@@ -38,11 +41,14 @@ interface MessageBubbleProps {
   searchQuery?: string
   onReply?: (messageId: string, userName: string, content: string) => void
   onReaction?: (messageId: string, emoji: string) => void
+  onEdit?: (messageId: string, newContent: string, attachments?: string[]) => void
+  onDelete?: (messageId: string) => void
 }
 
-export default function MessageBubble({ data, searchQuery, onReply, onReaction }: MessageBubbleProps) {
+export default function MessageBubble({ data, searchQuery, onReply, onReaction, onEdit, onDelete }: MessageBubbleProps) {
   const [showActions, setShowActions] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
   // Check if this is a checkpoint message
   const isCheckpoint = data.content === '---CHECKPOINT---';
@@ -62,10 +68,55 @@ export default function MessageBubble({ data, searchQuery, onReply, onReaction }
     }
   };
 
-  const handleQuickReaction = (emoji: string) => {
+  const handleQuickReaction = (emoji: string, event?: React.MouseEvent) => {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
     if (onReaction) {
       onReaction(data.id, emoji);
     }
+  };
+
+  const handleEmojiSelect = (emoji: string) => {
+    handleQuickReaction(emoji);
+    setShowEmojiPicker(false);
+  };
+
+  const handleCopyMessage = () => {
+    navigator.clipboard.writeText(data.content).then(() => {
+      console.log('✅ Message copied to clipboard');
+    }).catch((error) => {
+      console.error('❌ Failed to copy message:', error);
+    });
+    setShowMoreMenu(false);
+  };
+
+  const handleEditMessage = async () => {
+    if (onEdit) {
+      // Use native input dialog instead of browser prompt
+      const newContent = await showInputDialog('Edit Message', 'Edit your message:', data.content);
+      if (newContent !== null && newContent.trim() !== data.content) {
+        onEdit(data.id, newContent.trim(), data.attachments);
+      }
+    }
+    setShowMoreMenu(false);
+  };
+
+  const handleDeleteMessage = async () => {
+    if (onDelete) {
+      // Use native confirmation dialog instead of browser confirm
+      const confirmed = await showConfirmDialog({
+        title: 'Delete Message',
+        message: 'Are you sure you want to delete this message? This action cannot be undone.',
+        okText: 'Delete',
+        cancelText: 'Cancel'
+      });
+      if (confirmed) {
+        onDelete(data.id);
+      }
+    }
+    setShowMoreMenu(false);
   };
 
   const quickReactions = ['👍', '❤️', '😂', '😮', '😢', '😡'];
@@ -97,9 +148,14 @@ export default function MessageBubble({ data, searchQuery, onReply, onReaction }
         data.isHighlighted ? 'bg-primary-container/20 border border-primary/20' : ''
       }`}
       onMouseEnter={() => setShowActions(true)}
-      onMouseLeave={() => {
-        setShowActions(false);
-        setShowMoreMenu(false);
+      onMouseLeave={(e) => {
+        // Only hide actions if we're not moving to a child element
+        const relatedTarget = e.relatedTarget as HTMLElement;
+        if (!e.currentTarget.contains(relatedTarget)) {
+          setShowActions(false);
+          setShowMoreMenu(false);
+          setShowEmojiPicker(false);
+        }
       }}
     >
       <div className="mt-1">
@@ -114,6 +170,11 @@ export default function MessageBubble({ data, searchQuery, onReply, onReaction }
           <span className="body-small text-on-surface-variant">
             {data.time}
           </span>
+          {data.editedAt && (
+            <span className="body-small text-on-surface-variant italic">
+              (edited)
+            </span>
+          )}
         </div>
 
         {/* Reply Reference */}
@@ -221,7 +282,11 @@ export default function MessageBubble({ data, searchQuery, onReply, onReaction }
             {data.reactions.map((reaction, i) => (
               <button
                 key={i}
-                onClick={() => handleQuickReaction(reaction.emoji)}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleQuickReaction(reaction.emoji);
+                }}
                 className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full body-small transition-all duration-200 ${
                   reaction.active
                     ? 'bg-primary-container text-on-primary-container border border-primary'
@@ -246,7 +311,7 @@ export default function MessageBubble({ data, searchQuery, onReply, onReaction }
             {quickReactions.slice(0, 3).map((emoji) => (
               <button
                 key={emoji}
-                onClick={() => handleQuickReaction(emoji)}
+                onClick={(e) => handleQuickReaction(emoji, e)}
                 className="p-2 hover:bg-surface-variant rounded-xl text-lg transition-colors"
                 title={`React with ${emoji}`}
               >
@@ -259,24 +324,46 @@ export default function MessageBubble({ data, searchQuery, onReply, onReaction }
           
           {/* Action Buttons */}
           <button 
-            onClick={handleReply}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              handleReply();
+            }}
             className="p-2 hover:bg-surface-variant rounded-xl text-on-surface-variant hover:text-on-surface transition-colors" 
             title="Reply"
           >
             <Reply size={18} />
           </button>
           
-          <button 
-            className="p-2 hover:bg-surface-variant rounded-xl text-on-surface-variant hover:text-on-surface transition-colors" 
-            title="Add reaction"
-          >
-            <Smile size={18} />
-          </button>
+          <div className="relative">
+            <button 
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('Add reaction button clicked, current state:', showEmojiPicker);
+                setShowEmojiPicker(!showEmojiPicker);
+              }}
+              className="p-2 hover:bg-surface-variant rounded-xl text-on-surface-variant hover:text-on-surface transition-colors" 
+              title="Add reaction"
+            >
+              <Smile size={18} />
+            </button>
+            
+            <CustomEmojiPicker
+              isOpen={showEmojiPicker}
+              onEmojiSelect={handleEmojiSelect}
+              onClose={() => setShowEmojiPicker(false)}
+            />
+          </div>
           
           {/* More Menu */}
           <div className="relative">
             <button 
-              onClick={() => setShowMoreMenu(!showMoreMenu)}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setShowMoreMenu(!showMoreMenu);
+              }}
               className="p-2 hover:bg-surface-variant rounded-xl text-on-surface-variant hover:text-on-surface transition-colors" 
               title="More options"
             >
@@ -285,16 +372,25 @@ export default function MessageBubble({ data, searchQuery, onReply, onReaction }
             
             {showMoreMenu && (
               <div className="absolute right-0 top-full mt-1 bg-surface-container border border-outline-variant rounded-2xl shadow-lg py-2 z-10 min-w-[160px]">
-                <button className="w-full px-4 py-2 text-left hover:bg-surface-variant flex items-center gap-3 text-on-surface">
+                <button 
+                  onClick={handleCopyMessage}
+                  className="w-full px-4 py-2 text-left hover:bg-surface-variant flex items-center gap-3 text-on-surface"
+                >
                   <Copy size={16} />
                   <span className='text-xs'>Copy message</span>
                 </button>
-                <button className="w-full px-4 py-2 text-left hover:bg-surface-variant flex items-center gap-3 text-on-surface">
+                <button 
+                  onClick={handleEditMessage}
+                  className="w-full px-4 py-2 text-left hover:bg-surface-variant flex items-center gap-3 text-on-surface"
+                >
                   <Edit size={16} />
                   <span className='text-xs'>Edit message</span>
                 </button>
                 <div className="border-t border-outline-variant my-1" />
-                <button className="w-full px-4 py-2 text-left hover:bg-error-container flex items-center gap-3 text-error">
+                <button 
+                  onClick={handleDeleteMessage}
+                  className="w-full px-4 py-2 text-left hover:bg-error-container flex items-center gap-3 text-error"
+                >
                   <Trash2 size={16} />
                   <span className='text-xs'>Delete message</span>
                 </button>
