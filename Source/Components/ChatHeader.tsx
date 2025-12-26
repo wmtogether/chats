@@ -89,8 +89,8 @@ export default function ChatHeader({ selectedChat, onLogout, chatCount, redisCon
     { id: 'adjustdesign', label: 'แก้ไขแบบ', icon: Settings },
     { id: 'checkfile', label: 'เช็คไฟล์', icon: CheckCircle },
     { id: 'proof', label: 'ตรวจสอบปรู๊ฟ', icon: Eye },
-    { id: 'sample-i', label: 'ตัวอย่าง (Internal)', icon: Package },
-    { id: 'sample-t', label: 'ตัวอย่าง (Testing)', icon: Package },
+    { id: 'sample-i', label: 'ตัวอย่าง (Inkjet)', icon: Package },
+    { id: 'sample-t', label: 'ตัวอย่าง (Toner)', icon: Package },
     { id: 'general', label: 'เรื่องทั่วไป', icon: Briefcase },
     { id: 'consultation', label: 'ขอคำปรึกษา', icon: Settings },
   ];

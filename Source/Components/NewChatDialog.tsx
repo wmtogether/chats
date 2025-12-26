@@ -61,14 +61,14 @@ const REQUEST_TYPES: {
         {
             id: 'sample-i',
             label: 'ตัวอย่าง (Internal)', // Sample Type I
-            description: 'Internal sample request',
+            description: 'Inkjet sample request',
             icon: Package,
             color: 'bg-surface-variant/12 text-on-surface-variant border-surface-variant/20 hover:bg-surface-variant/16',
         },
         {
             id: 'sample-t',
-            label: 'ตัวอย่าง (Testing)', // Sample Type T
-            description: 'Test sample request',
+            label: 'ตัวอย่าง (Toner)', // Sample Type T
+            description: 'Toner sample request',
             icon: Package,
             color: 'bg-inverse-surface/12 text-inverse-on-surface border-inverse-surface/20 hover:bg-inverse-surface/16',
         },
