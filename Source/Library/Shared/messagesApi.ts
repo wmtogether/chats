@@ -1,5 +1,5 @@
 // Messages API Service for UUID and Channel mapping
-import authService from '../Authentication/jwt';
+import ipcService from './ipcService';
 
 export interface MessageData {
   id: number;
@@ -49,31 +49,20 @@ class MessagesApiService {
 
       const url = `${this.baseUrl}/${identifier}/messages${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
       
-      console.log('🔄 Fetching messages from:', url);
+      console.log('🔄 Fetching messages via IPC:', url);
       console.log('📋 Message identifier:', {
         identifier,
         isUuid: this.isUuid(identifier),
         type: this.isUuid(identifier) ? 'UUID' : 'Channel ID'
       });
       
-      const response = await authService.authenticatedFetch(url, {
-        method: 'GET',
-      });
+      const response = await ipcService.get(url);
 
-      console.log('📡 Messages API response status:', response.status);
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        console.error('❌ Messages API error:', errorData);
-        throw new Error(errorData.error || `HTTP ${response.status}: Failed to fetch messages`);
-      }
-
-      const data = await response.json();
-      console.log('📊 Raw messages data:', data);
+      console.log('📡 Messages API response:', response);
       
       const result = {
         success: true,
-        messages: data.messages || []
+        messages: response.messages || response.data || []
       };
       
       console.log('✅ Processed messages result:', {
@@ -129,31 +118,16 @@ class MessagesApiService {
     replyToId?: string;
   }): Promise<{ success: boolean; message: MessageData }> {
     try {
-      console.log('📤 Sending message to:', identifier);
+      console.log('📤 Sending message via IPC to:', identifier);
       console.log('📝 Message data:', messageData);
       
-      const response = await authService.authenticatedFetch(`${this.baseUrl}/${identifier}/messages`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(messageData),
-      });
+      const response = await ipcService.post(`${this.baseUrl}/${identifier}/messages`, messageData);
 
-      console.log('📡 Send message response status:', response.status);
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        console.error('❌ Send message error:', errorData);
-        throw new Error(errorData.error || `HTTP ${response.status}: Failed to send message`);
-      }
-
-      const data = await response.json();
-      console.log('✅ Message sent successfully:', data);
+      console.log('✅ Message sent successfully:', response);
       
       return {
         success: true,
-        message: data.message
+        message: response.message || response.data || response
       };
     } catch (error) {
       console.error('❌ Error sending message:', error);
@@ -169,31 +143,16 @@ class MessagesApiService {
     attachments?: string[];
   }): Promise<{ success: boolean; message: MessageData }> {
     try {
-      console.log('📝 Editing message:', messageId, 'in:', identifier);
+      console.log('📝 Editing message via IPC:', messageId, 'in:', identifier);
       console.log('📝 Edit data:', messageData);
       
-      const response = await authService.authenticatedFetch(`${this.baseUrl}/${identifier}/messages/${messageId}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(messageData),
-      });
+      const response = await ipcService.patch(`${this.baseUrl}/${identifier}/messages/${messageId}`, messageData);
 
-      console.log('📡 Edit message response status:', response.status);
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        console.error('❌ Edit message failed:', errorData);
-        throw new Error(errorData.error || 'Failed to edit message');
-      }
-
-      const data = await response.json();
-      console.log('✅ Message edited successfully:', data);
+      console.log('✅ Message edited successfully:', response);
 
       return {
         success: true,
-        message: data.message
+        message: response.message || response.data || response
       };
     } catch (error) {
       console.error('❌ Edit message error:', error);
@@ -206,56 +165,15 @@ class MessagesApiService {
    */
   async deleteMessage(identifier: string, messageId: string): Promise<{ success: boolean }> {
     try {
-      console.log('🗑️ API: Deleting message:', messageId, 'in:', identifier);
-      console.log('🔍 API: Request details:', {
-        url: `${this.baseUrl}/${identifier}/messages/${messageId}`,
-        method: 'DELETE',
-        identifier,
-        messageId
-      });
+      console.log('🗑️ API: Deleting message via IPC:', messageId, 'in:', identifier);
       
-      const response = await authService.authenticatedFetch(`${this.baseUrl}/${identifier}/messages/${messageId}`, {
-        method: 'DELETE',
-      });
-
-      console.log('📡 API: Delete message response status:', response.status);
-      console.log('📡 API: Response headers:', Object.fromEntries(response.headers.entries()));
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('❌ API: Delete message failed - Response text:', errorText);
-        
-        let errorData;
-        try {
-          errorData = JSON.parse(errorText);
-        } catch {
-          errorData = { error: errorText };
-        }
-        
-        console.error('❌ API: Delete message failed - Parsed error:', errorData);
-        throw new Error(errorData.error || `HTTP ${response.status}: Failed to delete message`);
-      }
-
-      const responseText = await response.text();
-      console.log('✅ API: Delete message success - Response text:', responseText);
+      const response = await ipcService.delete(`${this.baseUrl}/${identifier}/messages/${messageId}`);
       
-      let responseData;
-      try {
-        responseData = responseText ? JSON.parse(responseText) : { success: true };
-      } catch {
-        responseData = { success: true }; // Assume success if no JSON response
-      }
-      
-      console.log('✅ API: Message deleted successfully - Parsed response:', responseData);
+      console.log('✅ API: Message deleted successfully:', response);
 
       return { success: true };
     } catch (error) {
       console.error('❌ API: Delete message error:', error);
-      console.error('❌ API: Error type:', typeof error);
-      console.error('❌ API: Error details:', {
-        message: error instanceof Error ? error.message : 'Unknown error',
-        stack: error instanceof Error ? error.stack : undefined
-      });
       throw error;
     }
   }
@@ -265,30 +183,15 @@ class MessagesApiService {
    */
   async addReaction(identifier: string, messageId: string, emoji: string): Promise<{ success: boolean; reactions: any[] }> {
     try {
-      console.log('😀 Adding reaction:', emoji, 'to message:', messageId, 'in:', identifier);
+      console.log('😀 Adding reaction via IPC:', emoji, 'to message:', messageId, 'in:', identifier);
       
-      const response = await authService.authenticatedFetch(`${this.baseUrl}/${identifier}/messages/${messageId}/reactions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ emoji }),
-      });
+      const response = await ipcService.post(`${this.baseUrl}/${identifier}/messages/${messageId}/reactions`, { emoji });
 
-      console.log('📡 Add reaction response status:', response.status);
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        console.error('❌ Add reaction failed:', errorData);
-        throw new Error(errorData.error || 'Failed to add reaction');
-      }
-
-      const data = await response.json();
-      console.log('✅ Reaction added successfully:', data);
+      console.log('✅ Reaction added successfully:', response);
 
       return {
         success: true,
-        reactions: data.reactions || []
+        reactions: response.reactions || response.data || []
       };
     } catch (error) {
       console.error('❌ Add reaction error:', error);

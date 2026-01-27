@@ -336,13 +336,13 @@ export default function Main() {
       // Force refresh auth state from storage
       authService.refreshAuthState();
       
-      // Test proxy connection
-      testProxyConnection();
+      // Test backend connection
+      testBackendConnection();
       
-      // Check if proxy has a valid session FIRST
-      console.log('Checking proxy session...');
-      const proxySession = await authService.checkProxySession();
-      console.log('Proxy session check result:', proxySession);
+      // Check if backend has a valid session FIRST
+      console.log('Checking backend session...');
+      const backendSession = await authService.checkAuthStatus();
+      console.log('Backend session check result:', backendSession);
       
       // Debug authentication state
       debugAuthState();
@@ -350,13 +350,13 @@ export default function Main() {
       // Wait a moment for auth state to settle
       await new Promise(resolve => setTimeout(resolve, 200));
       
-      // Check authentication - either local state or proxy session
+      // Check authentication - either local state or backend session
       const localAuth = authService.isAuthenticated();
-      const authenticated = localAuth || proxySession.authenticated;
+      const authenticated = localAuth || backendSession.authenticated;
       
       console.log('Authentication check results:', {
         localAuth,
-        proxyAuth: proxySession.authenticated,
+        backendAuth: backendSession.authenticated,
         finalResult: authenticated
       });
       
@@ -806,22 +806,15 @@ export default function Main() {
     }
   };
 
-  const testProxyConnection = async () => {
+  const testBackendConnection = async () => {
     try {
-      console.log('Testing proxy connection...');
-      const response = await fetch('http://localhost:8640/health');
-      const data = await response.json();
-      console.log('Proxy health check:', data);
+      console.log('Testing backend connection...');
       
-      const authStatus = await fetch('http://localhost:8640/auth/status', {
-        headers: {
-          'X-Session-Id': (window as any).sessionId || 'desktop-session'
-        }
-      });
-      const authData = await authStatus.json();
-      console.log('Auth status:', authData);
+      // Test authentication via IPC/fallback
+      const testResult = await authService.testAuthentication();
+      console.log('Backend connection test result:', testResult);
     } catch (error) {
-      console.error('Proxy connection test failed:', error);
+      console.error('Backend connection test failed:', error);
     }
   };
 

@@ -12,6 +12,13 @@ use winit::{
 use std::sync::Arc;
 use std::process::{Command, Child};
 use wgpu::{Instance, Adapter, Device, Queue};
+use axum::{
+    routing::{get, post, patch, delete},
+    http::StatusCode,
+    Json, Router,
+};
+use tower_http::cors::CorsLayer;
+use tokio::net::TcpListener;
 
 mod core;
 mod ipc;
@@ -177,6 +184,7 @@ struct App {
     ready_to_show: bool,
     proxy_process: Option<Child>,
     native_menubar: Option<MenuBar>,
+    last_check: std::time::Instant,
 }
 
 impl App {
@@ -189,6 +197,7 @@ impl App {
             ready_to_show: false,
             proxy_process: None,
             native_menubar: None,
+            last_check: std::time::Instant::now(),
         }
     }
     
@@ -295,7 +304,7 @@ impl App {
         if let Some(webview) = &self.webview {
             let state = self.state.lock().unwrap();
             if state.message.starts_with("dialog_result:") || state.message.starts_with("dialog_result_immediate:") {
-                println!("📡 Dialog result detected: {}", state.message);
+                println!("📡 Dialog result detected");
                 
                 // Parse the dialog result: "dialog_result:requestId:result" or "dialog_result_immediate:requestId:result"
                 let parts: Vec<&str> = state.message.splitn(3, ':').collect();
@@ -305,14 +314,18 @@ impl App {
                     
                     println!("📡 Setting dialog result for request {}: {}", request_id, result);
                     
-                    // Set the result in the window object for the frontend to pick up
+                    // Use a safer approach for dialog results
                     let js_code = format!(
-                        r#"
-                        console.log('📡 Backend setting dialog result for request {}: {}');
-                        window.dialogResult_{} = '{}';
-                        console.log('📡 Verification - window.dialogResult_{} =', window.dialogResult_{});
-                        "#,
-                        request_id, result, request_id, result, request_id, request_id
+                        "try {{ \
+                            var requestId = '{}'; \
+                            var result = '{}'; \
+                            window.dialogResult_ = window.dialogResult_ || {{}}; \
+                            window.dialogResult_[requestId] = result; \
+                        }} catch (e) {{ \
+                            console.error('Failed to set dialog result:', e); \
+                        }}",
+                        request_id.replace('\'', "\\'"),
+                        result.replace('\'', "\\'")
                     );
                     
                     if let Err(e) = webview.evaluate_script(&js_code) {
@@ -327,6 +340,13 @@ impl App {
                 let mut state = self.state.lock().unwrap();
                 state.message = "dialog_result_processed".to_string();
             }
+        }
+    }
+    
+    fn check_api_responses(&mut self) {
+        if let Some(webview) = &self.webview {
+            // Use the optimized direct response injection
+            ipc::process_pending_responses(webview);
         }
     }
     
@@ -367,7 +387,9 @@ impl App {
             // Edit menu actions
             "undo" | "redo" | "cut" | "copy" | "paste" | "select_all" => {
                 if let Some(webview) = &self.webview {
-                    let script = format!("document.execCommand('{}');", action);
+                    // Escape the action to prevent JavaScript injection
+                    let escaped_action = action.replace('\\', "\\\\").replace('\'', "\\'").replace('"', "\\\"");
+                    let script = format!("document.execCommand('{}');", escaped_action);
                     let _ = webview.evaluate_script(&script);
                 }
             }
@@ -461,7 +483,9 @@ impl App {
                 println!("Unhandled menu action: {}", action);
                 // Forward unknown actions to the webview
                 if let Some(webview) = &self.webview {
-                    let script = format!("window.dispatchEvent(new CustomEvent('menuAction', {{ detail: {{ action: '{}' }} }}));", action);
+                    // Escape the action to prevent JavaScript injection
+                    let escaped_action = action.replace('\\', "\\\\").replace('\'', "\\'").replace('"', "\\\"");
+                    let script = format!("window.dispatchEvent(new CustomEvent('menuAction', {{ detail: {{ action: '{}' }} }}));", escaped_action);
                     let _ = webview.evaluate_script(&script);
                 }
             }
@@ -507,6 +531,11 @@ impl ApplicationHandler for App {
                 }
             }
             
+            // Initialize JWT token storage and API channel
+            println!("🔑 Initializing JWT token storage...");
+            ipc::init_token_storage();
+            ipc::init_api_channel();
+            
             // Initialize Redis
             match init_redis() {
                 Ok(_) => {
@@ -532,55 +561,21 @@ impl ApplicationHandler for App {
                 }
             }
             
-            // Start the proxy process
-            if let Err(e) = self.start_proxy_process() {
-                println!("❌ Failed to start proxy process: {}", e);
-                // Continue anyway - user can start proxy manually
+            // Proxy process no longer needed - using IPC for API calls
+            println!("✅ Using IPC-based API system instead of proxy process");
+            
+            // Mark systems as initialized immediately to avoid hanging
+            {
+                let mut state = self.state.lock().unwrap();
+                state.wgpu_initialized = true;
+                state.webview_initialized = true;
+                state.message = "All systems ready! Using IPC-based API system".to_string();
             }
             
-            // Clone for async initialization
-            let state_clone = self.state.clone();
-            let window_clone = window.clone();
+            println!("✅ All initialization complete - showing window");
             
-            // Spawn initialization task
-            std::thread::spawn(move || {
-                let rt = tokio::runtime::Runtime::new().unwrap();
-                rt.block_on(async {
-                    // Initialize WGPU
-                    println!("Initializing WGPU...");
-                    let mut wgpu_state = WgpuState::new();
-                    match wgpu_state.initialize().await {
-                        Ok(_) => {
-                            let mut state = state_clone.lock().unwrap();
-                            state.wgpu_initialized = true;
-                            state.message = "WGPU initialized successfully".to_string();
-                            println!("WGPU initialization complete");
-                        }
-                        Err(e) => {
-                            let mut state = state_clone.lock().unwrap();
-                            state.message = format!("WGPU initialization failed: {}", e);
-                            println!("WGPU initialization failed: {}", e);
-                            return;
-                        }
-                    }
-
-                    // Mark WebView2 as initialized
-                    {
-                        let mut state = state_clone.lock().unwrap();
-                        state.webview_initialized = true;
-                        state.message = "All systems ready! mikoproxy.exe running on port 8640".to_string();
-                    }
-                    
-                    println!("All initialization complete");
-                    
-                    // Small delay to ensure everything is settled
-                    std::thread::sleep(std::time::Duration::from_millis(100));
-                    
-                    // Now show the window
-                    println!("Showing window");
-                    window_clone.set_visible(true);
-                });
-            });
+            // Show the window immediately
+            window.set_visible(true);
             
             self.initialization_complete = true;
         }
@@ -599,9 +594,14 @@ impl ApplicationHandler for App {
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _window_id: WindowId, event: WindowEvent) {
-        // Check for logout trigger and dialog results on every window event
-        self.check_logout_trigger();
-        self.check_dialog_results();
+        // Check for logout trigger, dialog results, and API responses more frequently for better responsiveness
+        let now = std::time::Instant::now();
+        if now.duration_since(self.last_check).as_millis() >= 8 { // Check every 8ms (~120fps) for ultra-responsive IPC
+            self.check_logout_trigger();
+            self.check_dialog_results();
+            self.check_api_responses();
+            self.last_check = now;
+        }
         
         match event {
             WindowEvent::CloseRequested => {
@@ -711,153 +711,24 @@ impl App {
             webview_builder = webview_builder.with_url("miko://app/");
         }
 
-        // Add initialization script to handle API requests and enable DevTools access
+        // Add minimal initialization script
         webview_builder = webview_builder
             .with_initialization_script(
                 r#"
-                console.log('WebView initialized from:', window.location.href);
-                
-                // Store session ID for authentication
+                console.log('WebView initialized');
                 window.sessionId = 'desktop-session';
-                console.log('Fixed session ID set to:', window.sessionId);
                 
-                // Override fetch to use local auth proxy instead of direct ERP calls
-                const originalFetch = window.fetch;
-                window.fetch = function(url, options = {}) {
-                    console.log('Fetch intercepted:', url, options);
-                    
-                    let newUrl = url;
-                    
-                    // Handle different URL formats for API calls
-                    if (typeof url === 'string') {
-                        // Case 1: Starts with /api - redirect to local auth proxy
-                        if (url.startsWith('/api')) {
-                            newUrl = 'http://localhost:8640' + url;
-                        }
-                        // Case 2: Relative API calls (api/...)
-                        else if (url.startsWith('api/')) {
-                            newUrl = 'http://localhost:8640/' + url;
-                        }
-                        // Case 3: Full ERP server URLs - redirect to local proxy
-                        else if (url.includes('10.10.60.8:1669/api/')) {
-                            const apiPath = url.substring(url.indexOf('/api/'));
-                            newUrl = 'http://localhost:8640' + apiPath;
-                        }
-                        
-                        // If URL was changed, log the redirect and add session header
-                        if (newUrl !== url) {
-                            console.log('Redirecting API call from', url, 'to', newUrl);
-                            
-                            // Add session ID header for authentication
-                            const newOptions = { ...options };
-                            newOptions.headers = {
-                                ...newOptions.headers,
-                                'X-Session-Id': window.sessionId
-                            };
-                            
-                            // Ensure CORS mode is set
-                            newOptions.mode = 'cors';
-                            
-                            return originalFetch(newUrl, newOptions);
-                        }
-                    }
-                    
-                    return originalFetch(url, options);
-                };
-
-                // Add authentication helper functions
-                window.authManager = {
-                    login: async function(credentials) {
-                        console.log('Logging in via Rust backend...');
-                        try {
-                            const response = await fetch('http://localhost:8640/auth/login', {
-                                method: 'POST',
-                                headers: {
-                                    'Content-Type': 'application/json',
-                                    'X-Session-Id': window.sessionId
-                                },
-                                body: JSON.stringify(credentials)
-                            });
-                            const result = await response.json();
-                            console.log('Login result:', result);
-                            return result;
-                        } catch (error) {
-                            console.error('Login error:', error);
-                            throw error;
-                        }
-                    },
-                    
-                    logout: async function() {
-                        console.log('Logging out via Rust backend...');
-                        try {
-                            const response = await fetch('http://localhost:8640/auth/logout', {
-                                method: 'POST',
-                                headers: {
-                                    'X-Session-Id': window.sessionId
-                                }
-                            });
-                            const result = await response.json();
-                            console.log('Logout result:', result);
-                            return result;
-                        } catch (error) {
-                            console.error('Logout error:', error);
-                            throw error;
-                        }
-                    },
-                    
-                    checkStatus: async function() {
-                        try {
-                            const response = await fetch('http://localhost:8640/auth/status', {
-                                headers: {
-                                    'X-Session-Id': window.sessionId
-                                }
-                            });
-                            const result = await response.json();
-                            console.log('Auth status:', result);
-                            return result;
-                        } catch (error) {
-                            console.error('Auth status error:', error);
-                            return { authenticated: false };
-                        }
-                    }
-                };
-
-                // Add native dialog helper
-                window.nativeDialog = {
-                    confirmLogout: function() {
-                        // Send IPC message to show logout confirmation
-                        try {
-                            window.ipc.postMessage(JSON.stringify({
-                                action: 'confirm_logout'
-                            }));
-                            // The native dialog is synchronous and blocks, so we return false here
-                            // The actual logout will be handled by the backend if user confirms
-                            return false; // Don't proceed with logout in frontend
-                        } catch (error) {
-                            console.error('IPC error, using browser confirm:', error);
-                            return confirm('Are you sure you want to sign out?');
-                        }
-                    }
-                };
-
-                console.log('Authentication system initialized');
-                console.log('Session ID:', window.sessionId);
-                console.log('All API calls will be authenticated via Rust backend proxy');
-                console.log('DevTools: Right-click and select "Inspect" or press F12');
-                
-                // Add logout trigger function that can be called from backend
-                window.triggerLogout = function() {
-                    console.log('triggerLogout called from backend');
-                    // Find and trigger the logout function
-                    if (window.appLogout) {
-                        window.appLogout();
+                // Simple IPC test function
+                window.testIpc = function() {
+                    if (window.ipc) {
+                        window.ipc.postMessage('test_ipc');
+                        console.log('IPC test sent');
                     } else {
-                        console.log('appLogout not found, dispatching custom event');
-                        window.dispatchEvent(new CustomEvent('nativeLogout'));
+                        console.log('IPC not available');
                     }
                 };
                 
-                console.log('Native logout trigger initialized');
+                console.log('Session ID set:', window.sessionId);
                 "#
             );
 
@@ -919,49 +790,7 @@ impl App {
         let webview = webview_builder
             .with_devtools(true) // Enable DevTools for debugging
             .with_ipc_handler(move |request: http::Request<String>| {
-                let body = request.body();
-                
-                // Try to parse as JSON for context menu coordinates and menu actions
-                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(body) {
-                    if let Some(action) = parsed.get("action").and_then(|v| v.as_str()) {
-                        match action {
-                            "show_context_menu" => {
-                                if let (Some(x), Some(y)) = (
-                                    parsed.get("x").and_then(|v| v.as_i64()),
-                                    parsed.get("y").and_then(|v| v.as_i64())
-                                ) {
-                                    #[cfg(windows)]
-                                    {
-                                        if let Err(e) = context_menu::show_context_menu(window_handle, x as i32, y as i32) {
-                                            println!("Failed to show context menu: {:?}", e);
-                                        }
-                                    }
-                                    
-                                    #[cfg(not(windows))]
-                                    {
-                                        println!("Context menu requested at ({}, {})", x, y);
-                                        if let Err(e) = context_menu::show_context_menu(x as i32, y as i32) {
-                                            println!("Failed to show context menu: {:?}", e);
-                                        }
-                                    }
-                                    return;
-                                }
-                            }
-                            "menu_action" => {
-                                if let Some(menu_id) = parsed.get("menu_id").and_then(|v| v.as_str()) {
-                                    // Handle webview menu actions
-                                    println!("WebView menu action: {}", menu_id);
-                                    // Note: We can't call self.handle_menu_action here due to closure constraints
-                                    // The webview menubar handles most actions directly via JavaScript
-                                    return;
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-                
-                // Handle other IPC messages
+                // Handle IPC messages and process API requests
                 let state = state_clone.clone();
                 handle_ipc_message(request, state);
             })

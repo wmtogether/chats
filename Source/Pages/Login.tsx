@@ -46,36 +46,22 @@ Check console for detailed logs`);
     }
   };
 
-  const testProxy = async () => {
-    setTestResult('Testing proxy server...');
+  const testBackend = async () => {
+    setTestResult('Testing backend connection...');
     try {
-      // Test health endpoint
-      const healthResponse = await fetch('http://localhost:8640/health');
-      if (healthResponse.ok) {
-        const healthData = await healthResponse.json();
-        
-        // Test session info
-        const sessionResponse = await fetch('http://localhost:8640/sessions');
-        const sessionData = sessionResponse.ok ? await sessionResponse.json() : null;
-        
-        // Test auth status
-        const authResponse = await fetch('http://localhost:8640/auth/status', {
-          headers: {
-            'X-Session-Id': (window as any).sessionId || 'desktop-session'
-          }
-        });
-        const authData = authResponse.ok ? await authResponse.json() : null;
-        
-        setTestResult(`✅ Proxy server is running on port 8640!
-Status: ${healthData.status}
-Sessions: ${sessionData?.totalSessions || 0}
-Current session authenticated: ${authData?.authenticated || false}
-Storage file: ${sessionData?.storageFile || 'N/A'}`);
+      // Test authentication system
+      const testResult = await authService.testAuthentication();
+      console.log('Backend test result:', testResult);
+      
+      if (testResult.success) {
+        setTestResult(`✅ Backend connection successful!
+Details: ${JSON.stringify(testResult.details, null, 2)}`);
       } else {
-        setTestResult(`❌ Proxy server responded with status: ${healthResponse.status}`);
+        setTestResult(`❌ Backend test failed: ${testResult.error}`);
       }
     } catch (error) {
-      setTestResult(`❌ Cannot connect to proxy server on port 8640: ${error}`);
+      console.error('Backend test failed:', error);
+      setTestResult(`❌ Backend connection failed: ${error}`);
     }
   };
 
@@ -188,6 +174,26 @@ Storage file: ${sessionData?.storageFile || 'N/A'}`);
               {isLoading ? 'Signing in...' : 'Login'}
             </button>
 
+            {/* Development Testing Buttons */}
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={testBackend}
+                className="label-small flex-1 rounded-lg border border-outline py-2 text-on-surface hover:bg-surface-variant"
+                disabled={isLoading}
+              >
+                Test Backend
+              </button>
+              <button
+                type="button"
+                onClick={testAPIs}
+                className="label-small flex-1 rounded-lg border border-outline py-2 text-on-surface hover:bg-surface-variant"
+                disabled={isLoading}
+              >
+                Test APIs
+              </button>
+            </div>
+
             <button
               type="button"
               className="label-large text-primary hover:text-primary/80 hover:underline"
@@ -196,6 +202,13 @@ Storage file: ${sessionData?.storageFile || 'N/A'}`);
               Need help?
             </button>
           </div>
+          
+          {/* Test Results */}
+          {testResult && (
+            <div className="mt-4 rounded-lg bg-surface-variant p-3">
+              <pre className="body-small text-on-surface-variant whitespace-pre-wrap">{testResult}</pre>
+            </div>
+          )}
         </form>
       </div>
     </div>

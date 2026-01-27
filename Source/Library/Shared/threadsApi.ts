@@ -1,5 +1,5 @@
 // Threads API Service
-import authService from '../Authentication/jwt';
+import ipcService from './ipcService';
 
 export interface ThreadMetadata {
   queueId?: number;
@@ -60,30 +60,19 @@ class ThreadsApiService {
 
       const url = `${this.baseUrl}${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
       
-      console.log('🔄 Fetching threads from:', url);
+      console.log('🔄 Fetching threads via IPC:', url);
       
-      const response = await authService.authenticatedFetch(url, {
-        method: 'GET',
-      });
+      const response = await ipcService.get(url);
 
-      console.log('📡 Threads API response status:', response.status);
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        console.error('❌ Threads API error:', errorData);
-        throw new Error(errorData.error || `HTTP ${response.status}: Failed to fetch threads`);
-      }
-
-      const data = await response.json();
-      console.log('📊 Raw threads data:', data);
+      console.log('📡 Threads API response:', response);
       
       // Transform the response to match our expected format
       const result = {
         success: true,
-        threads: data.chats || data.threads || data,
-        total: data.total || (data.chats || data.threads || data)?.length || 0,
-        page: data.page || 1,
-        limit: data.limit || 50
+        threads: response.chats || response.threads || response.data || [],
+        total: response.total || (response.chats || response.threads || response.data)?.length || 0,
+        page: response.page || 1,
+        limit: response.limit || 50
       };
       
       console.log('✅ Processed threads result:', {
@@ -102,49 +91,25 @@ class ThreadsApiService {
 
   async getThread(id: number): Promise<Thread> {
     try {
-      const response = await authService.authenticatedFetch(`${this.baseUrl}/${id}`, {
-        method: 'GET',
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || `HTTP ${response.status}: Failed to fetch thread`);
-      }
-
-      const data = await response.json();
-      return data.thread || data;
+      const response = await ipcService.get(`${this.baseUrl}/${id}`);
+      return response.thread || response.data || response;
     } catch (error) {
-      console.error('Error fetching thread:', error);
+      console.error('❌ Error fetching thread:', error);
       throw error;
     }
   }
 
   async updateThread(id: number, updates: Partial<Thread>): Promise<{ success: boolean; thread?: Thread }> {
     try {
-      console.log('✏️ Updating thread:', id, 'with:', updates);
+      console.log('✏️ Updating thread via IPC:', id, 'with:', updates);
       
-      const response = await authService.authenticatedFetch(`${this.baseUrl}/${id}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(updates),
-      });
+      const response = await ipcService.patch(`${this.baseUrl}/${id}`, updates);
 
-      console.log('📡 Update thread response status:', response.status);
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        console.error('❌ Update thread failed:', errorData);
-        throw new Error(errorData.error || 'Failed to update thread');
-      }
-
-      const data = await response.json();
-      console.log('✅ Thread updated successfully:', data);
+      console.log('✅ Thread updated successfully:', response);
 
       return {
         success: true,
-        thread: data.thread || data
+        thread: response.thread || response.data || response
       };
     } catch (error) {
       console.error('❌ Update thread error:', error);
@@ -154,32 +119,10 @@ class ThreadsApiService {
 
   async deleteThread(id: number): Promise<{ success: boolean }> {
     try {
-      console.log('🗑️ Deleting thread:', id);
+      console.log('🗑️ Deleting thread via IPC:', id);
       
-      const response = await authService.authenticatedFetch(`${this.baseUrl}/${id}`, {
-        method: 'DELETE',
-      });
+      const response = await ipcService.delete(`${this.baseUrl}/${id}`);
 
-      console.log('📡 Delete thread response status:', response.status);
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('❌ Delete thread failed - Response text:', errorText);
-        
-        let errorData;
-        try {
-          errorData = JSON.parse(errorText);
-        } catch {
-          errorData = { error: errorText };
-        }
-        
-        console.error('❌ Delete thread failed - Parsed error:', errorData);
-        throw new Error(errorData.error || `HTTP ${response.status}: Failed to delete thread`);
-      }
-
-      const responseText = await response.text();
-      console.log('✅ Delete thread success - Response text:', responseText);
-      
       console.log('✅ Thread deleted successfully');
 
       return { success: true };

@@ -1,5 +1,5 @@
 // Queue API Service for status updates
-import authService from '../Authentication/jwt';
+import ipcService from './ipcService';
 
 export interface QueueStatus {
   id: number;
@@ -44,24 +44,13 @@ class QueueApiService {
 
   async getQueue(queueId: number): Promise<QueueStatus> {
     try {
-      console.log('🔄 Fetching queue:', queueId);
+      console.log('🔄 Fetching queue via IPC:', queueId);
       
-      const response = await authService.authenticatedFetch(`${this.baseUrl}/${queueId}`, {
-        method: 'GET',
-      });
+      const response = await ipcService.get(`${this.baseUrl}/${queueId}`);
 
-      console.log('📡 Queue API response status:', response.status);
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        console.error('❌ Queue API error:', errorData);
-        throw new Error(errorData.error || `HTTP ${response.status}: Failed to fetch queue`);
-      }
-
-      const data = await response.json();
-      console.log('📊 Queue data:', data);
+      console.log('📊 Queue data:', response);
       
-      return data.queue;
+      return response.queue || response.data || response;
     } catch (error) {
       console.error('❌ Error fetching queue:', error);
       throw error;
@@ -70,28 +59,13 @@ class QueueApiService {
 
   async updateQueueStatus(queueId: number, updates: QueueUpdatePayload): Promise<QueueStatus> {
     try {
-      console.log('🔄 Updating queue status:', { queueId, updates });
+      console.log('🔄 Updating queue status via IPC:', { queueId, updates });
       
-      const response = await authService.authenticatedFetch(`${this.baseUrl}/${queueId}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(updates),
-      });
+      const response = await ipcService.patch(`${this.baseUrl}/${queueId}`, updates);
 
-      console.log('📡 Queue update response status:', response.status);
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        console.error('❌ Queue update error:', errorData);
-        throw new Error(errorData.error || `HTTP ${response.status}: Failed to update queue`);
-      }
-
-      const data = await response.json();
-      console.log('✅ Queue updated successfully:', data);
+      console.log('✅ Queue updated successfully:', response);
       
-      return data.queue;
+      return response.queue || response.data || response;
     } catch (error) {
       console.error('❌ Error updating queue:', error);
       throw error;
