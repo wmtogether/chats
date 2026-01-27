@@ -26,6 +26,15 @@ export interface QueueUpdatePayload {
   requestType?: string;
 }
 
+export interface QueueCreationPayload {
+  jobName: string;
+  requestType: string;
+  notes?: string | null;
+  priority?: string;
+  customerId?: string | null;
+  customerName?: string | null;
+}
+
 export const QUEUE_STATUSES = [
   'PENDING',
   'ACCEPTED', 
@@ -42,9 +51,24 @@ export type QueueStatusType = typeof QUEUE_STATUSES[number];
 class QueueApiService {
   private baseUrl = '/api/queue';
 
+  async createQueue(payload: QueueCreationPayload): Promise<any> {
+    try {
+      console.log('🔄 Creating new queue via WebUI API:', payload);
+      
+      const response = await ipcService.post(this.baseUrl, payload);
+
+      console.log('✅ Queue created successfully:', response);
+      
+      return response.queue || response.data || response;
+    } catch (error) {
+      console.error('❌ Error creating queue:', error);
+      throw error;
+    }
+  }
+
   async getQueue(queueId: number): Promise<QueueStatus> {
     try {
-      console.log('🔄 Fetching queue via IPC:', queueId);
+      console.log('🔄 Fetching queue via WebUI API:', queueId);
       
       const response = await ipcService.get(`${this.baseUrl}/${queueId}`);
 
@@ -59,7 +83,7 @@ class QueueApiService {
 
   async updateQueueStatus(queueId: number, updates: QueueUpdatePayload): Promise<QueueStatus> {
     try {
-      console.log('🔄 Updating queue status via IPC:', { queueId, updates });
+      console.log('🔄 Updating queue status via WebUI API:', { queueId, updates });
       
       const response = await ipcService.patch(`${this.baseUrl}/${queueId}`, updates);
 

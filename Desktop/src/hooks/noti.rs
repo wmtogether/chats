@@ -26,18 +26,12 @@ pub struct NotificationData {
 #[derive(Debug, Clone)]
 pub enum NotificationIcon {
     Info,
-    Warning,
-    Error,
-    None,
 }
 
 impl NotificationIcon {
     fn to_win32_icon(&self) -> NOTIFY_ICON_INFOTIP_FLAGS {
         match self {
             NotificationIcon::Info => NIIF_INFO,
-            NotificationIcon::Warning => NIIF_WARNING,
-            NotificationIcon::Error => NIIF_ERROR,
-            NotificationIcon::None => NIIF_NONE,
         }
     }
 }
@@ -59,9 +53,6 @@ impl NotificationManager {
     pub fn show_notification(&mut self, notification: NotificationData) -> std::result::Result<(), Box<dyn std::error::Error>> {
         unsafe {
             // Initialize COM for shell notifications
-            CoInitializeEx(None, COINIT_APARTMENTTHREADED).ok();
-
-            // Create notification data structure
             let mut nid = NOTIFYICONDATAW {
                 cbSize: std::mem::size_of::<NOTIFYICONDATAW>() as u32,
                 hWnd: self.hwnd,
@@ -111,41 +102,7 @@ impl NotificationManager {
         self.show_notification(notification)
     }
 
-    /// Show an error notification
-    pub fn show_error(&mut self, title: &str, message: &str) -> std::result::Result<(), Box<dyn std::error::Error>> {
-        let notification = NotificationData {
-            title: title.to_string(),
-            message: message.to_string(),
-            icon_type: NotificationIcon::Error,
-            duration: 8000, // 8 seconds for errors
-        };
-        
-        self.show_notification(notification)
-    }
 
-    /// Show a warning notification
-    pub fn show_warning(&mut self, title: &str, message: &str) -> std::result::Result<(), Box<dyn std::error::Error>> {
-        let notification = NotificationData {
-            title: title.to_string(),
-            message: message.to_string(),
-            icon_type: NotificationIcon::Warning,
-            duration: 6000, // 6 seconds for warnings
-        };
-        
-        self.show_notification(notification)
-    }
-
-    /// Show a success notification
-    pub fn show_success(&mut self, title: &str, message: &str) -> std::result::Result<(), Box<dyn std::error::Error>> {
-        let notification = NotificationData {
-            title: title.to_string(),
-            message: message.to_string(),
-            icon_type: NotificationIcon::Info,
-            duration: 4000, // 4 seconds for success
-        };
-        
-        self.show_notification(notification)
-    }
 
     /// Load the default application icon
     fn load_default_icon(&self) -> std::result::Result<HICON, Box<dyn std::error::Error>> {
@@ -174,32 +131,20 @@ impl NotificationManager {
         dest[len] = 0; // Ensure null termination
     }
 
-    /// Remove notification manually (simplified - no threading)
-    pub fn remove_notification(&self, notification_id: u32) {
-        unsafe {
-            let nid = NOTIFYICONDATAW {
-                cbSize: std::mem::size_of::<NOTIFYICONDATAW>() as u32,
-                hWnd: self.hwnd,
-                uID: notification_id,
-                ..Default::default()
-            };
-            
-            Shell_NotifyIconW(NIM_DELETE, &nid);
-        }
-    }
+
 
     /// Remove all notifications
     pub fn clear_all_notifications(&self) {
         unsafe {
             for id in 1..=self.notification_id {
-                let mut nid = NOTIFYICONDATAW {
+                let nid = NOTIFYICONDATAW {
                     cbSize: std::mem::size_of::<NOTIFYICONDATAW>() as u32,
                     hWnd: self.hwnd,
                     uID: id,
                     ..Default::default()
                 };
                 
-                Shell_NotifyIconW(NIM_DELETE, &nid);
+                let _ = Shell_NotifyIconW(NIM_DELETE, &nid);
             }
         }
     }
@@ -231,132 +176,4 @@ pub fn show_notification(title: &str, message: &str) -> std::result::Result<(), 
             Err(std::io::Error::new(std::io::ErrorKind::NotFound, "Notification manager not initialized").into())
         }
     }
-}
-
-pub fn show_error_notification(title: &str, message: &str) -> std::result::Result<(), Box<dyn std::error::Error>> {
-    unsafe {
-        if let Some(ref mut manager) = NOTIFICATION_MANAGER {
-            manager.show_error(title, message)
-        } else {
-            Err(std::io::Error::new(std::io::ErrorKind::NotFound, "Notification manager not initialized").into())
-        }
-    }
-}
-
-pub fn show_warning_notification(title: &str, message: &str) -> std::result::Result<(), Box<dyn std::error::Error>> {
-    unsafe {
-        if let Some(ref mut manager) = NOTIFICATION_MANAGER {
-            manager.show_warning(title, message)
-        } else {
-            Err(std::io::Error::new(std::io::ErrorKind::NotFound, "Notification manager not initialized").into())
-        }
-    }
-}
-
-pub fn show_success_notification(title: &str, message: &str) -> std::result::Result<(), Box<dyn std::error::Error>> {
-    unsafe {
-        if let Some(ref mut manager) = NOTIFICATION_MANAGER {
-            manager.show_success(title, message)
-        } else {
-            Err(std::io::Error::new(std::io::ErrorKind::NotFound, "Notification manager not initialized").into())
-        }
-    }
-}
-
-/// Notification event handler for processing notification clicks
-pub fn handle_notification_message(_wparam: WPARAM, lparam: LPARAM) {
-    match lparam.0 as u32 {
-        WM_LBUTTONUP => {
-            println!("Notification clicked - bringing window to front");
-            // Handle notification click - could bring window to front, etc.
-        }
-        WM_RBUTTONUP => {
-            println!("Notification right-clicked");
-            // Handle right-click on notification
-        }
-        _ => {}
-    }
-}
-/// Handle new message notification
-pub fn show_new_message_notification(sender: &str, message: &str, channel: Option<&str>) -> std::result::Result<(), Box<dyn std::error::Error>> {
-    let title = if let Some(ch) = channel {
-        format!("New message in #{}", ch)
-    } else {
-        format!("New message from {}", sender)
-    };
-    
-    // Truncate long messages for notification
-    let display_message = if message.len() > 100 {
-        format!("{}...", &message[..97])
-    } else {
-        message.to_string()
-    };
-    
-    unsafe {
-        if let Some(ref mut manager) = NOTIFICATION_MANAGER {
-            let notification = NotificationData {
-                title,
-                message: display_message,
-                icon_type: NotificationIcon::Info,
-                duration: 6000, // 6 seconds for new messages
-            };
-            manager.show_notification(notification)
-        } else {
-            Err(std::io::Error::new(std::io::ErrorKind::NotFound, "Notification manager not initialized").into())
-        }
-    }
-}
-
-/// Handle Redis message and show appropriate notification
-pub fn handle_redis_message(channel: &str, event: &str, data: &serde_json::Value) -> std::result::Result<(), Box<dyn std::error::Error>> {
-    match channel {
-        "chat:message" => {
-            if event == "new" {
-                // Extract message data
-                let sender = data.get("sender")
-                    .and_then(|s| s.as_str())
-                    .unwrap_or("Unknown");
-                let content = data.get("content")
-                    .and_then(|c| c.as_str())
-                    .unwrap_or("New message");
-                let channel_name = data.get("channelName")
-                    .and_then(|c| c.as_str());
-                
-                show_new_message_notification(sender, content, channel_name)?;
-            }
-        }
-        "notification" => {
-            if event == "send" {
-                let title = data.get("title")
-                    .and_then(|t| t.as_str())
-                    .unwrap_or("Notification");
-                let message = data.get("message")
-                    .and_then(|m| m.as_str())
-                    .unwrap_or("You have a new notification");
-                
-                show_notification(title, message)?;
-            }
-        }
-        "user:status" => {
-            if event == "changed" {
-                let user = data.get("userId")
-                    .and_then(|u| u.as_str())
-                    .unwrap_or("User");
-                let status = data.get("status")
-                    .and_then(|s| s.as_str())
-                    .unwrap_or("unknown");
-                
-                let message = format!("{} is now {}", user, status);
-                show_notification("User Status", &message)?;
-            }
-        }
-        _ => {
-            // Generic notification for other channels
-            let title = format!("Update from {}", channel);
-            let message = format!("Event: {}", event);
-            show_notification(&title, &message)?;
-        }
-    }
-    
-    Ok(())
 }

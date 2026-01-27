@@ -60,7 +60,7 @@ class ThreadsApiService {
 
       const url = `${this.baseUrl}${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
       
-      console.log('🔄 Fetching threads via IPC:', url);
+      console.log('🔄 Fetching threads via WebUI API:', url);
       
       const response = await ipcService.get(url);
 
@@ -101,7 +101,7 @@ class ThreadsApiService {
 
   async updateThread(id: number, updates: Partial<Thread>): Promise<{ success: boolean; thread?: Thread }> {
     try {
-      console.log('✏️ Updating thread via IPC:', id, 'with:', updates);
+      console.log('✏️ Updating thread via WebUI API:', id, 'with:', updates);
       
       const response = await ipcService.patch(`${this.baseUrl}/${id}`, updates);
 
@@ -119,7 +119,7 @@ class ThreadsApiService {
 
   async deleteThread(id: number): Promise<{ success: boolean }> {
     try {
-      console.log('🗑️ Deleting thread via IPC:', id);
+      console.log('🗑️ Deleting thread via WebUI API:', id);
       
       const response = await ipcService.delete(`${this.baseUrl}/${id}`);
 

@@ -11,6 +11,7 @@ import authService from './Library/Authentication/jwt';
 import { debugAuthState } from './Library/Authentication/debug';
 import { threadsApiService } from './Library/Shared/threadsApi';
 import { messagesApiService, type MessageData as ApiMessageData } from './Library/Shared/messagesApi';
+import { queueApiService } from './Library/Shared/queueApi';
 import { getProfileImageUrl } from './Library/Shared/profileUtils';
 import { useRedis } from './Library/hooks/useRedis';
 import type { PubSubMessage } from './Library/redis/direct-pubsub';
@@ -474,29 +475,16 @@ export default function Main() {
     console.log('🆕 Creating new chat:', chatData);
     
     try {
-      // Create a new queue (which automatically creates a chat channel)
-      // Following the same pattern as the original NewChatDialog
-      const queueResponse = await fetch('/api/queue', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'X-Session-Id': (window as any).sessionId || 'desktop-session'
-        },
-        body: JSON.stringify({
-          jobName: chatData.name,
-          requestType: chatData.requestType,
-          notes: chatData.description || null,
-          priority: 'normal',
-          customerId: chatData.customerId || null,
-          customerName: chatData.customerName || null,
-        }),
+      // Create a new queue using the queueApiService
+      const queueData = await queueApiService.createQueue({
+        jobName: chatData.name,
+        requestType: chatData.requestType,
+        notes: chatData.description || null,
+        priority: 'normal',
+        customerId: chatData.customerId || null,
+        customerName: chatData.customerName || null,
       });
 
-      if (!queueResponse.ok) {
-        throw new Error('Failed to create queue');
-      }
-
-      const queueData = await queueResponse.json();
       console.log('✅ Queue created successfully:', queueData);
       
       // Refresh the threads list to include the new chat
@@ -505,7 +493,7 @@ export default function Main() {
       
       // Find and select the newly created chat
       const newChat = response.threads.find(thread => 
-        thread.metadata?.queueId === queueData.queue?.id
+        thread.metadata?.queueId === queueData.id
       );
       
       if (newChat) {

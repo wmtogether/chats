@@ -297,10 +297,7 @@ async function main(): Promise<void> {
     const mikochatDest = join(DISTRIBUTION_PACKAGE_DIR, 'mikochat.exe');
     const mikochatCopied = copyFile(mikochatSrc, mikochatDest, 'mikochat.exe');
 
-    // Copy mikoproxy.exe
-    const mikoproxySrc = join(TARGET_RELEASE_DIR, 'mikoproxy.exe');
-    const mikoproxyDest = join(DISTRIBUTION_PACKAGE_DIR, 'mikoproxy.exe');
-    const mikoproxyCopied = copyFile(mikoproxySrc, mikoproxyDest, 'mikoproxy.exe');
+
 
     console.log('\n🌐 Copying WebView2 runtime...');
     
@@ -349,7 +346,6 @@ async function main(): Promise<void> {
 
     console.log('\n📊 Post-build summary:');
     console.log(`   mikochat.exe: ${mikochatCopied ? '✅' : '❌'}`);
-    console.log(`   mikoproxy.exe: ${mikoproxyCopied ? '✅' : '❌'}`);
     console.log(`   WebView2 runtime: ${existsSync(RUNTIME_DIR) ? '✅' : '❌'}`);
 
     // List contents of Distribution/Package

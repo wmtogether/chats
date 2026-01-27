@@ -1,17 +1,8 @@
 // IPC Service for communicating with Rust backend
+import authService from '../Authentication/jwt';
 export interface IpcRequest {
   action: string;
-  requestId: string;
-  method?: string;
-  path?: string;
-  body?: any;
-  headers?: Record<string, any>;
-}
-
-export interface IpcResponse {
-  success: boolean;
-  data?: any;
-  error?: string;
+  requestId?: string;
 }
 
 class IpcService {
@@ -24,13 +15,9 @@ class IpcService {
   private isDesktopApp = false;
 
   constructor() {
-    // Set up global callback system for API responses
     if (typeof window !== 'undefined') {
-      (window as any).apiCallbacks = (window as any).apiCallbacks || {};
-      (window as any).apiResponse_ = (window as any).apiResponse_ || {};
-      
-      // Detect if we're in the desktop app
-      this.isDesktopApp = !!(window as any).ipc || 
+      // Detect if we're in the desktop app (only for non-API IPC, like dialogs)
+      this.isDesktopApp = !!(window as any).ipc ||
                          window.location.protocol === 'file:' ||
                          window.location.hostname === '' ||
                          (window as any).chrome?.webview;
@@ -50,76 +37,38 @@ class IpcService {
   }
 
   async makeApiRequest(method: string, path: string, body?: any, headers?: Record<string, any>): Promise<any> {
-    return new Promise((resolve, reject) => {
-      const requestId = this.generateRequestId();
-      const startTime = performance.now();
-      
-      console.log('🔄 IPC API Request:', { method, path, requestId, isDesktopApp: this.isDesktopApp, startTime });
+    const fullUrl = `http://10.10.60.8:1669${path}`; // Use the direct backend URL
+    const defaultHeaders = {
+      'Content-Type': 'application/json',
+      'X-Session-Id': (window as any).sessionId || 'webui-session', // Use a session ID for direct web UI access
+      ...authService.getAuthHeader(), // Add Authorization header
+      ...headers
+    };
 
-      // Check if IPC is available and we're in desktop app
-      if (!this.isDesktopApp || !(window as any).ipc) {
-        console.error('❌ IPC not available - this should only run in desktop app');
-        reject(new Error('IPC not available - application must run in desktop environment'));
-        return;
+    const requestOptions: RequestInit = {
+      method: method,
+      headers: defaultHeaders,
+    };
+
+    if (body) {
+      requestOptions.body = JSON.stringify(body);
+    }
+
+    try {
+      console.log('🌐 Making WebUI API Request:', { method, fullUrl });
+      const response = await fetch(fullUrl, requestOptions);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `HTTP error! Status: ${response.status}`);
       }
 
-      // Set up timeout - aggressive timeout for faster feedback
-      const timeout = setTimeout(() => {
-        const elapsed = performance.now() - startTime;
-        this.pendingRequests.delete(requestId);
-        console.warn('⏰ Request timeout:', requestId, `after ${elapsed.toFixed(2)}ms`);
-        reject(new Error('Request timeout'));
-      }, 5000); // Reduced to 5s for faster feedback
-
-      // Store the request
-      this.pendingRequests.set(requestId, { resolve, reject, timeout });
-
-      // Set up callback for this specific request
-      if (typeof window !== 'undefined') {
-        (window as any).apiCallbacks = (window as any).apiCallbacks || {};
-        (window as any).apiCallbacks[requestId] = (response: any) => {
-          const elapsed = performance.now() - startTime;
-          console.log('📡 IPC API Response received:', { requestId, response, elapsed: `${elapsed.toFixed(2)}ms` });
-          
-          const pendingRequest = this.pendingRequests.get(requestId);
-          if (pendingRequest) {
-            clearTimeout(pendingRequest.timeout);
-            this.pendingRequests.delete(requestId);
-            
-            if (response.success === false) {
-              reject(new Error(response.error || 'API request failed'));
-            } else {
-              resolve(response);
-            }
-          }
-        };
-      }
-
-      // Send the IPC message
-      const ipcMessage: IpcRequest = {
-        action: 'api_request',
-        requestId,
-        method,
-        path,
-        body,
-        headers: {
-          'X-Session-Id': (window as any).sessionId || 'desktop-session',
-          'Content-Type': 'application/json',
-          ...headers
-        }
-      };
-
-      try {
-        const sendTime = performance.now();
-        (window as any).ipc.postMessage(JSON.stringify(ipcMessage));
-        const sendElapsed = performance.now() - sendTime;
-        console.log('✅ IPC message sent:', requestId, `send took ${sendElapsed.toFixed(2)}ms`);
-      } catch (error) {
-        clearTimeout(timeout);
-        this.pendingRequests.delete(requestId);
-        reject(new Error(`Failed to send IPC message: ${error}`));
-      }
-    });
+      const data = await response.json();
+      return data;
+    } catch (error: any) {
+      console.error('❌ WebUI API Request failed:', error);
+      throw error;
+    }
   }
 
   // Fallback HTTP request method for development

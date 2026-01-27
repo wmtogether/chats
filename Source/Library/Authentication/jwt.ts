@@ -1,5 +1,5 @@
 // JWT Authentication Library
-import ipcService from '../Shared/ipcService';
+
 
 export interface User {
   id: number;
@@ -101,29 +101,38 @@ class AuthService {
 
   async login(credentials: LoginRequest): Promise<LoginResponse> {
     try {
-      console.log('🔐 Logging in via IPC...');
+      console.log('🔐 Logging in via WebUI API...');
       
-      // Use IPC to communicate with Rust backend - use correct API path
-      const response = await ipcService.post('/api/auth/login', credentials);
+      const response = await fetch('http://10.10.60.8:1669/api/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(credentials),
+      });
+
+      const data = await response.json();
       
-      if (response.success) {
+      if (response.ok && data.success) {
         // Store token and user data locally for UI state
-        this.token = response.token;
-        this.user = response.user;
+        this.token = data.token;
+        this.user = data.user;
         this.saveToStorage();
         
         // Also set the cookie for immediate use
         if (typeof document !== 'undefined') {
-          document.cookie = `auth-token=${response.token}; path=/; SameSite=Lax`;
+          document.cookie = `auth-token=${data.token}; path=/; SameSite=Lax`;
           console.log('Auth cookie set after login');
         }
         
-        console.log('✅ Login successful via IPC');
+        console.log('✅ Login successful');
         console.log('User data stored:', this.user);
         console.log('Token stored:', this.token ? `${this.token.substring(0, 20)}...` : 'None');
+      } else {
+        throw new Error(data.error || 'Login failed. Please check your credentials.');
       }
 
-      return response;
+      return data;
     } catch (error) {
       console.error('❌ Login error:', error);
       
@@ -153,7 +162,7 @@ class AuthService {
     }
   }
 
-  logout() {
+    async logout() {
     console.log('🚪 Logging out...');
     
     // Clear local storage and state
@@ -165,10 +174,13 @@ class AuthService {
       console.log('Auth cookie cleared');
     }
     
-    // Notify the Rust backend about logout via IPC
-    ipcService.post('/api/auth/logout').catch(error => {
+    // Notify the backend about logout
+    try {
+      await fetch('http://10.10.60.8:1669/api/auth/logout', { method: 'POST' });
+      console.log('✅ Logout notification sent to backend');
+    } catch (error) {
       console.error('❌ Logout notification failed:', error);
-    });
+    }
   }
 
   isAuthenticated(): boolean {
@@ -231,10 +243,18 @@ class AuthService {
   // Method to load user profile from the server
   async loadUserProfile(): Promise<User | null> {
     try {
-      console.log('📋 Loading user profile from server via IPC...');
+      console.log('📋 Loading user profile from server...');
       
-      // Try to get user profile from the ERP API via IPC
-      const profileData = await ipcService.get('/api/auth/profile');
+      const response = await fetch('http://10.10.60.8:1669/api/auth/profile', {
+        method: 'GET',
+        headers: this.getAuthHeader(),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch profile: ${response.statusText}`);
+      }
+
+      const profileData = await response.json();
       console.log('✅ User profile loaded:', profileData);
       
       // Update local user data
@@ -255,24 +275,31 @@ class AuthService {
   // Method to check auth status via IPC
   async checkAuthStatus(): Promise<{ authenticated: boolean; sessionInfo?: any }> {
     try {
-      console.log('🔍 Checking auth status via IPC...');
+      console.log('🔍 Checking auth status...');
       
-      const response = await ipcService.get('/api/auth/status');
-      console.log('📡 Auth status response:', response);
+      const response = await fetch('http://10.10.60.8:1669/api/auth/status', {
+        method: 'GET',
+        headers: this.getAuthHeader(),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to check auth status: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      console.log('📡 Auth status response:', data);
       
       // If backend has a valid session but we don't have local data, sync it
-      if (response.authenticated && response.sessionInfo && (!this.token || !this.user)) {
+      if (data.authenticated && data.sessionInfo && (!this.token || !this.user)) {
         console.log('Backend has valid session, syncing local state...');
-        if (response.sessionInfo.user) {
-          this.user = response.sessionInfo.user;
-          // We don't store the actual token locally for security, just mark as IPC-managed
-          this.token = 'ipc-managed';
+        if (data.sessionInfo.user) {
+          this.user = data.sessionInfo.user;
           this.saveToStorage();
           console.log('✅ Synced user data from backend:', this.user);
         }
       }
       
-      return response;
+      return data;
     } catch (error) {
       console.error('❌ Failed to check auth status:', error);
       return { authenticated: false };
@@ -282,10 +309,10 @@ class AuthService {
   // Method to test authentication and API connectivity
   async testAuthentication(): Promise<{ success: boolean; error?: string; details?: any }> {
     try {
-      console.log('🧪 Testing authentication via IPC...');
+      console.log('🧪 Testing authentication...');
       
       // Check auth status with the backend
-      const statusResponse = await ipcService.get('/api/auth/status');
+      const statusResponse = await this.checkAuthStatus(); // Use the refactored checkAuthStatus
       
       if (!statusResponse.authenticated) {
         return { 
@@ -295,13 +322,21 @@ class AuthService {
         };
       }
 
-      // Test with a simple API call
-      const response = await ipcService.get('/api/threads?limit=1');
+      // Test with a simple API call to a protected endpoint
+      const threadsResponse = await fetch('http://10.10.60.8:1669/api/threads?limit=1', {
+        method: 'GET',
+        headers: this.getAuthHeader(),
+      });
+
+      if (!threadsResponse.ok) {
+        throw new Error(`Failed to fetch threads: ${threadsResponse.statusText}`);
+      }
+      const threadsData = await threadsResponse.json();
       
       return { 
         success: true, 
         details: { 
-          threadsCount: response.threads?.length || 0,
+          threadsCount: threadsData.threads?.length || 0,
           authStatus: statusResponse
         } 
       };
@@ -329,80 +364,7 @@ class AuthService {
     return isWebView;
   }
 
-  // Method to make authenticated API calls via IPC
-  async authenticatedFetch(url: string, options: RequestInit = {}): Promise<Response> {
-    // All API calls now go through IPC to the Rust backend
-    console.log('🔄 Making authenticated request via IPC:', {
-      url,
-      method: options.method || 'GET'
-    });
 
-    try {
-      let response;
-      const method = (options.method || 'GET').toUpperCase();
-      let body = undefined;
-      
-      // Parse body if it's a string
-      if (options.body && typeof options.body === 'string') {
-        try {
-          body = JSON.parse(options.body);
-        } catch (e) {
-          console.warn('Failed to parse request body as JSON:', options.body);
-          body = options.body;
-        }
-      } else if (options.body) {
-        body = options.body;
-      }
-      
-      switch (method) {
-        case 'GET':
-          response = await ipcService.get(url);
-          break;
-        case 'POST':
-          response = await ipcService.post(url, body);
-          break;
-        case 'PATCH':
-          response = await ipcService.patch(url, body);
-          break;
-        case 'DELETE':
-          response = await ipcService.delete(url);
-          break;
-        default:
-          throw new Error(`Unsupported method: ${method}`);
-      }
-
-      // Convert IPC response to fetch-like Response object
-      const isSuccess = response.success !== false && !response.error;
-      const status = isSuccess ? 200 : (response.error?.includes('401') || response.error?.includes('Unauthorized') ? 401 : 400);
-      
-      const mockResponse = {
-        ok: isSuccess,
-        status: status,
-        json: async () => response,
-        text: async () => JSON.stringify(response),
-        headers: new Map()
-      } as Response;
-
-      if (status === 401) {
-        console.warn('Received 401 Unauthorized - session may be invalid');
-        // Clear local auth state
-        this.clearStorage();
-      }
-
-      return mockResponse;
-    } catch (error) {
-      console.error('❌ IPC request failed:', error);
-      
-      // Return a mock error response
-      return {
-        ok: false,
-        status: 500,
-        json: async () => ({ success: false, error: error instanceof Error ? error.message : 'Unknown error' }),
-        text: async () => JSON.stringify({ success: false, error: error instanceof Error ? error.message : 'Unknown error' }),
-        headers: new Map()
-      } as Response;
-    }
-  }
 }
 
 // Export singleton instance

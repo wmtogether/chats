@@ -12,10 +12,6 @@ name = "minimal"
 path = "test/minimal.rs"
 
 [[bin]]
-name = "mikoproxy"
-path = "test/testproxy.rs"
-
-[[bin]]
 name = "testcli"
 path = "test/testcli.rs"
 

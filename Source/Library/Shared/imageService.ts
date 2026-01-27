@@ -1,12 +1,11 @@
-// Image Service for loading profile pictures via IPC
-import ipcService from './ipcService';
+// Image Service for loading profile pictures
+
 
 class ImageService {
   private imageCache = new Map<string, string>();
 
   /**
-   * Load a profile picture via IPC
-   * This converts the image URL to use IPC instead of direct HTTP requests
+   * Load a profile picture via direct HTTP request
    */
   async loadProfilePicture(profilePictureUrl: string): Promise<string> {
     try {
@@ -15,41 +14,36 @@ class ImageService {
         return this.imageCache.get(profilePictureUrl)!;
       }
 
-      console.log('🖼️ Loading profile picture via IPC:', profilePictureUrl);
+      console.log('🖼️ Loading profile picture:', profilePictureUrl);
 
-      // Convert the URL to use IPC
-      let ipcPath = profilePictureUrl;
+      let fullUrl = profilePictureUrl;
+      // If it's a relative path, construct the full URL
+      if (!profilePictureUrl.startsWith('http')) {
+        fullUrl = `http://10.10.60.8:1669/api/fileupload/profiles/${profilePictureUrl}`;
+      }
+
+      // Make direct HTTP request for the image
+      const response = await fetch(fullUrl);
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch image: ${response.statusText}`);
+      }
+
+      // Read response as ArrayBuffer to convert to base64
+      const blob = await response.blob();
+      const reader = new FileReader();
       
-      // Handle different URL formats
-      if (profilePictureUrl.startsWith('http://localhost:8640/')) {
-        // Convert localhost:8640 URLs to ERP server paths
-        ipcPath = profilePictureUrl.replace('http://localhost:8640/', '/api/fileupload/profiles/');
-      } else if (profilePictureUrl.startsWith('/api/fileupload/')) {
-        // Already in correct format
-        ipcPath = profilePictureUrl;
-      } else if (profilePictureUrl.startsWith('http://10.10.60.8:1669/')) {
-        // Convert direct ERP URLs to relative paths
-        ipcPath = profilePictureUrl.replace('http://10.10.60.8:1669/', '/');
-      } else {
-        // Assume it's a relative path that needs the fileupload prefix
-        ipcPath = `/api/fileupload/profiles/${profilePictureUrl}`;
-      }
-
-      console.log('🖼️ Converted URL to IPC path:', ipcPath);
-
-      // Make IPC request for the image
-      const response = await ipcService.get(ipcPath);
-
-      if (response.success && response.imageData) {
-        // Cache the base64 image data
-        this.imageCache.set(profilePictureUrl, response.imageData);
-        console.log('✅ Profile picture loaded successfully');
-        return response.imageData;
-      } else {
-        console.error('❌ Failed to load profile picture:', response.error);
-        // Return a default avatar or placeholder
-        return this.getDefaultAvatar();
-      }
+      return new Promise<string>((resolve, reject) => {
+        reader.onloadend = () => {
+          const base64data = reader.result as string;
+          this.imageCache.set(profilePictureUrl, base64data);
+          console.log('✅ Profile picture loaded successfully');
+          resolve(base64data);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+      
     } catch (error) {
       console.error('❌ Error loading profile picture:', error);
       return this.getDefaultAvatar();

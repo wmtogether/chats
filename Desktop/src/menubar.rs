@@ -23,7 +23,7 @@ impl MenuBar {
         }
     }
 
-    pub fn add_menu(&mut self, title: &str) -> Result<SubMenu, Box<dyn std::error::Error>> {
+    pub fn add_menu(&mut self, title: &str) -> Result<SubMenu<'_>, Box<dyn std::error::Error>> {
         unsafe {
             let submenu = CreatePopupMenu()?;
             let title_wide: Vec<u16> = title.encode_utf16().chain(std::iter::once(0)).collect();
@@ -51,9 +51,7 @@ impl MenuBar {
         }
     }
 
-    pub fn handle_command(&self, command_id: u16) -> Option<&String> {
-        self.menu_items.get(&command_id)
-    }
+
 }
 
 pub struct SubMenu<'a> {
@@ -89,7 +87,7 @@ impl<'a> SubMenu<'a> {
         }
     }
 
-    pub fn add_submenu(&mut self, title: &str) -> Result<SubMenu, Box<dyn std::error::Error>> {
+    pub fn add_submenu(&mut self, title: &str) -> Result<SubMenu<'_>, Box<dyn std::error::Error>> {
         unsafe {
             let submenu = CreatePopupMenu()?;
             let title_wide: Vec<u16> = title.encode_utf16().chain(std::iter::once(0)).collect();
@@ -356,13 +354,4 @@ pub fn enable_window_animations(hwnd: HWND) -> Result<(), Box<dyn std::error::Er
         println!("✅ Window animations and transitions enabled");
         Ok(())
     }
-}
-
-// Handle WM_COMMAND messages for menu items with dark mode support
-pub fn handle_menu_command(hwnd: HWND, command_id: u16, menubar: &MenuBar) -> Option<String> {
-    // Ensure dark mode is still applied when menu is used
-    let _ = apply_menu_colors(hwnd);
-    
-    // Return the action for the command ID
-    menubar.handle_command(command_id).cloned()
 }

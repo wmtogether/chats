@@ -49,7 +49,7 @@ class MessagesApiService {
 
       const url = `${this.baseUrl}/${identifier}/messages${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
       
-      console.log('🔄 Fetching messages via IPC:', url);
+      console.log('🔄 Fetching messages via WebUI API:', url);
       console.log('📋 Message identifier:', {
         identifier,
         isUuid: this.isUuid(identifier),
@@ -118,7 +118,7 @@ class MessagesApiService {
     replyToId?: string;
   }): Promise<{ success: boolean; message: MessageData }> {
     try {
-      console.log('📤 Sending message via IPC to:', identifier);
+      console.log('📤 Sending message via WebUI API to:', identifier);
       console.log('📝 Message data:', messageData);
       
       const response = await ipcService.post(`${this.baseUrl}/${identifier}/messages`, messageData);
@@ -143,7 +143,7 @@ class MessagesApiService {
     attachments?: string[];
   }): Promise<{ success: boolean; message: MessageData }> {
     try {
-      console.log('📝 Editing message via IPC:', messageId, 'in:', identifier);
+      console.log('📝 Editing message via WebUI API:', messageId, 'in:', identifier);
       console.log('📝 Edit data:', messageData);
       
       const response = await ipcService.patch(`${this.baseUrl}/${identifier}/messages/${messageId}`, messageData);
@@ -165,7 +165,7 @@ class MessagesApiService {
    */
   async deleteMessage(identifier: string, messageId: string): Promise<{ success: boolean }> {
     try {
-      console.log('🗑️ API: Deleting message via IPC:', messageId, 'in:', identifier);
+      console.log('🗑️ API: Deleting message via WebUI API:', messageId, 'in:', identifier);
       
       const response = await ipcService.delete(`${this.baseUrl}/${identifier}/messages/${messageId}`);
       
@@ -183,7 +183,7 @@ class MessagesApiService {
    */
   async addReaction(identifier: string, messageId: string, emoji: string): Promise<{ success: boolean; reactions: any[] }> {
     try {
-      console.log('😀 Adding reaction via IPC:', emoji, 'to message:', messageId, 'in:', identifier);
+      console.log('😀 Adding reaction via WebUI API:', emoji, 'to message:', messageId, 'in:', identifier);
       
       const response = await ipcService.post(`${this.baseUrl}/${identifier}/messages/${messageId}/reactions`, { emoji });
 

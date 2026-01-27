@@ -1,7 +1,7 @@
 // Source/Pages/Login.tsx
 import React, { useState } from 'react';
 import authService from '../Library/Authentication/jwt';
-import { debugAuthState } from '../Library/Authentication/debug';
+
 import { threadsApiService } from '../Library/Shared/threadsApi';
 import { messagesApiService } from '../Library/Shared/messagesApi';
 
@@ -14,56 +14,8 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [testResult, setTestResult] = useState('');
 
-  const testAPIs = async () => {
-    setTestResult('Testing APIs...');
-    try {
-      // Test threads API
-      console.log('Testing threads API...');
-      const threadsResponse = await threadsApiService.getThreads({ limit: 5 });
-      console.log('Threads test result:', threadsResponse);
-      
-      let messageTest = 'No threads to test messages';
-      if (threadsResponse.threads.length > 0) {
-        // Test messages API with first thread
-        const firstThread = threadsResponse.threads[0];
-        const identifier = messagesApiService.getMessageIdentifier(firstThread);
-        console.log('Testing messages API with identifier:', identifier);
-        
-        const messagesResponse = await messagesApiService.getMessages(identifier, { limit: 5 });
-        console.log('Messages test result:', messagesResponse);
-        messageTest = `Messages: ${messagesResponse.messages.length} found`;
-      }
-      
-      setTestResult(`✅ API Test Results:
-Threads: ${threadsResponse.threads.length} found
-${messageTest}
-Check console for detailed logs`);
-    } catch (error) {
-      console.error('API test failed:', error);
-      setTestResult(`❌ API test failed: ${error}`);
-    }
-  };
 
-  const testBackend = async () => {
-    setTestResult('Testing backend connection...');
-    try {
-      // Test authentication system
-      const testResult = await authService.testAuthentication();
-      console.log('Backend test result:', testResult);
-      
-      if (testResult.success) {
-        setTestResult(`✅ Backend connection successful!
-Details: ${JSON.stringify(testResult.details, null, 2)}`);
-      } else {
-        setTestResult(`❌ Backend test failed: ${testResult.error}`);
-      }
-    } catch (error) {
-      console.error('Backend test failed:', error);
-      setTestResult(`❌ Backend connection failed: ${error}`);
-    }
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -174,25 +126,7 @@ Details: ${JSON.stringify(testResult.details, null, 2)}`);
               {isLoading ? 'Signing in...' : 'Login'}
             </button>
 
-            {/* Development Testing Buttons */}
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={testBackend}
-                className="label-small flex-1 rounded-lg border border-outline py-2 text-on-surface hover:bg-surface-variant"
-                disabled={isLoading}
-              >
-                Test Backend
-              </button>
-              <button
-                type="button"
-                onClick={testAPIs}
-                className="label-small flex-1 rounded-lg border border-outline py-2 text-on-surface hover:bg-surface-variant"
-                disabled={isLoading}
-              >
-                Test APIs
-              </button>
-            </div>
+
 
             <button
               type="button"
@@ -203,12 +137,7 @@ Details: ${JSON.stringify(testResult.details, null, 2)}`);
             </button>
           </div>
           
-          {/* Test Results */}
-          {testResult && (
-            <div className="mt-4 rounded-lg bg-surface-variant p-3">
-              <pre className="body-small text-on-surface-variant whitespace-pre-wrap">{testResult}</pre>
-            </div>
-          )}
+
         </form>
       </div>
     </div>

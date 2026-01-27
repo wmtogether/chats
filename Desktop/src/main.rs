@@ -10,21 +10,12 @@ use winit::{
     dpi::LogicalSize,
 };
 use std::sync::Arc;
-use std::process::{Command, Child};
-use wgpu::{Instance, Adapter, Device, Queue};
-use axum::{
-    routing::{get, post, patch, delete},
-    http::StatusCode,
-    Json, Router,
-};
-use tower_http::cors::CorsLayer;
-use tokio::net::TcpListener;
+
+
 
 mod core;
 mod ipc;
 mod context_menu;
-mod network;
-mod auth;
 mod menubar;
 mod hooks;
 
@@ -116,65 +107,7 @@ const DEV_SERVER_URL: &str = "http://localhost:5173";
 #[cfg(not(debug_assertions))]
 const INDEX_HTML_BYTES: &[u8] = include_bytes!("../../Distribution/index.html");
 
-struct WgpuState {
-    instance: Instance,
-    adapter: Option<Adapter>,
-    device: Option<Device>,
-    queue: Option<Queue>,
-}
 
-impl WgpuState {
-    fn new() -> Self {
-        println!("Creating WGPU instance...");
-        let instance = Instance::new(&wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::all(),
-            ..Default::default()
-        });
-        
-        Self {
-            instance,
-            adapter: None,
-            device: None,
-            queue: None,
-        }
-    }
-    
-    async fn initialize(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        println!("Requesting WGPU adapter...");
-        let adapter = self.instance
-            .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::default(),
-                compatible_surface: None,
-                force_fallback_adapter: false,
-            })
-            .await;
-        
-        let adapter = match adapter {
-            Ok(adapter) => adapter,
-            Err(e) => return Err(format!("Failed to find an appropriate adapter: {:?}", e).into()),
-        };
-        
-        println!("Requesting WGPU device...");
-        let (device, queue) = adapter
-            .request_device(
-                &wgpu::DeviceDescriptor {
-                    label: None,
-                    required_features: wgpu::Features::empty(),
-                    required_limits: wgpu::Limits::default(),
-                    memory_hints: wgpu::MemoryHints::default(),
-                    ..Default::default()
-                }
-            )
-            .await?;
-        
-        self.adapter = Some(adapter);
-        self.device = Some(device);
-        self.queue = Some(queue);
-        
-        println!("WGPU initialized successfully!");
-        Ok(())
-    }
-}
 
 struct App {
     window: Option<Arc<Window>>,
@@ -182,7 +115,6 @@ struct App {
     state: SharedAppState,
     initialization_complete: bool,
     ready_to_show: bool,
-    proxy_process: Option<Child>,
     native_menubar: Option<MenuBar>,
     last_check: std::time::Instant,
 }
@@ -195,84 +127,8 @@ impl App {
             state: core::create_shared_state(),
             initialization_complete: false,
             ready_to_show: false,
-            proxy_process: None,
             native_menubar: None,
             last_check: std::time::Instant::now(),
-        }
-    }
-    
-    fn start_proxy_process(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        println!("🚀 Starting mikoproxy.exe subprocess...");
-        
-        // Try to find the mikoproxy.exe in the target directory
-        let exe_paths = [
-            "./target/debug/mikoproxy.exe",
-            "./target/release/mikoproxy.exe", 
-            "mikoproxy.exe",
-            "./mikoproxy.exe"
-        ];
-        
-        let mut proxy_exe_path = None;
-        for path in &exe_paths {
-            if std::path::Path::new(path).exists() {
-                proxy_exe_path = Some(path);
-                break;
-            }
-        }
-        
-        let exe_path = match proxy_exe_path {
-            Some(path) => {
-                println!("Found mikoproxy.exe at: {}", path);
-                path
-            }
-            None => {
-                println!("⚠️ mikoproxy.exe not found. Trying to build it...");
-                
-                // Try to build the proxy first
-                let build_result = Command::new("cargo")
-                    .args(&["build", "--bin", "mikoproxy"])
-                    .output();
-                
-                match build_result {
-                    Ok(output) => {
-                        if output.status.success() {
-                            println!("✅ Successfully built mikoproxy.exe");
-                            "./target/debug/mikoproxy.exe"
-                        } else {
-                            let stderr = String::from_utf8_lossy(&output.stderr);
-                            return Err(format!("Failed to build mikoproxy: {}", stderr).into());
-                        }
-                    }
-                    Err(e) => {
-                        return Err(format!("Failed to run cargo build: {}", e).into());
-                    }
-                }
-            }
-        };
-        
-        // Start the proxy process with hidden console
-        let mut cmd = Command::new(exe_path);
-        
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            // Hide the console window on Windows
-            cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-        }
-        
-        match cmd.spawn() {
-            Ok(child) => {
-                println!("✅ mikoproxy.exe started successfully (PID: {}) - console hidden", child.id());
-                self.proxy_process = Some(child);
-                
-                // Give the proxy a moment to start up
-                std::thread::sleep(std::time::Duration::from_millis(500));
-                
-                Ok(())
-            }
-            Err(e) => {
-                Err(format!("Failed to start mikoproxy.exe: {}", e).into())
-            }
         }
     }
     
@@ -343,154 +199,11 @@ impl App {
         }
     }
     
-    fn check_api_responses(&mut self) {
-        if let Some(webview) = &self.webview {
-            // Use the optimized direct response injection
-            ipc::process_pending_responses(webview);
-        }
-    }
+
     
-    fn stop_proxy_process(&mut self) {
-        if let Some(mut child) = self.proxy_process.take() {
-            println!("🛑 Stopping mikoproxy.exe subprocess...");
-            match child.kill() {
-                Ok(_) => {
-                    let _ = child.wait();
-                    println!("✅ mikoproxy.exe stopped successfully");
-                }
-                Err(e) => {
-                    println!("⚠️ Failed to stop mikoproxy.exe: {}", e);
-                }
-            }
-        }
-    }
+
     
-    fn handle_menu_action(&self, action: &str) {
-        println!("Menu action triggered: {}", action);
-        
-        match action {
-            // File menu actions
-            "new_chat" => {
-                if let Some(webview) = &self.webview {
-                    let _ = webview.evaluate_script("window.dispatchEvent(new CustomEvent('menuAction', { detail: { action: 'new_chat' } }));");
-                }
-            }
-            "new_window" => {
-                println!("New window requested - would spawn new instance");
-            }
-            "settings" => {
-                if let Some(webview) = &self.webview {
-                    let _ = webview.evaluate_script("window.dispatchEvent(new CustomEvent('menuAction', { detail: { action: 'settings' } }));");
-                }
-            }
-            
-            // Edit menu actions
-            "undo" | "redo" | "cut" | "copy" | "paste" | "select_all" => {
-                if let Some(webview) = &self.webview {
-                    // Escape the action to prevent JavaScript injection
-                    let escaped_action = action.replace('\\', "\\\\").replace('\'', "\\'").replace('"', "\\\"");
-                    let script = format!("document.execCommand('{}');", escaped_action);
-                    let _ = webview.evaluate_script(&script);
-                }
-            }
-            "find" => {
-                if let Some(webview) = &self.webview {
-                    let _ = webview.evaluate_script("if (window.find) window.find(); else alert('Find functionality not available');");
-                }
-            }
-            
-            // View menu actions
-            "toggle_sidebar" => {
-                if let Some(webview) = &self.webview {
-                    let _ = webview.evaluate_script("window.dispatchEvent(new CustomEvent('menuAction', { detail: { action: 'toggle_sidebar' } }));");
-                }
-            }
-            "toggle_devtools" => {
-                println!("DevTools can be accessed via right-click or F12");
-            }
-            "zoom_in" => {
-                if let Some(webview) = &self.webview {
-                    let _ = webview.evaluate_script("document.body.style.zoom = (parseFloat(document.body.style.zoom || 1) + 0.1).toString();");
-                }
-            }
-            "zoom_out" => {
-                if let Some(webview) = &self.webview {
-                    let _ = webview.evaluate_script("document.body.style.zoom = Math.max(0.5, parseFloat(document.body.style.zoom || 1) - 0.1).toString();");
-                }
-            }
-            "reset_zoom" => {
-                if let Some(webview) = &self.webview {
-                    let _ = webview.evaluate_script("document.body.style.zoom = '1';");
-                }
-            }
-            "fullscreen" => {
-                if let Some(_window) = &self.window {
-                    // Toggle fullscreen mode
-                    println!("Fullscreen toggle requested");
-                }
-            }
-            
-            // Tools menu actions
-            "clear_history" => {
-                if let Some(webview) = &self.webview {
-                    let _ = webview.evaluate_script("if (confirm('Clear all chat history? This cannot be undone.')) { window.dispatchEvent(new CustomEvent('menuAction', { detail: { action: 'clear_history' } })); }");
-                }
-            }
-            "network_diagnostics" => {
-                println!("Network diagnostics - checking proxy connection...");
-                // Could add actual network diagnostics here
-            }
-            
-            // Help menu actions
-            "shortcuts" => {
-                if let Some(webview) = &self.webview {
-                    let shortcuts_info = r#"
-                        alert('Keyboard Shortcuts:\n\n' +
-                              'Ctrl+N - New Chat\n' +
-                              'Ctrl+B - Toggle Sidebar\n' +
-                              'Ctrl+F - Find\n' +
-                              'Ctrl+, - Settings\n' +
-                              'F11 - Fullscreen\n' +
-                              'F12 - DevTools\n' +
-                              'Alt+F4 - Exit');
-                    "#;
-                    let _ = webview.evaluate_script(shortcuts_info);
-                }
-            }
-            "about" => {
-                if let Some(webview) = &self.webview {
-                    let about_info = format!(
-                        "alert('Workspace v0.1.0\\n\\nBuilt with Rust + WebView2\\nDark mode: {}\\n\\nA modern desktop chat application with native Win32 menus.');",
-                        if menubar::is_system_dark_mode() { "Enabled" } else { "Disabled" }
-                    );
-                    let _ = webview.evaluate_script(&about_info);
-                }
-            }
-            "documentation" => {
-                if let Some(webview) = &self.webview {
-                    let _ = webview.evaluate_script("window.open('https://github.com/your-repo/docs', '_blank');");
-                }
-            }
-            "report_issue" => {
-                if let Some(webview) = &self.webview {
-                    let _ = webview.evaluate_script("window.open('https://github.com/your-repo/issues', '_blank');");
-                }
-            }
-            "exit" => {
-                std::process::exit(0);
-            }
-            _ => {
-                println!("Unhandled menu action: {}", action);
-                // Forward unknown actions to the webview
-                if let Some(webview) = &self.webview {
-                    // Escape the action to prevent JavaScript injection
-                    let escaped_action = action.replace('\\', "\\\\").replace('\'', "\\'").replace('"', "\\\"");
-                    let script = format!("window.dispatchEvent(new CustomEvent('menuAction', {{ detail: {{ action: '{}' }} }}));", escaped_action);
-                    let _ = webview.evaluate_script(&script);
-                }
-            }
-        }
-    }
+
 }
 
 impl ApplicationHandler for App {
@@ -531,10 +244,7 @@ impl ApplicationHandler for App {
                 }
             }
             
-            // Initialize JWT token storage and API channel
-            println!("🔑 Initializing JWT token storage...");
-            ipc::init_token_storage();
-            ipc::init_api_channel();
+
             
             // Initialize Redis
             match init_redis() {
@@ -562,14 +272,14 @@ impl ApplicationHandler for App {
             }
             
             // Proxy process no longer needed - using IPC for API calls
-            println!("✅ Using IPC-based API system instead of proxy process");
+
             
             // Mark systems as initialized immediately to avoid hanging
             {
                 let mut state = self.state.lock().unwrap();
                 state.wgpu_initialized = true;
                 state.webview_initialized = true;
-                state.message = "All systems ready! Using IPC-based API system".to_string();
+
             }
             
             println!("✅ All initialization complete - showing window");
@@ -599,14 +309,11 @@ impl ApplicationHandler for App {
         if now.duration_since(self.last_check).as_millis() >= 8 { // Check every 8ms (~120fps) for ultra-responsive IPC
             self.check_logout_trigger();
             self.check_dialog_results();
-            self.check_api_responses();
             self.last_check = now;
         }
         
         match event {
             WindowEvent::CloseRequested => {
-                // Stop the proxy process before exiting
-                self.stop_proxy_process();
                 event_loop.exit();
             }
             WindowEvent::KeyboardInput { event, .. } => {
