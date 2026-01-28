@@ -1,11 +1,8 @@
 import { Search, LogOut, Palette, Ruler, CheckCircle, Settings, Eye, Package, Briefcase, Wifi, WifiOff } from 'lucide-react'
 import { useState, useRef, useEffect } from 'react'
-import type { Chat } from './Chatlists'
-import authService from '../Library/Authentication/jwt'
-import { getProfileImageUrl, getProfileInitial } from '../Library/Shared/profileUtils'
 
 interface ChatHeaderProps {
-  selectedChat: Chat | null;
+  selectedChat: any | null;
   onLogout: () => void;
   chatCount: number;
   redisConnected?: boolean;
@@ -13,45 +10,10 @@ interface ChatHeaderProps {
 }
 
 export default function ChatHeader({ selectedChat, onLogout, chatCount, redisConnected = false, onRequestTypeChange }: ChatHeaderProps) {
-  const [user, setUser] = useState(authService.getUser());
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showRequestTypeMenu, setShowRequestTypeMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const requestTypeMenuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    // Refresh user data from auth service
-    const currentUser = authService.getUser();
-    console.log('ChatHeader - Current user from auth service:', currentUser);
-    setUser(currentUser);
-    
-    // Set up a listener for auth state changes
-    const interval = setInterval(() => {
-      const updatedUser = authService.getUser();
-      if (JSON.stringify(updatedUser) !== JSON.stringify(user)) {
-        console.log('ChatHeader - User data updated:', updatedUser);
-        setUser(updatedUser);
-      }
-    }, 1000);
-
-    // Set up native logout listener
-    const handleNativeLogout = () => {
-      console.log('Native logout event received');
-      onLogout();
-    };
-
-    // Set up global logout function
-    (window as any).appLogout = onLogout;
-    
-    // Listen for native logout event
-    window.addEventListener('nativeLogout', handleNativeLogout);
-
-    return () => {
-      clearInterval(interval);
-      window.removeEventListener('nativeLogout', handleNativeLogout);
-      delete (window as any).appLogout;
-    };
-  }, [user, onLogout]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -184,51 +146,10 @@ export default function ChatHeader({ selectedChat, onLogout, chatCount, redisCon
         <div className="relative" ref={menuRef}>
           <button 
             className="flex items-center justify-center size-9 rounded-full hover:bg-surface-variant transition-colors"
-            onClick={() => setShowUserMenu(!showUserMenu)}
+            onClick={onLogout}
           >
-            <div 
-              className="size-8 rounded-full bg-surface border border-outline flex items-center justify-center text-on-surface label-medium" 
-              style={user?.profilePicture ? { 
-                backgroundImage: `url("${getProfileImageUrl(user.profilePicture)}")`, 
-                backgroundSize: 'cover' 
-              } : {}}
-            >
-              {!user?.profilePicture && getProfileInitial(user?.name, user?.uid)}
-            </div>
+            <LogOut size={16} />
           </button>
-          {showUserMenu && (
-            <div className="absolute top-full right-0 mt-2 w-48 bg-background border border-outline rounded-lg shadow-xl z-50">
-              <div className="p-2">
-                <div className="px-2 py-1">
-                  <p className="label-medium text-on-surface">
-                    {user?.name || 'User'}
-                    {!user && <span className="text-error"> (No user data)</span>}
-                  </p>
-                  <p className="label-small text-on-surface-variant">{user?.role || 'Member'}</p>
-                </div>
-                <hr className="my-2 border-outline" />
-                <button
-                  onClick={() => {
-                    // Show native confirmation dialog - don't call onLogout here
-                    try {
-                      (window as any).nativeDialog?.confirmLogout();
-                      // The backend will call triggerLogout if user confirms
-                    } catch (error) {
-                      console.error('Dialog error:', error);
-                      // Fallback to browser confirm
-                      if (confirm('Are you sure you want to sign out?')) {
-                        onLogout();
-                      }
-                    }
-                  }}
-                  className="flex items-center gap-2 w-full p-2 rounded-md hover:bg-error/10 text-error transition-colors"
-                >
-                  <LogOut size={16} />
-                  <span className="label-medium">Sign out</span>
-                </button>
-              </div>
-            </div>
-          )}
         </div>
       </div>
     </header>

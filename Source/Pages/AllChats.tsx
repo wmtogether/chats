@@ -1,8 +1,7 @@
 import { useState, useMemo } from 'react'
 import { ArrowLeft, Search, SearchX, Palette, Ruler, CheckCircle, Settings, Eye, Package, Briefcase } from 'lucide-react'
-import { type Thread } from '../Library/Shared/threadsApi'
 
-type Chat = Thread
+type Chat = any
 
 interface AllChatsProps {
   chats: Chat[];

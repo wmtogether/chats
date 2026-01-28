@@ -1,55 +1,28 @@
 // Source/Pages/Login.tsx
 import React, { useState } from 'react';
-import authService from '../Library/Authentication/jwt';
+import { useAuth } from '../Library/Authentication/AuthContext';
 
-import { threadsApiService } from '../Library/Shared/threadsApi';
-import { messagesApiService } from '../Library/Shared/messagesApi';
-
-interface LoginPageProps {
-  onLoginSuccess: () => void;
-}
-
-export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
+export default function LoginPage() {
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-
+  const { login } = useAuth();
 
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setIsLoading(true);
-
-    if (!identifier) {
-      setError('Please enter your username or UID.');
-      setIsLoading(false);
-      return;
-    }
-
     try {
-      const result = await authService.login({
-        identifier: identifier.trim(),
-        password: password || undefined,
-      });
-      
-      if (result.success) {
-        console.log('Login successful, user data:', result.user);
-        
-        // Force refresh auth state to ensure it's loaded
-        authService.refreshAuthState();
-        
-        // Small delay to ensure state is updated
-        setTimeout(() => {
-          onLoginSuccess();
-        }, 100);
+      await login(identifier, password);
+      // No need to call onLoginSuccess, the context will handle the state change
+    } catch (err: any) {
+      if (err.response && err.response.data && err.response.data.error) {
+        setError(err.response.data.error);
       } else {
-        setError('Login failed. Please check your credentials.');
+        setError('An unexpected error occurred. Please try again.');
       }
-    } catch (error) {
-      console.error('Login failed:', error);
-      setError(error instanceof Error ? error.message : 'Login failed. Please try again.');
     } finally {
       setIsLoading(false);
     }

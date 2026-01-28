@@ -1,10 +1,9 @@
 import React from 'react';
 import { QueueStatusUpdateCard } from './MetaCards/QueueStatusUpdateCard';
 import { QueueAcceptedCard } from './MetaCards/QueueAcceptedCard';
-import { QueuePreviewCard } from './MetaCards/QueuePreviewCard';
 import { FileCheckCard } from './MetaCards/FileCheckCard';
 import { ReqTypeChangeCard } from './MetaCards/ReqTypeChangeCard';
-import { Hyperlink } from './MetaCards/Hyperlink';
+// import { Hyperlink } from './MetaCards/Hyperlink';
 
 interface MessageContentProps {
   content: string;
@@ -92,26 +91,69 @@ export function MessageContent({
     );
   }
 
-  // Detect file check card format: [คำขอ #123: Job Name (checkfile)](/works/queue)
-  const fileCheckRegex = /^\[คำขอ #(\d+): (.+?) \(checkfile\)\]\(\/works\/queue\)$/;
-  const fileCheckMatch = content.match(fileCheckRegex);
+  // Detect queue links with request types: [คำขอ #123: Job Name (requestType)](/works/queue)
+  // Use a more robust regex that matches the last parentheses as the request type
+  const queueLinkRegex = /^\[คำขอ #(\d+): (.+) \(([^)]+)\)\]\(\/works\/queue\)$/;
+  const queueLinkMatch = content.match(queueLinkRegex);
 
-  if (fileCheckMatch) {
-    const [, queueId, jobName] = fileCheckMatch;
+  // Debug logging
+  console.log('MessageContent - Processing content:', content);
+  console.log('MessageContent - Queue regex match:', queueLinkMatch);
+
+  if (queueLinkMatch) {
+    // Extract the last parentheses as request type and everything before as job name
+    const fullMatch = queueLinkMatch[0];
+    const queueId = queueLinkMatch[1];
+    const jobNameAndType = queueLinkMatch[2];
+    const requestType = queueLinkMatch[3];
+    
+    // Find the last occurrence of " (" to properly split job name and request type
+    const lastParenIndex = jobNameAndType.lastIndexOf(' (');
+    const jobName = lastParenIndex > -1 ? jobNameAndType.substring(0, lastParenIndex) : jobNameAndType;
+    
+    console.log('MessageContent - Matched queue:', { queueId, jobName, requestType });
+    
+    // Special handling for checkfile requests
+    if (requestType === 'checkfile') {
+      return (
+        <FileCheckCard
+          queueId={queueId}
+          jobName={jobName}
+        />
+      );
+    }
+    
+    // For other request types, show a general queue card with the extracted info
     return (
-      <FileCheckCard
-        queueId={queueId}
-        jobName={jobName}
-      />
+      <div className="my-3 max-w-md">
+        <div className="p-4 bg-surface-container border border-outline-variant rounded-2xl shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer">
+          <div className="flex items-start gap-3">
+            <div className="p-2 rounded-full bg-primary/10 flex-shrink-0">
+              <svg className="h-5 w-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+              </svg>
+            </div>
+            <div className="flex-1 min-w-0">
+              <h4 className="title-medium font-medium text-on-surface truncate">{jobName}</h4>
+              <p className="body-small text-on-surface-variant mt-1">คำขอ #{queueId}</p>
+              <div className="flex items-center gap-2 mt-2">
+                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-primary/10 text-primary">
+                  {requestType}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     );
   }
 
-  // Detect queue links: [คำขอ #123: Job Name (requestType)](/works/queue)
-  const queueLinkRegex = /\[คำขอ #(\d+):.+?\]\(\/works\/queue\)/g;
+  // Detect queue links without specific format matching (fallback): [คำขอ #123: anything](/works/queue)
+  const generalQueueLinkRegex = /\[คำขอ #(\d+):.+?\]\(\/works\/queue\)/g;
   const queueMatches: Array<{ index: number; queueId: string; fullMatch: string }> = [];
   let match;
   
-  while ((match = queueLinkRegex.exec(content)) !== null) {
+  while ((match = generalQueueLinkRegex.exec(content)) !== null) {
     queueMatches.push({
       index: match.index,
       queueId: match[1],
@@ -208,7 +250,19 @@ export function MessageContent({
       if (match.type === 'queue') {
         parts.push(
           <div key={`queue-${i}`} className="my-2">
-            <QueuePreviewCard queueId={(match as any).queueId} />
+            <div className="p-4 bg-surface-container border border-outline-variant rounded-2xl shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer">
+              <div className="flex items-start gap-3">
+                <div className="p-2 rounded-full bg-primary/10 flex-shrink-0">
+                  <svg className="h-5 w-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                  </svg>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h4 className="title-medium font-medium text-on-surface">คำขอ #{(match as any).queueId}</h4>
+                  <p className="body-small text-on-surface-variant mt-1">คลิกเพื่อดูรายละเอียด</p>
+                </div>
+              </div>
+            </div>
           </div>
         );
       } else if (match.type === 'job') {
@@ -230,7 +284,7 @@ export function MessageContent({
       } else if (match.type === 'url') {
         parts.push(
           <div key={`url-${i}`}>
-            <Hyperlink url={(match as any).url} />
+            {/* <Hyperlink url={(match as any).url} /> */}
           </div>
         );
       }
@@ -284,7 +338,7 @@ export function MessageContent({
       // Add URL preview
       parts.push(
         <div key={`url-${i}`}>
-          <Hyperlink url={url} />
+          {/* <Hyperlink url={url} /> */}
         </div>
       );
 

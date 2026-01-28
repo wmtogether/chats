@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react'
 import { ChevronDown, ChevronUp, Palette, Ruler, CheckCircle, Settings, Eye, Package, Briefcase } from 'lucide-react'
-import { type Thread } from '../Library/Shared/threadsApi'
 
-// Use Thread as Chat
-type Chat = Thread;
+
+type Chat = any;
 
 interface ChatlistsProps {
   chats: Chat[];

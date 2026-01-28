@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { MessageCircle, User, Briefcase, ChevronDown, ChevronUp, Check, Clock, TrendingUp, Ruler, MessageSquare, CheckCircle, Pause, XCircle, HelpCircle } from 'lucide-react'
-import type { Thread as Chat } from '../Library/Shared/threadsApi'
-import { queueApiService, type QueueStatus, QUEUE_STATUSES } from '../Library/Shared/queueApi'
+
+type Chat = any;
 
 // Helper function to get Lucide icon component for status
 const getStatusIcon = (status: string) => {
@@ -24,7 +24,7 @@ interface StickyStatusProps {
 }
 
 export default function StickyStatus({ selectedChat, onStatusUpdate }: StickyStatusProps) {
-  const [queueData, setQueueData] = useState<QueueStatus | null>(null);
+  const [queueData, setQueueData] = useState<any | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [showStatusDropdown, setShowStatusDropdown] = useState(false);
@@ -47,51 +47,12 @@ export default function StickyStatus({ selectedChat, onStatusUpdate }: StickySta
 
   // Load queue data when chat changes
   useEffect(() => {
-    const loadQueueData = async () => {
-      if (!selectedChat?.metadata?.queueId) {
-        setQueueData(null);
-        return;
-      }
-
-      setIsLoading(true);
-      try {
-        const queue = await queueApiService.getQueue(selectedChat.metadata.queueId);
-        setQueueData(queue);
-        console.log('✅ Queue data loaded:', queue);
-      } catch (error) {
-        console.error('❌ Failed to load queue data:', error);
-        setQueueData(null);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    loadQueueData();
+    
   }, [selectedChat?.metadata?.queueId]);
 
   // Handle status update
   const handleStatusUpdate = async (newStatus: string) => {
-    if (!queueData || isUpdating) return;
-
-    setIsUpdating(true);
-    try {
-      const updatedQueue = await queueApiService.updateQueueStatus(queueData.id, {
-        status: newStatus
-      });
-      
-      setQueueData(updatedQueue);
-      setShowStatusDropdown(false);
-      
-      // Notify parent component
-      onStatusUpdate?.(newStatus);
-      
-      console.log('✅ Queue status updated:', updatedQueue);
-    } catch (error) {
-      console.error('❌ Failed to update queue status:', error);
-      // You might want to show a toast notification here
-    } finally {
-      setIsUpdating(false);
-    }
+    console.log('update status');
   };
 
   if (!selectedChat) {
@@ -154,20 +115,17 @@ export default function StickyStatus({ selectedChat, onStatusUpdate }: StickySta
   return (
     <div className="sticky top-0 z-10 px-6 pt-6 pb-8 bg-gradient-to-b from-background via-background to-transparent pointer-events-none select-none">
       <div className="pointer-events-auto relative rounded-xl bg-surface border border-outline shadow-[0_8px_30px_rgb(0,0,0,0.12)] flex items-center justify-between p-4 group overflow-visible">
-        <div className={`absolute inset-0 bg-gradient-to-r from-current/5 to-transparent pointer-events-none ${queueApiService.getStatusColor(status)}`} />
+        <div className={`absolute inset-0 bg-gradient-to-r from-current/5 to-transparent pointer-events-none`} />
         
         <div className="flex items-center gap-4 relative z-10">
-          <div className={`size-12 rounded-full flex items-center justify-center shrink-0 border ${queueApiService.getStatusBgColor(status)}`}>
-            {(() => {
-              const IconComponent = getStatusIcon(status);
-              return <IconComponent className={queueApiService.getStatusColor(status)} size={24} />;
-            })()}
+          <div className={`size-12 rounded-full flex items-center justify-center shrink-0 border`}>
+            
           </div>
           
           <div className="flex flex-col gap-0.5">
             <div className="flex items-center gap-2">
               <h3 className="title-medium text-on-surface">
-                Queue #{queueId} • {queueApiService.getStatusLabel(status)}
+                Queue #{queueId} • {status}
               </h3>
               {status === 'PENDING' && (
                 <span className="flex h-2 w-2 relative">
@@ -180,7 +138,7 @@ export default function StickyStatus({ selectedChat, onStatusUpdate }: StickySta
             <div className="flex items-center gap-1.5 body-small text-on-surface-variant">
               <Briefcase size={14} />
               <span>
-                {queueApiService.getRequestTypeLabel(requestType)}
+                {requestType}
                 {customerName && ` • ${customerName}`}
                 {assignedTo && ` • Assigned to ${assignedTo}`}
                 • Created by {createdBy} • {formatDate(queueData?.updatedAt || selectedChat.updatedAt)}
@@ -216,29 +174,7 @@ export default function StickyStatus({ selectedChat, onStatusUpdate }: StickySta
                 <div className="text-xs font-medium text-on-surface-variant uppercase tracking-wider px-2 py-1 mb-1">
                   Change Status
                 </div>
-                {QUEUE_STATUSES.map((statusOption) => (
-                  <button
-                    key={statusOption}
-                    onClick={() => handleStatusUpdate(statusOption)}
-                    className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left hover:bg-surface-variant transition-colors ${
-                      status === statusOption ? 'bg-primary/10 text-primary' : 'text-on-surface'
-                    }`}
-                  >
-                    {(() => {
-                      const IconComponent = getStatusIcon(statusOption);
-                      return (
-                        <IconComponent 
-                          size={16} 
-                          className={status === statusOption ? 'text-primary' : queueApiService.getStatusColor(statusOption)}
-                        />
-                      );
-                    })()}
-                    <span className="label-medium">{queueApiService.getStatusLabel(statusOption)}</span>
-                    {status === statusOption && (
-                      <Check size={14} className="ml-auto text-primary" />
-                    )}
-                  </button>
-                ))}
+                
               </div>
             </div>
           )}

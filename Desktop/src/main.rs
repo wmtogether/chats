@@ -13,14 +13,10 @@ use std::sync::Arc;
 
 
 
-mod core;
-mod ipc;
 mod context_menu;
 mod menubar;
 mod hooks;
 
-use core::SharedAppState;
-use ipc::handle_ipc_message;
 use menubar::{MenuBar, apply_modern_menu_theme, enable_window_animations};
 use hooks::{init_notifications, init_redis, connect_redis, show_notification};
 
@@ -112,11 +108,9 @@ const INDEX_HTML_BYTES: &[u8] = include_bytes!("../../Distribution/index.html");
 struct App {
     window: Option<Arc<Window>>,
     webview: Option<wry::WebView>,
-    state: SharedAppState,
     initialization_complete: bool,
     ready_to_show: bool,
     native_menubar: Option<MenuBar>,
-    last_check: std::time::Instant,
 }
 
 impl App {
@@ -124,80 +118,12 @@ impl App {
         Self {
             window: None,
             webview: None,
-            state: core::create_shared_state(),
             initialization_complete: false,
             ready_to_show: false,
             native_menubar: None,
-            last_check: std::time::Instant::now(),
         }
     }
     
-    fn check_logout_trigger(&mut self) {
-        if let Some(webview) = &self.webview {
-            let state = self.state.lock().unwrap();
-            if state.message == "trigger_logout" {
-                println!("Logout trigger detected - executing JavaScript");
-                let js_code = r#"
-                    console.log('Backend confirmed logout - triggering frontend logout');
-                    if (window.triggerLogout) {
-                        window.triggerLogout();
-                    } else {
-                        console.error('triggerLogout function not found');
-                    }
-                "#;
-                if let Err(e) = webview.evaluate_script(js_code) {
-                    println!("Failed to execute logout script: {}", e);
-                }
-                // Clear the trigger flag
-                drop(state);
-                let mut state = self.state.lock().unwrap();
-                state.message = "logout_triggered".to_string();
-            }
-        }
-    }
-    
-    fn check_dialog_results(&mut self) {
-        if let Some(webview) = &self.webview {
-            let state = self.state.lock().unwrap();
-            if state.message.starts_with("dialog_result:") || state.message.starts_with("dialog_result_immediate:") {
-                println!("📡 Dialog result detected");
-                
-                // Parse the dialog result: "dialog_result:requestId:result" or "dialog_result_immediate:requestId:result"
-                let parts: Vec<&str> = state.message.splitn(3, ':').collect();
-                if parts.len() == 3 {
-                    let request_id = parts[1];
-                    let result = parts[2];
-                    
-                    println!("📡 Setting dialog result for request {}: {}", request_id, result);
-                    
-                    // Use a safer approach for dialog results
-                    let js_code = format!(
-                        "try {{ \
-                            var requestId = '{}'; \
-                            var result = '{}'; \
-                            window.dialogResult_ = window.dialogResult_ || {{}}; \
-                            window.dialogResult_[requestId] = result; \
-                        }} catch (e) {{ \
-                            console.error('Failed to set dialog result:', e); \
-                        }}",
-                        request_id.replace('\'', "\\'"),
-                        result.replace('\'', "\\'")
-                    );
-                    
-                    if let Err(e) = webview.evaluate_script(&js_code) {
-                        println!("❌ Failed to execute dialog result script: {}", e);
-                    } else {
-                        println!("✅ Dialog result set in frontend");
-                    }
-                }
-                
-                // Clear the result flag
-                drop(state);
-                let mut state = self.state.lock().unwrap();
-                state.message = "dialog_result_processed".to_string();
-            }
-        }
-    }
     
 
     
@@ -271,16 +197,6 @@ impl ApplicationHandler for App {
                 }
             }
             
-            // Proxy process no longer needed - using IPC for API calls
-
-            
-            // Mark systems as initialized immediately to avoid hanging
-            {
-                let mut state = self.state.lock().unwrap();
-                state.wgpu_initialized = true;
-                state.webview_initialized = true;
-
-            }
             
             println!("✅ All initialization complete - showing window");
             
@@ -304,13 +220,6 @@ impl ApplicationHandler for App {
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _window_id: WindowId, event: WindowEvent) {
-        // Check for logout trigger, dialog results, and API responses more frequently for better responsiveness
-        let now = std::time::Instant::now();
-        if now.duration_since(self.last_check).as_millis() >= 8 { // Check every 8ms (~120fps) for ultra-responsive IPC
-            self.check_logout_trigger();
-            self.check_dialog_results();
-            self.last_check = now;
-        }
         
         match event {
             WindowEvent::CloseRequested => {
@@ -335,7 +244,6 @@ impl ApplicationHandler for App {
 
 impl App {
     fn create_webview(&mut self, window: &Arc<Window>) {
-        let state_clone = self.state.clone();
         
         #[cfg(debug_assertions)]
         {
@@ -425,16 +333,6 @@ impl App {
                 console.log('WebView initialized');
                 window.sessionId = 'desktop-session';
                 
-                // Simple IPC test function
-                window.testIpc = function() {
-                    if (window.ipc) {
-                        window.ipc.postMessage('test_ipc');
-                        console.log('IPC test sent');
-                    } else {
-                        console.log('IPC not available');
-                    }
-                };
-                
                 console.log('Session ID set:', window.sessionId);
                 "#
             );
@@ -496,11 +394,6 @@ impl App {
 
         let webview = webview_builder
             .with_devtools(true) // Enable DevTools for debugging
-            .with_ipc_handler(move |request: http::Request<String>| {
-                // Handle IPC messages and process API requests
-                let state = state_clone.clone();
-                handle_ipc_message(request, state);
-            })
             .build(&**window)
             .map_err(|e| {
                 eprintln!("WebView creation error: {:?}", e);

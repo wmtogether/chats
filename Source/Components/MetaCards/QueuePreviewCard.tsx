@@ -3,7 +3,6 @@ import { Card, CardContent, CardHeader } from '../ui/card';
 import { Badge } from '../ui/badge';
 import { Loader2, ListTodo, Clock, CheckCircle, XCircle, AlertCircle, User } from 'lucide-react';
 import { cn } from '../../Library/utils';
-import { queueApiService, type QueueStatus } from '../../Library/Shared/queueApi';
 
 interface QueuePreviewCardProps {
   queueId: string;
@@ -61,25 +60,12 @@ const STATUS_CONFIG: Record<string, { label: string; icon: any; color: string; b
 };
 
 export function QueuePreviewCard({ queueId }: QueuePreviewCardProps) {
-  const [queue, setQueue] = useState<QueueStatus | null>(null);
+  const [queue, setQueue] = useState<any | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(false);
 
-  const fetchQueue = async () => {
-    try {
-      const queueData = await queueApiService.getQueue(parseInt(queueId));
-      setQueue(queueData);
-      setError(false);
-    } catch (err) {
-      console.error('Failed to load queue:', err);
-      setError(true);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   useEffect(() => {
-    fetchQueue();
+    
   }, [queueId]);
 
   if (isLoading) {
@@ -118,51 +104,27 @@ export function QueuePreviewCard({ queueId }: QueuePreviewCardProps) {
               <ListTodo className="h-5 w-5 text-primary" />
             </div>
             <div>
-              <h4 className="title-medium font-medium text-on-surface">{queue.jobName}</h4>
-              <p className="body-small text-on-surface-variant mt-1">คำขอ #{queue.id}</p>
+              <h4 className="title-medium font-medium text-on-surface">Job Name</h4>
+              <p className="body-small text-on-surface-variant mt-1">คำขอ #{queueId}</p>
             </div>
           </div>
-          {queue.priority === 'urgent' && (
-            <Badge variant="destructive" className="label-small">
-              ด่วน
-            </Badge>
-          )}
+          
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex items-center gap-2 flex-wrap">
           <Badge variant="outline" className="label-small">
-            {queueApiService.getRequestTypeLabel(queue.requestType)}
+            Request Type
           </Badge>
-          <Badge className={cn('label-small flex items-center gap-1', statusConfig.color, statusConfig.bgColor)}>
-            <StatusIcon className="h-3 w-3" />
-            {statusConfig.label}
+          <Badge className={cn('label-small flex items-center gap-1')}>
+            Status
           </Badge>
         </div>
 
-        {queue.customerName && (
-          <div className="flex items-center gap-2 body-small text-on-surface-variant">
-            <User className="h-4 w-4" />
-            <span className="font-medium">ลูกค้า:</span>
-            <span>{queue.customerName}</span>
-          </div>
-        )}
-
-        {/* Notes section - not available in QueueStatus type
-        {queue.notes && (
-          <div className="p-3 rounded-lg bg-surface-variant/30 border border-outline/30">
-            <p className="body-small text-on-surface-variant line-clamp-2">
-              💬 {queue.notes}
-            </p>
-          </div>
-        )}
-        */}
-
+        
         <div className="flex items-center justify-between body-small text-on-surface-variant pt-2 border-t border-outline/30">
-          <span>สร้างโดย: {queue.createdByName || 'ไม่ระบุ'}</span>
-          {queue.assignedToName && (
-            <span>มอบหมาย: {queue.assignedToName}</span>
-          )}
+          <span>สร้างโดย: ไม่ระบุ</span>
+          
         </div>
       </CardContent>
     </Card>

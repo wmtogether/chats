@@ -1,76 +1,43 @@
 // Example component demonstrating UUID and Channel mapping for messages
 import React, { useState, useEffect } from 'react';
-import { messagesApiService } from '../Library/Shared/messagesApi';
-import type { MessageData } from '../Library/Shared/messagesApi';
-import type { Thread } from '../Library/Shared/threadsApi';
 
 interface ChatExampleProps {
-  thread: Thread;
+  thread: any;
 }
 
 export default function ChatExample({ thread }: ChatExampleProps) {
-  const [messages, setMessages] = useState<MessageData[]>([]);
+  const [messages, setMessages] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [newMessage, setNewMessage] = useState('');
 
   // Load messages when thread changes
   useEffect(() => {
-    loadMessages();
+    // loadMessages();
   }, [thread]);
 
   const loadMessages = async () => {
     setLoading(true);
-    try {
-      // The API automatically handles UUID vs channelId mapping
-      const identifier = messagesApiService.getMessageIdentifier(thread);
-      
-      console.log('Loading messages for:', {
-        threadId: thread.id,
-        uuid: thread.uuid,
-        channelId: thread.channelId,
-        identifier: identifier,
-        isUuid: messagesApiService.isUuid(identifier)
-      });
-
-      const response = await messagesApiService.getMessages(identifier, { limit: 50 });
-      setMessages(response.messages);
-    } catch (error) {
-      console.error('Failed to load messages:', error);
-    } finally {
-      setLoading(false);
-    }
+    console.log('load messages');
+    setLoading(false);
   };
 
   const sendMessage = async () => {
     if (!newMessage.trim()) return;
-
-    try {
-      const identifier = messagesApiService.getMessageIdentifier(thread);
-      const response = await messagesApiService.sendMessage(identifier, {
-        content: newMessage
-      });
-
-      if (response.success) {
-        setMessages(prev => [...prev, response.message]);
-        setNewMessage('');
-      }
-    } catch (error) {
-      console.error('Failed to send message:', error);
-    }
+    console.log('send message');
   };
 
   return (
     <div className="p-4 border rounded-lg">
       <h3 className="font-semibold mb-2">
-        Chat: {thread.channelName}
+        Chat:
       </h3>
       
       <div className="text-sm text-gray-600 mb-4">
-        <div>Thread ID: {thread.id}</div>
-        <div>UUID: {thread.uuid}</div>
-        <div>Channel ID: {thread.channelId}</div>
-        <div>Identifier Used: {messagesApiService.getMessageIdentifier(thread)}</div>
-        <div>Is UUID: {messagesApiService.isUuid(messagesApiService.getMessageIdentifier(thread)) ? 'Yes' : 'No'}</div>
+        <div>Thread ID: </div>
+        <div>UUID: </div>
+        <div>Channel ID: </div>
+        <div>Identifier Used: </div>
+        <div>Is UUID: </div>
       </div>
 
       {loading ? (
@@ -80,15 +47,7 @@ export default function ChatExample({ thread }: ChatExampleProps) {
           {messages.length === 0 ? (
             <div className="text-gray-500 text-center py-4">No messages yet</div>
           ) : (
-            messages.map((message) => (
-              <div key={message.messageId} className="p-2 bg-gray-50 rounded">
-                <div className="font-medium text-sm">{message.userName}</div>
-                <div className="text-sm">{message.content}</div>
-                <div className="text-xs text-gray-500">
-                  {new Date(message.createdAt).toLocaleString()}
-                </div>
-              </div>
-            ))
+           <div></div>
           )}
         </div>
       )}

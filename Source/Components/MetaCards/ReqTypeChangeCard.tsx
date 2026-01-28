@@ -2,7 +2,7 @@ import { Card, CardContent } from '../ui/card';
 import { Badge } from '../ui/badge';
 import { ArrowRight, RefreshCw, User } from 'lucide-react';
 import { cn } from '../../Library/utils';
-import { queueApiService } from '../../Library/Shared/queueApi';
+// import { queueApiService } from '../../Library/Shared/queueApi';
 
 interface ReqTypeChangeCardProps {
   queueId: string;
@@ -55,13 +55,7 @@ export function ReqTypeChangeCard({
 
               {/* Type Change */}
               <div className="flex items-center gap-3 p-3 rounded-lg bg-purple-100/40 dark:bg-purple-900/20 border border-purple-200/60 dark:border-purple-800/40">
-                <Badge variant="outline" className="label-small">
-                  {queueApiService.getRequestTypeLabel(oldType)}
-                </Badge>
-                <ArrowRight className="h-3 w-3 text-on-surface-variant" />
-                <Badge variant="outline" className="label-small">
-                  {queueApiService.getRequestTypeLabel(newType)}
-                </Badge>
+
               </div>
             </div>
           </div>

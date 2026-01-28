@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { Smile, Reply, Image as ImageIcon, MoreHorizontal, Copy, Edit, Trash2, MapPin } from 'lucide-react'
 import Avatar from './Avatar'
 import MessageContent from './MessageContent'
+import ImageAttachment from './ImageAttachment'
 import CustomEmojiPicker from './EmojiPicker'
 import { showConfirmDialog, showInputDialog } from '../Library/Native/dialog'
 
@@ -206,35 +207,17 @@ export default function MessageBubble({ data, searchQuery, onReply, onReaction, 
             {data.attachments.map((attachment, index) => {
               // Convert relative paths to full URLs through proxy
               const imageUrl = attachment.startsWith('/api/image/') 
-                ? `http://localhost:8640${attachment}`
+                ? `http://localhost:5669${attachment}`
                 : attachment;
 
               if (isImageFile(attachment)) {
                 return (
-                  <div key={index} className="relative group/image">
-                    <img
-                      src={imageUrl}
-                      alt={`Attachment ${index + 1}`}
-                      className="max-w-full max-h-96 rounded-2xl border border-outline-variant shadow-sm cursor-pointer hover:shadow-md transition-all duration-200"
-                      onClick={() => handleImageClick(imageUrl)}
-                      loading="lazy"
-                      onError={(e) => {
-                        // Fallback if image fails to load
-                        const target = e.target as HTMLImageElement;
-                        target.style.display = 'none';
-                        const fallback = target.nextElementSibling as HTMLElement;
-                        if (fallback) fallback.style.display = 'flex';
-                      }}
-                    />
-                    {/* Fallback for failed images */}
-                    <div 
-                      className="hidden items-center gap-2 p-4 bg-surface-container border border-outline-variant rounded-2xl text-on-surface-variant"
-                      style={{ display: 'none' }}
-                    >
-                      <ImageIcon className="h-5 w-5" />
-                      <span className="body-small">Unable to load image</span>
-                    </div>
-                  </div>
+                  <ImageAttachment
+                    key={index}
+                    src={imageUrl}
+                    alt={`Attachment ${index + 1}`}
+                    onClick={() => handleImageClick(imageUrl)}
+                  />
                 );
               } else {
                 // Non-image attachments
