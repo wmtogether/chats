@@ -19,6 +19,8 @@ interface AppState {
   messages: any[];
   selectedChat: any | null;
   replyingTo: { messageId: string; userName: string; content: string } | null;
+  isLoadingChats: boolean;
+  isLoadingMessages: boolean;
 }
 
 type AppAction =
@@ -26,7 +28,9 @@ type AppAction =
   | { type: 'SET_CHATS'; payload: any[] }
   | { type: 'SET_MESSAGES'; payload: any[] }
   | { type: 'SELECT_CHAT'; payload: any | null }
-  | { type: 'SET_REPLYING_TO'; payload: { messageId: string; userName: string; content: string } | null };
+  | { type: 'SET_REPLYING_TO'; payload: { messageId: string; userName: string; content: string } | null }
+  | { type: 'SET_LOADING_CHATS'; payload: boolean }
+  | { type: 'SET_LOADING_MESSAGES'; payload: boolean };
 
 const initialState: AppState = {
   currentPage: 'chat',
@@ -34,6 +38,8 @@ const initialState: AppState = {
   messages: [],
   selectedChat: null,
   replyingTo: null,
+  isLoadingChats: false,
+  isLoadingMessages: false,
 };
 
 function appReducer(state: AppState, action: AppAction): AppState {
@@ -41,14 +47,18 @@ function appReducer(state: AppState, action: AppAction): AppState {
     case 'NAVIGATE':
       return { ...state, currentPage: action.payload };
     case 'SET_CHATS':
-      return { ...state, chats: action.payload };
+      return { ...state, chats: action.payload, isLoadingChats: false };
     case 'SET_MESSAGES':
-        return { ...state, messages: action.payload };
+        return { ...state, messages: action.payload, isLoadingMessages: false };
     case 'SELECT_CHAT':
       // When a chat is selected, clear previous messages and navigate back to the main chat view
-      return { ...state, selectedChat: action.payload, messages: [], currentPage: 'chat', replyingTo: null };
+      return { ...state, selectedChat: action.payload, messages: [], currentPage: 'chat', replyingTo: null, isLoadingMessages: false };
     case 'SET_REPLYING_TO':
       return { ...state, replyingTo: action.payload };
+    case 'SET_LOADING_CHATS':
+      return { ...state, isLoadingChats: action.payload };
+    case 'SET_LOADING_MESSAGES':
+      return { ...state, isLoadingMessages: action.payload };
     default:
       return state;
   }
@@ -56,18 +66,20 @@ function appReducer(state: AppState, action: AppAction): AppState {
 
 // Main component for the authenticated chat experience
 const ChatLayout = ({ state, dispatch, onLogout }: { state: AppState, dispatch: React.Dispatch<AppAction>, onLogout: () => void }) => {
-  const { selectedChat, replyingTo, chats, messages } = state;
+  const { selectedChat, replyingTo, chats, messages, isLoadingChats, isLoadingMessages } = state;
   const { user } = useAuth();
 
   // Fetch all chats when the user is authenticated
   useEffect(() => {
     const fetchChats = async () => {
       if (user) { // Only fetch if we have a user
+        dispatch({ type: 'SET_LOADING_CHATS', payload: true });
         try {
           const response = await apiClient.get('/chats');
           dispatch({ type: 'SET_CHATS', payload: response.data.data || [] });
         } catch (error) {
           console.error("Failed to fetch chats:", error);
+          dispatch({ type: 'SET_LOADING_CHATS', payload: false });
         }
       }
     };
@@ -78,11 +90,13 @@ const ChatLayout = ({ state, dispatch, onLogout }: { state: AppState, dispatch: 
   useEffect(() => {
     if (selectedChat?.uuid) {
       const fetchMessages = async () => {
+        dispatch({ type: 'SET_LOADING_MESSAGES', payload: true });
         try {
           const response = await apiClient.get(`/chats/${selectedChat.uuid}/messages`);
           dispatch({ type: 'SET_MESSAGES', payload: response.data.data || [] });
         } catch (error) {
           console.error(`Failed to fetch messages for chat ${selectedChat.uuid}:`, error);
+          dispatch({ type: 'SET_LOADING_MESSAGES', payload: false });
         }
       };
       fetchMessages();
@@ -108,11 +122,8 @@ const ChatLayout = ({ state, dispatch, onLogout }: { state: AppState, dispatch: 
         chats={chats}
         selectedChat={selectedChat}
         onChatSelect={(chat) => dispatch({ type: 'SELECT_CHAT', payload: chat })}
-        isLoadingAllChats={false}
+        isLoadingAllChats={isLoadingChats}
         onCreateChat={handleCreateChat}
-        onUpdateChat={handleUpdateChat}
-        onDeleteChat={handleDeleteChat}
-        onRefreshChats={handleRefreshChats}
       />
 
       {state.currentPage === 'allChats' ? (
@@ -121,7 +132,7 @@ const ChatLayout = ({ state, dispatch, onLogout }: { state: AppState, dispatch: 
           onChatSelect={(chat) => dispatch({ type: 'SELECT_CHAT', payload: chat })}
           onBack={() => dispatch({ type: 'NAVIGATE', payload: 'chat' })}
           selectedChatId={selectedChat?.id}
-          isLoading={false}
+          isLoading={isLoadingChats}
         />
       ) : (
         <main className="flex-1 flex flex-col min-w-0 bg-surface relative">
@@ -157,6 +168,24 @@ const ChatLayout = ({ state, dispatch, onLogout }: { state: AppState, dispatch: 
                       };
                       return <MessageBubble key={msg.messageId} data={messageData} />;
                     })
+                  ) : isLoadingMessages ? (
+                    <div className="flex flex-col gap-4 py-6">
+                      {Array.from({ length: 4 }).map((_, index) => (
+                        <div key={index} className="flex gap-4 p-3 animate-pulse">
+                          <div className="size-10 rounded-full bg-surface-variant flex-shrink-0"></div>
+                          <div className="flex-1 space-y-2">
+                            <div className="flex items-center gap-2">
+                              <div className="h-4 bg-surface-variant rounded w-20"></div>
+                              <div className="h-3 bg-surface-variant rounded w-12"></div>
+                            </div>
+                            <div className="space-y-1">
+                              <div className="h-4 bg-surface-variant rounded w-3/4"></div>
+                              <div className="h-4 bg-surface-variant rounded w-1/2"></div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   ) : (
                     <div className="flex flex-col items-center justify-center py-12 text-center">
                       <div className="size-16 rounded-full bg-surface-variant/50 flex items-center justify-center mb-4">
@@ -217,7 +246,7 @@ export default function Main() {
   const renderCurrentPage = () => {
     switch (state.currentPage) {
       case 'users':
-        return <div className="h-screen w-screen flex overflow-hidden"><Sidebar onNavigate={(page) => dispatch({ type: 'NAVIGATE', payload: page })} onLogout={logout} chats={state.chats} selectedChat={null} onChatSelect={() => {}} isLoadingAllChats={false} /><UsersPage /></div>;
+        return <div className="h-screen w-screen flex overflow-hidden"><Sidebar onNavigate={(page) => dispatch({ type: 'NAVIGATE', payload: page })} onLogout={logout} chats={state.chats} selectedChat={null} onChatSelect={() => {}} isLoadingAllChats={state.isLoadingChats} /><UsersPage /></div>;
       case 'chat':
       case 'allChats':
       default:

@@ -92,26 +92,12 @@ export function MessageContent({
   }
 
   // Detect queue links with request types: [คำขอ #123: Job Name (requestType)](/works/queue)
-  // Use a more robust regex that matches the last parentheses as the request type
+  // Handle cases where job name might contain parentheses
   const queueLinkRegex = /^\[คำขอ #(\d+): (.+) \(([^)]+)\)\]\(\/works\/queue\)$/;
   const queueLinkMatch = content.match(queueLinkRegex);
 
-  // Debug logging
-  console.log('MessageContent - Processing content:', content);
-  console.log('MessageContent - Queue regex match:', queueLinkMatch);
-
   if (queueLinkMatch) {
-    // Extract the last parentheses as request type and everything before as job name
-    const fullMatch = queueLinkMatch[0];
-    const queueId = queueLinkMatch[1];
-    const jobNameAndType = queueLinkMatch[2];
-    const requestType = queueLinkMatch[3];
-    
-    // Find the last occurrence of " (" to properly split job name and request type
-    const lastParenIndex = jobNameAndType.lastIndexOf(' (');
-    const jobName = lastParenIndex > -1 ? jobNameAndType.substring(0, lastParenIndex) : jobNameAndType;
-    
-    console.log('MessageContent - Matched queue:', { queueId, jobName, requestType });
+    const [, queueId, jobName, requestType] = queueLinkMatch;
     
     // Special handling for checkfile requests
     if (requestType === 'checkfile') {

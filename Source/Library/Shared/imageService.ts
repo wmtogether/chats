@@ -19,7 +19,7 @@ class ImageService {
       let fullUrl = profilePictureUrl;
       // If it's a relative path, construct the full URL
       if (!profilePictureUrl.startsWith('http')) {
-        fullUrl = `http://10.10.60.8:1669/api/fileupload/profiles/${profilePictureUrl}`;
+        fullUrl = `/api/fileupload/profiles/${profilePictureUrl}`;
       }
 
       // Make direct HTTP request for the image

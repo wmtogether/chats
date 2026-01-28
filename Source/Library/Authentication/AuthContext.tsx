@@ -1,3 +1,4 @@
+//@ts-expect-error
 import React, { createContext, useState, useContext, useEffect, ReactNode } from 'react';
 import axios from 'axios';
 
@@ -27,7 +28,7 @@ interface AuthProviderProps {
 
 // Create a configured axios instance for API calls
 export const apiClient = axios.create({
-    baseURL: '/api' // Uses the Vite proxy
+    baseURL: 'http://localhost:5669/api' // Uses the Vite proxy
 });
 
 // Use an interceptor to add the auth token to every request
