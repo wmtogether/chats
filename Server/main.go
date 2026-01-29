@@ -6,6 +6,8 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -84,29 +86,32 @@ func main() {
 
 							r.Get("/", getChatsHandler)
 
+							r.Post("/", createChatHandler)
+
 		
 
 							r.Get("/{uuid}", getChatHandler)
+							r.Patch("/{uuid}", updateChatHandler)
 
 		
 
 							r.Get("/{uuid}/messages", getChatMessagesHandler)
+							r.Post("/{uuid}/messages", sendMessageHandler)
+
+							r.Delete("/{uuid}", deleteChatHandler)
 
 		
 
 						})
 
-		
-
-				
-
-		
-
-						// Message history route
-
-		
-
-						r.Get("/api/messages", getMessagesHandler)
+						
+						// Message routes
+						r.Route("/api/messages", func(r chi.Router) {
+							r.Get("/", getMessagesHandler) // Keep existing route for backward compatibility
+							r.Put("/{messageId}", editMessageHandler)
+							r.Delete("/{messageId}", deleteMessageHandler)
+							r.Post("/{messageId}/reactions", addReactionHandler)
+						})
 
 		
 
@@ -114,6 +119,92 @@ func main() {
 
 	// WebSocket endpoint (handles auth internally)
 	r.Get("/ws", wsHandler)
+
+	// Static file serving for uploads (public access for images)
+	r.Route("/uploads", func(r chi.Router) {
+		// Handle CORS preflight requests
+		r.Options("/*", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+			w.WriteHeader(http.StatusOK)
+		})
+		
+		// Note: Making this public so <img> tags can load images
+		// In production, consider using signed URLs or a CDN
+		r.Get("/*", func(w http.ResponseWriter, r *http.Request) {
+			// Extract the file path from the URL
+			filePath := strings.TrimPrefix(r.URL.Path, "/uploads/")
+			fullPath := filepath.Join(".", "uploads", filePath)
+			
+			// Security: Prevent directory traversal attacks
+			if strings.Contains(filePath, "..") {
+				http.Error(w, "Invalid file path", http.StatusBadRequest)
+				return
+			}
+			
+			// Check if file exists
+			if _, err := os.Stat(fullPath); os.IsNotExist(err) {
+				http.Error(w, "File not found", http.StatusNotFound)
+				return
+			}
+			
+			// Set CORS headers to allow cross-origin requests
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "GET")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+			
+			// Get file extension for content type detection
+			ext := strings.ToLower(filepath.Ext(filePath))
+			
+			// Set appropriate content type headers
+			switch ext {
+			case ".jpg", ".jpeg":
+				w.Header().Set("Content-Type", "image/jpeg")
+			case ".png":
+				w.Header().Set("Content-Type", "image/png")
+			case ".gif":
+				w.Header().Set("Content-Type", "image/gif")
+			case ".webp":
+				w.Header().Set("Content-Type", "image/webp")
+			case ".pdf":
+				w.Header().Set("Content-Type", "application/pdf")
+			case ".zip":
+				w.Header().Set("Content-Type", "application/zip")
+			case ".rar":
+				w.Header().Set("Content-Type", "application/x-rar-compressed")
+			case ".7z":
+				w.Header().Set("Content-Type", "application/x-7z-compressed")
+			case ".txt":
+				w.Header().Set("Content-Type", "text/plain")
+			case ".json":
+				w.Header().Set("Content-Type", "application/json")
+			case ".xml":
+				w.Header().Set("Content-Type", "application/xml")
+			case ".mp4":
+				w.Header().Set("Content-Type", "video/mp4")
+			case ".mp3":
+				w.Header().Set("Content-Type", "audio/mpeg")
+			case ".wav":
+				w.Header().Set("Content-Type", "audio/wav")
+			default:
+				// For unknown file types, let the browser handle it
+				w.Header().Set("Content-Type", "application/octet-stream")
+			}
+			
+			// Set cache headers for better performance
+			w.Header().Set("Cache-Control", "public, max-age=3600") // Cache for 1 hour
+			
+			// For non-image files, suggest download with original filename
+			if !strings.HasPrefix(w.Header().Get("Content-Type"), "image/") {
+				filename := filepath.Base(filePath)
+				w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
+			}
+			
+			// Serve the file
+			http.ServeFile(w, r, fullPath)
+		})
+	})
 
 		
 

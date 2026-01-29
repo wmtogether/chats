@@ -1,5 +1,7 @@
 // Image Service for loading profile pictures
+import { getApiUrl } from '../utils/env';
 
+const API_BASE_URL = getApiUrl();
 
 class ImageService {
   private imageCache = new Map<string, string>();
@@ -19,7 +21,7 @@ class ImageService {
       let fullUrl = profilePictureUrl;
       // If it's a relative path, construct the full URL
       if (!profilePictureUrl.startsWith('http')) {
-        fullUrl = `/api/fileupload/profiles/${profilePictureUrl}`;
+        fullUrl = `${API_BASE_URL}/api/fileupload/profiles/${profilePictureUrl}`;
       }
 
       // Make direct HTTP request for the image

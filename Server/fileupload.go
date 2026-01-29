@@ -75,8 +75,8 @@ func setupFileUploadRoutes(r chi.Router) {
 	// Upload progress endpoint
 	r.Get("/api/upload/progress/{uploadId}", uploadProgressHandler)
 	
-	// File serving endpoint
-	r.Get("/uploads/{filename}", serveFileHandler)
+	// Note: File serving is handled by the public /uploads/* route in main.go
+	// No need for a protected file serving route here
 }
 
 func fileUploadHandler(w http.ResponseWriter, r *http.Request) {
@@ -301,37 +301,6 @@ func uploadProgressHandler(w http.ResponseWriter, r *http.Request) {
 		"uploadId": uploadID,
 		"status":   "completed", // This would be dynamic in a real implementation
 	})
-}
-
-func serveFileHandler(w http.ResponseWriter, r *http.Request) {
-	filename := chi.URLParam(r, "filename")
-	if filename == "" {
-		http.Error(w, "Filename required", http.StatusBadRequest)
-		return
-	}
-
-	// Security: prevent directory traversal
-	if strings.Contains(filename, "..") || strings.Contains(filename, "/") {
-		http.Error(w, "Invalid filename", http.StatusBadRequest)
-		return
-	}
-
-	// Check if it's an image request
-	var filePath string
-	if strings.Contains(r.URL.Path, "/uploads/images/") {
-		filePath = filepath.Join(".", "uploads", "images", filename)
-	} else {
-		filePath = filepath.Join(".", "uploads", filename)
-	}
-
-	// Check if file exists
-	if _, err := os.Stat(filePath); os.IsNotExist(err) {
-		http.Error(w, "File not found", http.StatusNotFound)
-		return
-	}
-
-	// Serve the file
-	http.ServeFile(w, r, filePath)
 }
 
 func generateUniqueFilename(originalFilename string) string {

@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Smile, Reply, Image as ImageIcon, MoreHorizontal, Copy, Edit, Trash2, MapPin } from 'lucide-react'
+import { Smile, Reply, MoreHorizontal, Copy, Edit, Trash2, MapPin, File, FileText, Archive, FileVideo, FileAudio, FileCode, FileSpreadsheet, Presentation, Download } from 'lucide-react'
 import Avatar from './Avatar'
 import MessageContent from './MessageContent'
 import ImageAttachment from './ImageAttachment'
@@ -7,7 +7,57 @@ import CustomEmojiPicker from './EmojiPicker'
 import { showInputDialog } from '../Library/Native/dialog' // Keep showInputDialog for now
 import ConfirmDialog from './ui/ConfirmDialog'
 import { useToast } from '../Library/hooks/useToast.tsx'
-import type { MessageType, MessageUser, MessageBubbleData } from '../Library/types' // Import shared types
+import { getApiUrl } from '../Library/utils/env'
+import type { MessageBubbleData } from '../Library/types' // Import shared types
+
+// Function to get appropriate file icon based on file extension
+const getFileIcon = (filename: string) => {
+  const extension = filename.split('.').pop()?.toLowerCase() || '';
+  
+  // Archive files
+  if (['zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz'].includes(extension)) {
+    return Archive;
+  }
+  
+  // Document files
+  if (['pdf', 'doc', 'docx', 'txt', 'rtf', 'odt'].includes(extension)) {
+    return FileText;
+  }
+  
+  // Spreadsheet files
+  if (['xls', 'xlsx', 'csv', 'ods'].includes(extension)) {
+    return FileSpreadsheet;
+  }
+  
+  // Presentation files
+  if (['ppt', 'pptx', 'odp'].includes(extension)) {
+    return Presentation;
+  }
+  
+  // Video files
+  if (['mp4', 'avi', 'mkv', 'mov', 'wmv', 'flv', 'webm', 'm4v'].includes(extension)) {
+    return FileVideo;
+  }
+  
+  // Audio files
+  if (['mp3', 'wav', 'flac', 'aac', 'ogg', 'wma', 'm4a'].includes(extension)) {
+    return FileAudio;
+  }
+  
+  // Code files
+  if (['js', 'ts', 'jsx', 'tsx', 'html', 'css', 'scss', 'json', 'xml', 'py', 'java', 'cpp', 'c', 'h', 'php', 'rb', 'go', 'rs', 'swift', 'kt'].includes(extension)) {
+    return FileCode;
+  }
+  
+  // Default file icon
+  return File;
+};
+
+// Function to get file extension for display
+const getFileExtension = (filename: string): string => {
+  const extension = filename.split('.').pop()?.toLowerCase() || '';
+  return extension ? `.${extension.toUpperCase()}` : '';
+};
 
 
 interface MessageBubbleProps {
@@ -33,6 +83,18 @@ export default function MessageBubble({ data, searchQuery, onReply, onReaction, 
   const handleImageClick = (imageUrl: string) => {
     // Open image in a new window/tab for preview
     window.open(imageUrl, '_blank');
+  };
+
+  // Handle file download
+  const handleFileDownload = (fileUrl: string, filename: string) => {
+    // Create a temporary anchor element to trigger download
+    const link = document.createElement('a');
+    link.href = fileUrl;
+    link.download = filename;
+    link.target = '_blank';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const isImageFile = (url: string) => {
@@ -180,9 +242,9 @@ export default function MessageBubble({ data, searchQuery, onReply, onReaction, 
         {data.attachments && data.attachments.length > 0 && (
           <div className="mt-2 space-y-2 max-w-md">
             {data.attachments.map((attachment, index) => {
-              // Convert relative paths to full URLs through proxy
-              const imageUrl = attachment.startsWith('/api/image/') 
-                ? `http://localhost:5669${attachment}`
+              // Convert relative paths to full URLs
+              const imageUrl = attachment.startsWith('/uploads/') 
+                ? `${getApiUrl()}${attachment}`
                 : attachment;
 
               if (isImageFile(attachment)) {
@@ -196,17 +258,39 @@ export default function MessageBubble({ data, searchQuery, onReply, onReaction, 
                 );
               } else {
                 // Non-image attachments
+                const filename = attachment.split('/').pop() || 'File attachment';
+                const FileIconComponent = getFileIcon(filename);
+                const fileExtension = getFileExtension(filename);
+                
                 return (
-                  <div key={index} className="flex items-center gap-3 p-3 bg-surface-container border border-outline-variant rounded-2xl">
-                    <ImageIcon className="h-5 w-5 text-on-surface-variant" />
-                    <a 
-                      href={imageUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="body-small text-primary hover:underline truncate flex-1"
+                  <div key={index} className="flex items-center gap-3 p-3 bg-surface-container border border-outline-variant rounded-2xl hover:bg-surface-variant transition-colors">
+                    <div className="relative flex-shrink-0">
+                      <FileIconComponent className="h-6 w-6 text-on-surface-variant" />
+                      {fileExtension && (
+                        <span className="absolute -bottom-1 -right-1 text-xs font-bold text-primary bg-primary-container px-1 rounded">
+                          {fileExtension}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <button
+                        onClick={() => handleFileDownload(imageUrl, filename)}
+                        className="body-small text-primary hover:underline truncate block text-left w-full font-medium"
+                        title={`Download ${filename}`}
+                      >
+                        {filename}
+                      </button>
+                      <div className="text-xs text-on-surface-variant">
+                        Click to download
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleFileDownload(imageUrl, filename)}
+                      className="p-2 hover:bg-primary-container rounded-full text-on-surface-variant hover:text-primary transition-colors flex-shrink-0"
+                      title="Download file"
                     >
-                      {attachment.split('/').pop() || 'File attachment'}
-                    </a>
+                      <Download className="h-4 w-4" />
+                    </button>
                   </div>
                 );
               }

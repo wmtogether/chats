@@ -45,19 +45,19 @@ type Chat struct {
 
 // ChatMessage represents a row in the 'chats_history' table.
 type ChatMessage struct {
-	ID          int            `json:"id"`
-	MessageID   string         `json:"messageId"`
-	ChannelID   string         `json:"channelId"`
-	Content     string         `json:"content"`
-	UserID      int            `json:"userId"`
-	UserName    string         `json:"userName"`
-	UserRole    string         `json:"userRole"` // Based on userRoleEnum
-	Attachments pq.StringArray `json:"attachments"` // jsonb type, represent as []string
-	Tags        pq.StringArray `json:"tags"`        // jsonb type, represent as []string
-	Status      sql.NullString `json:"status"`
-	Reactions   []byte         `json:"reactions"` // jsonb type
-	CustomerID  sql.NullString `json:"customerId"`
-	Customers   sql.NullString `json:"customers"`
-	EditedAt    sql.NullTime   `json:"editedAt"`
-	CreatedAt   time.Time      `json:"createdAt"`
+	ID          int                 `json:"id"`
+	MessageID   string              `json:"messageId"`
+	ChannelID   string              `json:"channelId"`
+	Content     string              `json:"content"`
+	UserID      int                 `json:"userId"`
+	UserName    string              `json:"userName"`
+	UserRole    string              `json:"userRole"` // Based on userRoleEnum
+	Attachments FlexibleStringArray `json:"attachments"` // Can handle both JSONB and PostgreSQL arrays
+	Tags        pq.StringArray      `json:"tags"`        // jsonb type, represent as []string
+	Status      sql.NullString      `json:"status"`
+	Reactions   []byte              `json:"reactions"` // jsonb type
+	CustomerID  sql.NullString      `json:"customerId"`
+	Customers   sql.NullString      `json:"customers"`
+	EditedAt    sql.NullTime        `json:"editedAt"`
+	CreatedAt   time.Time           `json:"createdAt"`
 }

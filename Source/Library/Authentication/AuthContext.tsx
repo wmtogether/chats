@@ -1,6 +1,9 @@
 //@ts-expect-error
 import React, { createContext, useState, useContext, useEffect, ReactNode } from 'react';
 import axios from 'axios';
+import { getApiUrl } from '../utils/env';
+
+const API_BASE_URL = getApiUrl();
 
 // Define the shape of the user object and auth state
 interface User {
@@ -28,7 +31,7 @@ interface AuthProviderProps {
 
 // Create a configured axios instance for API calls
 export const apiClient = axios.create({
-    baseURL: process.env.NODE_ENV === 'production' ? 'http://localhost:5669/api' : '/api'
+    baseURL: `${API_BASE_URL}/api`
 });
 // Use an interceptor to add the auth token to every request
 apiClient.interceptors.request.use(

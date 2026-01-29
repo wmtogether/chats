@@ -11,8 +11,6 @@ use winit::{
 };
 use std::sync::Arc;
 
-
-
 mod context_menu;
 mod menubar;
 mod hooks;

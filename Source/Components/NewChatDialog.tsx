@@ -14,7 +14,7 @@ interface NewChatDialogProps {
         customerId?: string;
         customerName?: string;
         description?: string;
-    }) => void;
+    }) => Promise<void>;
 }
 
 const REQUEST_TYPES: {

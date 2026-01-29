@@ -1,6 +1,8 @@
 // Enhanced file upload utility with WebSocket integration
 import { getWebSocketManager } from './websocket';
+import { getApiUrl } from './env';
 
+const API_BASE_URL = getApiUrl();
 export interface UploadProgress {
   uploadId: string;
   filename: string;
@@ -83,7 +85,7 @@ export class FileUploader {
       onProgress,
       onComplete,
       onError,
-      endpoint = '/api/fileupload',
+      endpoint = `${API_BASE_URL}/api/fileupload`,
       fieldName = 'file',
       chunkSize = 10 * 1024 * 1024, // 10MB chunks
       useChunkedUpload = false
@@ -116,7 +118,7 @@ export class FileUploader {
       onProgress,
       onComplete,
       onError,
-      endpoint = '/api/fileupload',
+      endpoint = `${API_BASE_URL}/api/fileupload`,
       fieldName = 'file'
     } = options;
 
@@ -232,7 +234,7 @@ export class FileUploader {
         formData.append('chunkIndex', chunkIndex.toString());
         formData.append('chunk', chunk);
 
-        const response = await fetch('/api/chunked-upload/chunk', {
+        const response = await fetch(`${API_BASE_URL}/api/chunked-upload/chunk`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${localStorage.getItem('authToken')}`
@@ -304,7 +306,7 @@ export class FileUploader {
   }
 
   private async initChunkedUpload(file: File, chunkSize: number): Promise<any> {
-    const response = await fetch('/api/chunked-upload/init', {
+    const response = await fetch(`${API_BASE_URL}/api/chunked-upload/init`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -325,7 +327,7 @@ export class FileUploader {
   }
 
   private async completeChunkedUpload(uploadId: string): Promise<any> {
-    const response = await fetch('/api/chunked-upload/complete', {
+    const response = await fetch(`${API_BASE_URL}/api/chunked-upload/complete`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -357,7 +359,7 @@ export class FileUploader {
 
     return this.uploadFile(file, {
       ...options,
-      endpoint: '/api/imageupload',
+      endpoint: `${API_BASE_URL}/api/imageupload`,
       fieldName: 'image'
     });
   }

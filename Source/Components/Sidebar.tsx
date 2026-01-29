@@ -1,4 +1,4 @@
-import { Plus, ChevronDown, Users, LogOut, MoreHorizontal, Edit, Trash2, Archive, MessageSquare, Search, X } from 'lucide-react'
+import { Plus, ChevronDown, LogOut, MoreHorizontal, Edit, Trash2, Archive, MessageSquare, Search, X } from 'lucide-react'
 import { useState, useEffect, useMemo, useRef } from 'react'
 import NewChatDialog from './NewChatDialog'
 import EditChatDialog from './EditChatDialog'
@@ -9,6 +9,7 @@ import type { ChatType } from '../Library/types'; // Import ChatType
 import { getNullStringValue } from '../Library/utils/api.ts'; // Import getNullStringValue
 import { Palette, Ruler, FileCheck, Eye, Package, Briefcase, Settings } from 'lucide-react'
 type Page = 'chat' | 'users' | 'allChats';
+type SidebarTab = 'channels' | 'me';
 
 type RequestType = 'design' | 'dimension' | 'checkfile' | 'adjustdesign' | 'proof' | 'sample-i' | 'sample-t' | 'general' | 'consultation';
 
@@ -99,7 +100,7 @@ interface SidebarProps {
     customerName?: string;
     description?: string;
   }) => void;
-  onDeleteChat: (chatId: string | number) => void; // Added onDeleteChat prop
+  onDeleteChat: (chatId: string | number) => Promise<void>; // Updated to return Promise
 }
 
 export default function Sidebar({
@@ -121,18 +122,27 @@ export default function Sidebar({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false); // New state
   const [chatToDelete, setChatToDelete] = useState<ChatType | null>(null); // New state
   const { addToast } = useToast(); // Initialize useToast
+  const [activeTab, setActiveTab] = useState<SidebarTab>('channels'); // New state for tab management
 
   // Search functionality
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // Filter chats based on search query
+  // Filter chats based on search query and active tab
   const filteredChats = useMemo(() => {
-    if (!searchQuery.trim()) return chats;
+    let baseChats = chats;
+    
+    // Filter by tab first
+    if (activeTab === 'me' && user) {
+      baseChats = chats.filter(chat => chat.createdById === user.id);
+    }
+    
+    // Then filter by search query
+    if (!searchQuery.trim()) return baseChats;
 
     const query = searchQuery.toLowerCase();
-    return chats.filter(chat =>
+    return baseChats.filter(chat =>
       chat.channelName.toLowerCase().includes(query) ||
       chat.createdByName.toLowerCase().includes(query) ||
       getNullStringValue(chat.customers)?.toLowerCase().includes(query) ||
@@ -140,7 +150,7 @@ export default function Sidebar({
       chat.parsedMetadata?.requestType?.toLowerCase().includes(query) ||
       chat.description?.String?.toLowerCase().includes(query)
     );
-  }, [chats, searchQuery]);
+  }, [chats, searchQuery, activeTab, user]);
 
   const chatGroups = useMemo(() => {
     return filteredChats.reduce((acc, chat) => {
@@ -192,6 +202,19 @@ export default function Sidebar({
     );
   };
 
+  // Helper function to check if current user can delete a chat
+  const canDeleteChat = (chat: ChatType): boolean => {
+    if (!user) return false;
+    
+    // User can delete if they are the creator
+    if (chat.createdById === user.id) return true;
+    
+    // User can delete if they are admin
+    if (user.role === 'manager' || user.role === 'sales') return true;
+    
+    return false;
+  };
+
   const toggleChatMenu = (chatId: number, event: React.MouseEvent) => {
     event.stopPropagation();
     setChatMenus(prev => ({ ...prev, [chatId]: !prev[chatId] }));
@@ -216,10 +239,18 @@ export default function Sidebar({
     setShowDeleteConfirm(true);
   };
 
-  const handleConfirmDeleteChat = () => {
+  const handleConfirmDeleteChat = async () => {
     if (chatToDelete) {
-      onDeleteChat(chatToDelete.id);
-      addToast({ message: `Chat "${chatToDelete.channelName}" has been deleted.`, type: 'success' });
+      try {
+        await onDeleteChat(chatToDelete.id);
+        addToast({ message: `Chat "${chatToDelete.channelName}" has been deleted.`, type: 'success' });
+      } catch (error) {
+        console.error('Failed to delete chat:', error);
+        addToast({ 
+          message: `Failed to delete chat "${chatToDelete.channelName}". ${error instanceof Error ? error.message : 'Unknown error'}`, 
+          type: 'error' 
+        });
+      }
     }
     setChatToDelete(null);
     setShowDeleteConfirm(false);
@@ -250,11 +281,25 @@ export default function Sidebar({
       {/* Navigation Switcher */}
       <div className="px-4 py-3 shrink-0 flex space-x-2 w-full">
         <div className="flex items-center p-1 bg-surface rounded-lg border border-outline space-x-1 w-full">
-          <button className="flex-1 py-1.5 px-2 rounded-lg bg-surface-variant text-on-surface label-medium shadow-sm text-center transition-all border border-outline">
+          <button 
+            onClick={() => setActiveTab('channels')}
+            className={`flex-1 py-1.5 px-2 rounded-lg label-medium text-center transition-all border ${
+              activeTab === 'channels' 
+                ? 'bg-surface-variant text-on-surface shadow-sm border-outline' 
+                : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-variant border-transparent'
+            }`}
+          >
             Channels
           </button>
-          <button className="flex-1 py-1.5 px-2 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-variant label-medium text-center transition-all">
-            Direct Messages
+          <button 
+            onClick={() => setActiveTab('me')}
+            className={`flex-1 py-1.5 px-2 rounded-lg label-medium text-center transition-all border ${
+              activeTab === 'me' 
+                ? 'bg-surface-variant text-on-surface shadow-sm border-outline' 
+                : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-variant border-transparent'
+            }`}
+          >
+            Me
           </button>
         </div>
         <button
@@ -283,7 +328,7 @@ export default function Sidebar({
             <input
               ref={searchInputRef}
               type="text"
-              placeholder="Search chats..."
+              placeholder={`Search ${activeTab === 'me' ? 'your chats' : 'chats'}...`}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onFocus={() => setIsSearchFocused(true)}
@@ -313,8 +358,8 @@ export default function Sidebar({
             <div className="absolute top-full left-0 right-0 mt-1 px-3 py-1">
               <div className="text-xs text-on-surface-variant">
                 {filteredChats.length === 0
-                  ? 'No chats found'
-                  : `${filteredChats.length} chat${filteredChats.length !== 1 ? 's' : ''} found`
+                  ? `No ${activeTab === 'me' ? 'your chats' : 'chats'} found`
+                  : `${filteredChats.length} ${activeTab === 'me' ? 'your ' : ''}chat${filteredChats.length !== 1 ? 's' : ''} found`
                 }
               </div>
             </div>
@@ -339,7 +384,7 @@ export default function Sidebar({
               >
                 clear the search
               </button>
-              {' '}to see all chats.
+              {' '}to see all {activeTab === 'me' ? 'your ' : ''}chats.
             </p>
           </div>
         ) : Object.entries(chatGroups).length === 0 ? (
@@ -348,9 +393,14 @@ export default function Sidebar({
             <div className="w-16 h-16 rounded-full bg-surface-variant/50 flex items-center justify-center mb-4">
               <MessageSquare size={24} className="text-on-surface-variant" />
             </div>
-            <h3 className="title-medium text-on-surface mb-2">No chats yet</h3>
+            <h3 className="title-medium text-on-surface mb-2">
+              {activeTab === 'me' ? 'No chats created by you yet' : 'No chats yet'}
+            </h3>
             <p className="body-medium text-on-surface-variant max-w-sm mb-4">
-              Start a conversation by creating your first chat.
+              {activeTab === 'me' 
+                ? 'Start a conversation by creating your first chat.' 
+                : 'Start a conversation by creating your first chat.'
+              }
             </p>
             <button
               onClick={() => setShowNewChatDialog(true)}
@@ -364,12 +414,15 @@ export default function Sidebar({
           // Chat groups
           Object.entries(chatGroups).map(([creatorName, groupChats]) => (
             <div key={creatorName} className="flex flex-col gap-2">
-              <div className="flex items-center justify-between px-2 pb-1 group/header cursor-pointer">
-                <div className="label-small text-on-surface-variant uppercase tracking-wider">
-                  {creatorName}
+              {/* Only show creator header in "channels" tab, not in "me" tab since all chats are from the same user */}
+              {activeTab === 'channels' && (
+                <div className="flex items-center justify-between px-2 pb-1 group/header cursor-pointer">
+                  <div className="label-small text-on-surface-variant uppercase tracking-wider">
+                    {creatorName}
+                  </div>
+                  <Plus className="text-on-surface-variant opacity-0 group-hover/header:opacity-100 hover:text-on-surface transition-opacity" size={16} />
                 </div>
-                <Plus className="text-on-surface-variant opacity-0 group-hover/header:opacity-100 hover:text-on-surface transition-opacity" size={16} />
-              </div>
+              )}
               <div className="flex flex-col gap-1">
                 {groupChats.slice(0, 5).map((chat: ChatType) => (
                   <div
@@ -405,9 +458,15 @@ export default function Sidebar({
                           </span>
                         </div>
                         <div className="flex items-center gap-2">
-                          <span className="label-small text-on-surface-variant">
-                            by {searchQuery ? highlightMatch(chat.createdByName, searchQuery) : chat.createdByName}
-                          </span>
+                          {/* Only show creator info in "channels" tab */}
+                          {activeTab === 'channels' && (
+                            <span className="label-small text-on-surface-variant">
+                              by {searchQuery ? highlightMatch(chat.createdByName, searchQuery) : chat.createdByName}
+                              {chat.createdById === user?.id && (
+                                <span className="ml-1 px-1.5 py-0.5 bg-primary/10 text-primary rounded text-xs">You</span>
+                              )}
+                            </span>
+                          )}
                           {getNullStringValue(chat.customers) && (
                             <span className="label-small text-on-surface-variant">
                               {searchQuery ? highlightMatch(getNullStringValue(chat.customers)!, searchQuery) : getNullStringValue(chat.customers)}
@@ -453,8 +512,12 @@ export default function Sidebar({
                         <div className="absolute right-0 top-full mt-1 bg-surface-container border border-outline-variant rounded-2xl shadow-lg py-2 z-50 min-w-[160px]">
                           <button onClick={() => handleEditChat(chat)} className="w-full px-4 py-2 text-left hover:bg-surface-variant flex items-center gap-3 text-on-surface"><Edit size={16} /> <span className="text-xs">Edit name</span></button>
                           <button onClick={() => handleArchiveChat(chat)} className="w-full px-4 py-2 text-left hover:bg-surface-variant flex items-center gap-3 text-on-surface"><Archive size={16} /> <span className="text-xs">Archive</span></button>
-                          <div className="border-t border-outline-variant my-1" />
-                          <button onClick={() => handleDeleteChatClick(chat)} className="w-full px-4 py-2 text-left hover:bg-error-container flex items-center gap-3 text-error"><Trash2 size={16} /> <span className="text-xs">Delete</span></button>
+                          {canDeleteChat(chat) && (
+                            <>
+                              <div className="border-t border-outline-variant my-1" />
+                              <button onClick={() => handleDeleteChatClick(chat)} className="w-full px-4 py-2 text-left hover:bg-error-container flex items-center gap-3 text-error"><Trash2 size={16} /> <span className="text-xs">Delete</span></button>
+                            </>
+                          )}
                         </div>
                       )}
                     </div>

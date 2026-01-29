@@ -11,7 +11,7 @@ export default defineConfig({
     cors: true,
     proxy: {
       '/api': {
-        target: 'http://localhost:5669',
+        target: process.env.VITE_API_URL || 'http://localhost:5669',
         changeOrigin: true,
         secure: false,
         configure: (proxy, _options) => {

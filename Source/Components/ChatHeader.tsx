@@ -1,19 +1,23 @@
-import { Search, LogOut, Palette, Ruler, CheckCircle, Settings, Eye, Package, Briefcase, Wifi, WifiOff } from 'lucide-react'
+import { Search, Palette, Ruler, CheckCircle, Settings, Eye, Package, Briefcase, Wifi, WifiOff } from 'lucide-react'
 import { useState, useRef, useEffect } from 'react'
+import { updateChatRequestType } from '../Library/utils/api'
+import { useToast } from '../Library/hooks/useToast'
+import type { ChatType } from '../Library/types'
 
 interface ChatHeaderProps {
-  selectedChat: any | null;
-  onLogout: () => void;
+  selectedChat: ChatType | null;
   chatCount: number;
   wsConnected?: boolean;
-  onRequestTypeChange?: (chatId: number, requestType: string) => void;
+  onChatUpdate?: (updatedChat: ChatType) => void;
 }
 
-export default function ChatHeader({ selectedChat, onLogout, chatCount, wsConnected = false, onRequestTypeChange }: ChatHeaderProps) {
+export default function ChatHeader({ selectedChat, chatCount, wsConnected = false, onChatUpdate }: ChatHeaderProps) {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showRequestTypeMenu, setShowRequestTypeMenu] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const requestTypeMenuRef = useRef<HTMLDivElement>(null);
+  const { addToast } = useToast();
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -57,11 +61,43 @@ export default function ChatHeader({ selectedChat, onLogout, chatCount, wsConnec
     { id: 'consultation', label: 'ขอคำปรึกษา', icon: Settings },
   ];
 
-  const handleRequestTypeChange = (newRequestType: string) => {
-    if (selectedChat && onRequestTypeChange) {
-      onRequestTypeChange(selectedChat.id, newRequestType);
+  const handleRequestTypeChange = async (newRequestType: string) => {
+    if (!selectedChat || isUpdating) return;
+
+    // Don't update if it's the same request type
+    if (selectedChat.parsedMetadata?.requestType === newRequestType) {
+      setShowRequestTypeMenu(false);
+      return;
     }
-    setShowRequestTypeMenu(false);
+
+    setIsUpdating(true);
+    
+    try {
+      const result = await updateChatRequestType(selectedChat.uuid, newRequestType);
+      
+      if (result.success && result.data) {
+        // Update the chat in the parent component
+        if (onChatUpdate) {
+          onChatUpdate(result.data);
+        }
+        
+        addToast({
+          message: `Request type updated to "${REQUEST_TYPES.find(t => t.id === newRequestType)?.label || newRequestType}"`,
+          type: 'success'
+        });
+      } else {
+        throw new Error(result.error || 'Failed to update request type');
+      }
+    } catch (error) {
+      console.error('Error updating request type:', error);
+      addToast({
+        message: `Failed to update request type: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        type: 'error'
+      });
+    } finally {
+      setIsUpdating(false);
+      setShowRequestTypeMenu(false);
+    }
   };
 
   return (
@@ -71,27 +107,28 @@ export default function ChatHeader({ selectedChat, onLogout, chatCount, wsConnec
           <>
             <div className="relative" ref={requestTypeMenuRef}>
               <button
-                onClick={() => setShowRequestTypeMenu(!showRequestTypeMenu)}
-                className={`size-8 rounded-full bg-surface-variant border border-outline flex items-center justify-center hover:bg-surface-variant/80 transition-all duration-200 group hover:scale-105 ${
+                onClick={() => !isUpdating && setShowRequestTypeMenu(!showRequestTypeMenu)}
+                disabled={isUpdating}
+                className={`size-8 rounded-full bg-surface-variant border border-outline flex items-center justify-center hover:bg-surface-variant/80 transition-all duration-200 group hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed ${
                   showRequestTypeMenu ? 'ring-2 ring-primary/20 bg-primary-container/10' : ''
                 }`}
-                title={`Current: ${REQUEST_TYPES.find(t => t.id === selectedChat.metadata?.requestType)?.label || 'Unknown'} - Click to change`}
+                title={`Current: ${REQUEST_TYPES.find(t => t.id === selectedChat.parsedMetadata?.requestType)?.label || 'Unknown'} - Click to change`}
               >
                 {(() => {
-                  const IconComponent = getRequestTypeIcon(selectedChat.metadata?.requestType || 'unknown');
+                  const IconComponent = getRequestTypeIcon(selectedChat.parsedMetadata?.requestType || 'unknown');
                   return <IconComponent size={16} className="text-on-surface-variant group-hover:text-on-surface transition-colors" />;
                 })()}
               </button>
               
-              {showRequestTypeMenu && (
-                <div className="absolute top-full left-0 mt-2 w-64 bg-surface-container border border-outline-variant rounded-2xl shadow-lg  z-50">
+              {showRequestTypeMenu && !isUpdating && (
+                <div className="absolute top-full left-0 mt-2 w-64 bg-surface-container border border-outline-variant rounded-2xl shadow-lg z-50">
                   <div className="px-3 py-2 border-b border-outline-variant">
                     <span className="text-sm font-medium text-on-surface">Change Request Type</span>
                   </div>
                   <div className="max-h-64 overflow-y-auto">
                     {REQUEST_TYPES.map((type) => {
                       const IconComponent = type.icon;
-                      const isSelected = selectedChat.metadata?.requestType === type.id;
+                      const isSelected = selectedChat.parsedMetadata?.requestType === type.id;
                       
                       return (
                         <button
