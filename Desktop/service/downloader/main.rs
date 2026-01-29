@@ -115,7 +115,7 @@ async fn download_file_multiconnection(url: &str, output_path: &str) -> Result<(
 
     // Determine number of connections
     let connections = if supports_ranges && total_size > MIN_CHUNK_SIZE {
-        std::cmp::min(MAX_CONNECTIONS, (total_size / MIN_CHUNK_SIZE) as usize).max(1)
+        std::cmp::min(DEFAULT_CONNECTIONS, (total_size / MIN_CHUNK_SIZE) as usize).max(1)
     } else {
         1 // Fallback to single connection
     };
@@ -242,39 +242,46 @@ async fn download_range(
     while let Some(chunk_result) = stream.next().await {
         match chunk_result {
             Ok(bytes) => {
-        
-        writer.write_all(&chunk)?;
-        bytes_since_last_update += chunk_size;
-
-        // Update shared progress
-        let now = Instant::now();
-        if now.duration_since(last_speed_update) >= Duration::from_millis(100) {
-            let mut progress = progress_shared.lock().unwrap();
-            progress.downloaded += bytes_since_last_update;
-            progress.chunk_size = chunk_size;
-            
-            // Calculate speed
-            let elapsed = now.duration_since(start_time).as_secs_f64();
-            if elapsed > 0.0 {
-                progress.download_speed_bps = progress.downloaded as f64 / elapsed;
+                let chunk_size = bytes.len() as u64;
                 
-                if progress.total_size > 0 && progress.download_speed_bps > 0.0 {
-                    let remaining_bytes = progress.total_size - progress.downloaded;
-                    progress.eta_seconds = Some((remaining_bytes as f64 / progress.download_speed_bps) as u64);
+                writer.write_all(&bytes)?;
+                bytes_since_last_update += chunk_size;
+
+                // Update shared progress
+                let now = Instant::now();
+                if now.duration_since(last_speed_update) >= Duration::from_millis(100) {
+                    let mut progress = progress_shared.lock().unwrap();
+                    progress.downloaded += bytes_since_last_update;
+                    progress.chunk_size = chunk_size;
+                    
+                    // Calculate speed
+                    let elapsed = now.duration_since(start_time).as_secs_f64();
+                    if elapsed > 0.0 {
+                        progress.download_speed_bps = progress.downloaded as f64 / elapsed;
+                        
+                        if progress.total_size > 0 && progress.download_speed_bps > 0.0 {
+                            let remaining_bytes = progress.total_size - progress.downloaded;
+                            progress.eta_seconds = Some((remaining_bytes as f64 / progress.download_speed_bps) as u64);
+                        }
+                    }
+                    
+                    progress.print_json();
+                    drop(progress);
+                    
+                    bytes_since_last_update = 0;
+                    last_speed_update = now;
                 }
             }
-            
-            progress.print_json();
-            drop(progress);
-            
-            bytes_since_last_update = 0;
-            last_speed_update = now;
+            Err(e) => {
+                return Err(format!("Stream error: {}", e).into());
+            }
         }
     }
 
     writer.flush()?;
     Ok(())
 }
+
 async fn download_file_single(url: &str, output_path: &str, mut progress: DownloadProgress) -> Result<(), Box<dyn std::error::Error>> {
     let client = reqwest::Client::new();
     
@@ -303,32 +310,38 @@ async fn download_file_single(url: &str, output_path: &str, mut progress: Downlo
     let mut current_speed = 0.0f64;
     
     while let Some(chunk_result) = stream.next().await {
-        let chunk = chunk_result?;
-        let chunk_size = chunk.len() as u64;
-        
-        writer.write_all(&chunk)?;
-        
-        progress.downloaded += chunk_size;
-        progress.chunk_size = chunk_size;
-        bytes_since_last_update += chunk_size;
-        
-        let now = Instant::now();
-        let time_since_last_update = now.duration_since(last_speed_update);
-        
-        if time_since_last_update >= Duration::from_millis(100) {
-            current_speed = bytes_since_last_update as f64 / time_since_last_update.as_secs_f64();
-            bytes_since_last_update = 0;
-            last_speed_update = now;
+        match chunk_result {
+            Ok(chunk) => {
+                let chunk_size = chunk.len() as u64;
+                
+                writer.write_all(&chunk)?;
+                
+                progress.downloaded += chunk_size;
+                progress.chunk_size = chunk_size;
+                bytes_since_last_update += chunk_size;
+                
+                let now = Instant::now();
+                let time_since_last_update = now.duration_since(last_speed_update);
+                
+                if time_since_last_update >= Duration::from_millis(100) {
+                    current_speed = bytes_since_last_update as f64 / time_since_last_update.as_secs_f64();
+                    bytes_since_last_update = 0;
+                    last_speed_update = now;
+                }
+                
+                progress.download_speed_bps = current_speed;
+                
+                if progress.total_size > 0 && current_speed > 0.0 {
+                    let remaining_bytes = progress.total_size - progress.downloaded;
+                    progress.eta_seconds = Some((remaining_bytes as f64 / current_speed) as u64);
+                }
+                
+                progress.print_json();
+            }
+            Err(e) => {
+                return Err(format!("Stream error: {}", e).into());
+            }
         }
-        
-        progress.download_speed_bps = current_speed;
-        
-        if progress.total_size > 0 && current_speed > 0.0 {
-            let remaining_bytes = progress.total_size - progress.downloaded;
-            progress.eta_seconds = Some((remaining_bytes as f64 / current_speed) as u64);
-        }
-        
-        progress.print_json();
     }
 
     writer.flush()?;
