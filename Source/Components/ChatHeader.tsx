@@ -5,11 +5,11 @@ interface ChatHeaderProps {
   selectedChat: any | null;
   onLogout: () => void;
   chatCount: number;
-  redisConnected?: boolean;
+  wsConnected?: boolean;
   onRequestTypeChange?: (chatId: number, requestType: string) => void;
 }
 
-export default function ChatHeader({ selectedChat, onLogout, chatCount, redisConnected = false, onRequestTypeChange }: ChatHeaderProps) {
+export default function ChatHeader({ selectedChat, onLogout, chatCount, wsConnected = false, onRequestTypeChange }: ChatHeaderProps) {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showRequestTypeMenu, setShowRequestTypeMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -65,7 +65,7 @@ export default function ChatHeader({ selectedChat, onLogout, chatCount, redisCon
   };
 
   return (
-    <header className="flex items-center gap-4 p-4 border-b border-outline shrink-0 z-20 bg-surface relative">
+    <header className="flex items-center gap-4 p-4 border-b border-outline shrink-0 z-[2] bg-surface relative">
       <div className="flex items-center gap-3">
         {selectedChat ? (
           <>
@@ -128,29 +128,21 @@ export default function ChatHeader({ selectedChat, onLogout, chatCount, redisCon
         {/* Redis Connection Status */}
         <div 
           className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs ${
-            redisConnected 
+            wsConnected 
               ? 'bg-success/10 text-success' 
               : 'bg-error/10 text-error'
           }`}
-          title={redisConnected ? 'Real-time connected' : 'Real-time disconnected'}
+          title={wsConnected ? 'Real-time connected' : 'Real-time disconnected'}
         >
-          {redisConnected ? <Wifi size={12} /> : <WifiOff size={12} />}
+          {wsConnected ? <Wifi size={12} /> : <WifiOff size={12} />}
           <span className="label-small">
-            {redisConnected ? 'Live' : 'Offline'}
+            {wsConnected ? 'Live' : 'Offline'}
           </span>
         </div>
         
         <button className="flex items-center justify-center size-9 rounded-full hover:bg-surface-variant transition-colors">
           <Search className="text-on-surface-variant" />
         </button>
-        <div className="relative" ref={menuRef}>
-          <button 
-            className="flex items-center justify-center size-9 rounded-full hover:bg-surface-variant transition-colors"
-            onClick={onLogout}
-          >
-            <LogOut size={16} />
-          </button>
-        </div>
       </div>
     </header>
   )

@@ -4,41 +4,14 @@ import Avatar from './Avatar'
 import MessageContent from './MessageContent'
 import ImageAttachment from './ImageAttachment'
 import CustomEmojiPicker from './EmojiPicker'
-import { showConfirmDialog, showInputDialog } from '../Library/Native/dialog'
+import { showInputDialog } from '../Library/Native/dialog' // Keep showInputDialog for now
+import ConfirmDialog from './ui/ConfirmDialog'
+import { useToast } from '../Library/hooks/useToast.tsx'
+import type { MessageType, MessageUser, MessageBubbleData } from '../Library/types' // Import shared types
 
-interface User {
-  id: string
-  name: string
-  avatarUrl?: string
-  initial?: string
-  color?: string
-}
-
-interface MessageData {
-  id: string
-  user: User
-  time: string
-  content: string
-  attachments?: string[]
-  reactions?: { emoji: string; count: number; active?: boolean }[]
-  isHighlighted?: boolean
-  editedAt?: string
-  replyTo?: {
-    messageId: string
-    userName: string
-    content: string
-  }
-  meta?: {
-    type: 'progress'
-    label: string
-    current: string
-    total: string
-    percentage: number
-  }
-}
 
 interface MessageBubbleProps {
-  data: MessageData
+  data: MessageBubbleData // Use imported MessageBubbleData
   searchQuery?: string
   onReply?: (messageId: string, userName: string, content: string) => void
   onReaction?: (messageId: string, emoji: string) => void
@@ -50,6 +23,9 @@ export default function MessageBubble({ data, searchQuery, onReply, onReaction, 
   const [showActions, setShowActions] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false); // New state
+  const [messageToDelete, setMessageToDelete] = useState<string | null>(null); // New state
+  const { addToast } = useToast(); // Initialize useToast
 
   // Check if this is a checkpoint message
   const isCheckpoint = data.content === '---CHECKPOINT---';
@@ -104,20 +80,19 @@ export default function MessageBubble({ data, searchQuery, onReply, onReaction, 
     setShowMoreMenu(false);
   };
 
-  const handleDeleteMessage = async () => {
-    if (onDelete) {
-      // Use native confirmation dialog instead of browser confirm
-      const confirmed = await showConfirmDialog({
-        title: 'Delete Message',
-        message: 'Are you sure you want to delete this message? This action cannot be undone.',
-        okText: 'Delete',
-        cancelText: 'Cancel'
-      });
-      if (confirmed) {
-        onDelete(data.id);
-      }
+  const handleDeleteMessageClick = () => { // Renamed to clearly differentiate from prop
+    setMessageToDelete(data.id);
+    setShowDeleteConfirm(true);
+    setShowMoreMenu(false); // Close the more menu when opening the dialog
+  };
+
+  const handleConfirmDeleteMessage = () => {
+    if (onDelete && messageToDelete) {
+      onDelete(messageToDelete);
+      addToast({ message: `Message deleted successfully!`, type: 'success' });
     }
-    setShowMoreMenu(false);
+    setMessageToDelete(null);
+    setShowDeleteConfirm(false);
   };
 
   const quickReactions = ['👍', '❤️', '😂', '😮', '😢', '😡'];
@@ -371,7 +346,7 @@ export default function MessageBubble({ data, searchQuery, onReply, onReaction, 
                 </button>
                 <div className="border-t border-outline-variant my-1" />
                 <button 
-                  onClick={handleDeleteMessage}
+                  onClick={handleDeleteMessageClick}
                   className="w-full px-4 py-2 text-left hover:bg-error-container flex items-center gap-3 text-error"
                 >
                   <Trash2 size={16} />
@@ -382,6 +357,16 @@ export default function MessageBubble({ data, searchQuery, onReply, onReaction, 
           </div>
         </div>
       </div>
+      <ConfirmDialog
+        open={showDeleteConfirm}
+        onOpenChange={setShowDeleteConfirm}
+        title="Delete Message"
+        message="Are you sure you want to delete this message? This action cannot be undone."
+        confirmText="Delete"
+        cancelText="Cancel"
+        onConfirm={handleConfirmDeleteMessage}
+        onCancel={() => setMessageToDelete(null)}
+      />
     </div>
   )
 }

@@ -19,6 +19,14 @@ interface MessageData {
   userName: string;
 }
 
+// Helper function to format customer name from regex extraction
+function formatCustomerName(name: string | undefined): string | null {
+  if (!name || name.trim() === '' || name.trim() === '#N/A') {
+    return null;
+  }
+  return name.trim();
+}
+
 export function MessageContent({ 
   content, 
   messageId, 
@@ -41,7 +49,8 @@ export function MessageContent({
   const statusMatch = content.match(statusUpdateRegex);
 
   if (statusMatch && message) {
-    const [, queueId, oldStatus, newStatus, customerName, queueName] = statusMatch;
+    const [, queueId, oldStatus, newStatus, rawCustomerName, queueName] = statusMatch;
+    const customerName = formatCustomerName(rawCustomerName);
     return (
       <QueueStatusUpdateCard
         queueId={parseInt(queueId, 10)}
@@ -50,7 +59,7 @@ export function MessageContent({
         newStatus={newStatus}
         timestamp={message.timestamp}
         userName={message.userName}
-        customerName={customerName || null}
+        customerName={customerName}
       />
     );
   }
@@ -61,14 +70,15 @@ export function MessageContent({
   const reqTypeMatch = content.match(reqTypeChangeRegex);
 
   if (reqTypeMatch && message) {
-    const [, queueId, oldType, newType, customerName, jobName] = reqTypeMatch;
+    const [, queueId, oldType, newType, rawCustomerName, jobName] = reqTypeMatch;
+    const customerName = formatCustomerName(rawCustomerName);
     return (
       <ReqTypeChangeCard
         queueId={queueId}
         jobName={jobName}
         oldType={oldType}
         newType={newType}
-        customerName={customerName || null}
+        customerName={customerName}
       />
     );
   }
@@ -79,14 +89,15 @@ export function MessageContent({
   const queueAcceptedMatch = content.match(queueAcceptedRegex);
 
   if (queueAcceptedMatch) {
-    const [, queueId, userName, userProfilePicture, customerName, jobName] = queueAcceptedMatch;
+    const [, queueId, userName, userProfilePicture, rawCustomerName, jobName] = queueAcceptedMatch;
+    const customerName = formatCustomerName(rawCustomerName);
     return (
       <QueueAcceptedCard
         queueId={queueId}
         jobName={jobName}
         userName={userName}
         userProfilePicture={userProfilePicture || null}
-        customerName={customerName || null}
+        customerName={customerName}
       />
     );
   }

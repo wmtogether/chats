@@ -32,6 +32,9 @@ func main() {
 	// Initialize auth service
 	InitAuth()
 
+	// Initialize WebSocket hub
+	InitWebSocket()
+
 	// --- Chi Router Setup ---
 	r := chi.NewRouter()
 
@@ -45,6 +48,15 @@ func main() {
 	// Protected routes
 	r.Group(func(r chi.Router) {
 		r.Use(authMiddleware)
+
+		// WebSocket status endpoint (requires auth)
+		r.Get("/api/ws/status", wsStatusHandler)
+
+		// File upload routes
+		setupFileUploadRoutes(r)
+		
+		// Chunked upload routes (for large files)
+		setupChunkedUploadRoutes(r)
 
 		// Queue routes
 		r.Get("/api/queue", getQueuesHandler)
@@ -100,10 +112,14 @@ func main() {
 
 					})
 
+	// WebSocket endpoint (handles auth internally)
+	r.Get("/ws", wsHandler)
+
 		
 
 			port := ":5669"
 	fmt.Printf("Server starting on port %s\n", port)
+	fmt.Printf("WebSocket endpoint: ws://localhost%s/ws\n", port)
 	log.Fatal(http.ListenAndServe(port, r))
 }
 
@@ -170,10 +186,29 @@ func createQueueHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Broadcast queue update via WebSocket
+	BroadcastQueueUpdate(map[string]interface{}{
+		"action": "created",
+		"queue":  insertedQueue,
+		"user":   user.Name,
+	})
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(APIResponse{
 		Success: true,
 		Message: "Queue item created successfully",
 		Data:    insertedQueue,
+	})
+}
+func wsStatusHandler(w http.ResponseWriter, r *http.Request) {
+	connectedClients := GetConnectedClients()
+	
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(APIResponse{
+		Success: true,
+		Data: map[string]interface{}{
+			"connectedClients": connectedClients,
+			"status":          "running",
+		},
 	})
 }

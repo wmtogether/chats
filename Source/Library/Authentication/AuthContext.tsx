@@ -28,9 +28,8 @@ interface AuthProviderProps {
 
 // Create a configured axios instance for API calls
 export const apiClient = axios.create({
-    baseURL: 'http://localhost:5669/api' // Uses the Vite proxy
+    baseURL: process.env.NODE_ENV === 'production' ? 'http://localhost:5669/api' : '/api'
 });
-
 // Use an interceptor to add the auth token to every request
 apiClient.interceptors.request.use(
     (config) => {

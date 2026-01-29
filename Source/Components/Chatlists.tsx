@@ -14,32 +14,9 @@ interface ChatlistsProps {
 export default function Chatlists({ chats, onChatSelect, selectedChatId, onShowAllChats }: ChatlistsProps) {
   const [showAll, setShowAll] = useState(false)
 
-  const displayedChats = showAll ? chats : chats.slice(0, 5)
-
   const handleChatClick = (chat: Chat) => {
     onChatSelect(chat)
-  }
-
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString)
-    const now = new Date()
-    const diffInHours = (now.getTime() - date.getTime()) / (1000 * 60 * 60)
-    
-    if (diffInHours < 24) {
-      return date.toLocaleTimeString('en-US', { 
-        hour: '2-digit', 
-        minute: '2-digit',
-        hour12: false 
-      })
-    } else if (diffInHours < 168) { // 7 days
-      return date.toLocaleDateString('en-US', { weekday: 'short' })
-    } else {
-      return date.toLocaleDateString('en-US', { 
-        month: 'short', 
-        day: 'numeric' 
-      })
-    }
-  }
+  };
 
   const getRequestTypeIcon = (requestType: string) => {
     switch (requestType) {
@@ -89,7 +66,7 @@ export default function Chatlists({ chats, onChatSelect, selectedChatId, onShowA
                 {chat.channelName}
               </h3>
               <span className="label-small text-on-surface-variant flex-shrink-0">
-                {formatDate(chat.updatedAt)}
+                {formatRelativeDate(chat.updatedAt)}
               </span>
             </div>
             

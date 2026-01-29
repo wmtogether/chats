@@ -78,11 +78,54 @@ export function QueueStatusUpdateCard({
   const OldIcon = oldStatusConfig.icon;
   const NewIcon = newStatusConfig.icon;
 
-  const formatTime = (timestamp: string) => {
-    return new Date(timestamp).toLocaleTimeString('th-TH', {
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+  const formatTime = (timestamp: string): string => {
+    if (!timestamp || typeof timestamp !== 'string') {
+      return '--:--';
+    }
+
+    try {
+      // Handle the format "2025-12-05 14:57:24.797 +0700"
+      const parts = timestamp.trim().split(' ');
+      
+      if (parts.length >= 3) {
+        const datePart = parts[0]; // "2025-12-05"
+        const timePart = parts[1]; // "14:57:24.797"
+        let tzOffsetPart = parts[2]; // "+0700"
+
+        // Convert timezone offset from "+0700" to "+07:00" format
+        if (tzOffsetPart.length === 5 && !tzOffsetPart.includes(':')) {
+          tzOffsetPart = tzOffsetPart.substring(0, 3) + ':' + tzOffsetPart.substring(3, 5);
+        }
+        
+        // Create ISO 8601 format: "2025-12-05T14:57:24.797+07:00"
+        const isoTimestamp = `${datePart}T${timePart}${tzOffsetPart}`;
+        const date = new Date(isoTimestamp);
+        
+        // Validate the parsed date
+        if (!isNaN(date.getTime())) {
+          return date.toLocaleTimeString('th-TH', {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false
+          });
+        }
+      }
+      
+      // Fallback: try parsing the timestamp as-is
+      const fallbackDate = new Date(timestamp);
+      if (!isNaN(fallbackDate.getTime())) {
+        return fallbackDate.toLocaleTimeString('th-TH', {
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false
+        });
+      }
+      
+      return '--:--';
+    } catch (error) {
+      console.warn('Error formatting timestamp:', timestamp, error);
+      return '--:--';
+    }
   };
 
   return (

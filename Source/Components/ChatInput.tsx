@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, type KeyboardEvent } from 'react';
 import { Send, Bold, Italic, Code, Smile, PlusCircle, File, Image, FileImage, X, Upload, Reply, Clipboard } from 'lucide-react'
 import CustomEmojiPicker from './EmojiPicker';
+import { fileUploader, type UploadProgress, type UploadResult } from '../Library/utils/fileUpload';
 
 interface Attachment {
   id: string;
@@ -25,8 +26,6 @@ interface ChatInputProps {
   replyingTo?: ReplyingTo | null;
   onCancelReply?: () => void;
 }
-
-const MAX_FILE_SIZE = 3 * 1024 * 1024 * 1024; // 3GB in bytes
 
 export default function ChatInput({ onSendMessage, replyingTo, onCancelReply }: ChatInputProps) {
   const [message, setMessage] = useState('');
@@ -191,10 +190,7 @@ export default function ChatInput({ onSendMessage, replyingTo, onCancelReply }: 
   };
 
   const validateFile = (file: File): string | null => {
-    if (file.size > MAX_FILE_SIZE) {
-      return `File "${file.name}" is too large. Maximum size is 3GB.`;
-    }
-    return null;
+    return fileUploader.validateFile(file, 3 * 1024 * 1024 * 1024); // 3GB max
   };
 
   const createAttachment = (file: File): Promise<Attachment> => {
@@ -227,7 +223,6 @@ export default function ChatInput({ onSendMessage, replyingTo, onCancelReply }: 
     try {
       for (const attachment of attachmentsToUpload) {
         const file = attachment.file;
-        const isLargeFile = file.size >= 50 * 1024 * 1024; // 50MB threshold
         
         // Set uploading status
         setAttachments(prev => 
@@ -241,12 +236,34 @@ export default function ChatInput({ onSendMessage, replyingTo, onCancelReply }: 
         try {
           let uploadedUrl: string;
           
-          if (isLargeFile) {
-            // Use TUS for files >= 50MB with progress tracking
-            uploadedUrl = await uploadLargeFileWithProgress(file, attachment.id);
+          if (attachment.type === 'image') {
+            // Use image upload endpoint for images
+            const result = await fileUploader.uploadImage(file, {
+              onProgress: (progress) => {
+                setAttachments(prev => 
+                  prev.map(att => 
+                    att.id === attachment.id 
+                      ? { ...att, uploadProgress: progress.progress }
+                      : att
+                  )
+                );
+              }
+            });
+            uploadedUrl = result.url || '';
           } else {
-            // Use /api/fileupload for files < 50MB with progress tracking
-            uploadedUrl = await uploadFileWithProgress(file, attachment.id);
+            // Use regular file upload for other files
+            const result = await fileUploader.uploadFile(file, {
+              onProgress: (progress) => {
+                setAttachments(prev => 
+                  prev.map(att => 
+                    att.id === attachment.id 
+                      ? { ...att, uploadProgress: progress.progress }
+                      : att
+                  )
+                );
+              }
+            });
+            uploadedUrl = result.url || '';
           }
           
           // Update attachment with uploaded URL and completed status
@@ -284,106 +301,6 @@ export default function ChatInput({ onSendMessage, replyingTo, onCancelReply }: 
     } catch (error) {
       console.error('Upload error:', error);
     }
-  };
-
-  const uploadFileWithProgress = (file: File, attachmentId: string): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('chatAttachment', 'true');
-      
-      const xhr = new XMLHttpRequest();
-      
-      // Track upload progress
-      xhr.upload.addEventListener('progress', (e) => {
-        if (e.lengthComputable) {
-          const progress = Math.round((e.loaded / e.total) * 100);
-          setAttachments(prev => 
-            prev.map(att => 
-              att.id === attachmentId 
-                ? { ...att, uploadProgress: progress }
-                : att
-            )
-          );
-        }
-      });
-      
-      xhr.addEventListener('load', () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          try {
-            const data = JSON.parse(xhr.responseText);
-            resolve(data.url);
-          } catch (error) {
-            reject(new Error('Invalid response format'));
-          }
-        } else {
-          reject(new Error(`Upload failed with status ${xhr.status}`));
-        }
-      });
-      
-      xhr.addEventListener('error', () => {
-        reject(new Error('Network error during upload'));
-      });
-      
-      xhr.addEventListener('timeout', () => {
-        reject(new Error('Upload timeout'));
-      });
-      
-      xhr.open('POST', '/api/fileupload');
-      xhr.timeout = 300000; // 5 minutes timeout
-      xhr.send(formData);
-    });
-  };
-
-  const uploadLargeFileWithProgress = (file: File, attachmentId: string): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      // For now, use the same endpoint as regular files
-      // TODO: Implement proper TUS client for resumable uploads
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('chatAttachment', 'true');
-      
-      const xhr = new XMLHttpRequest();
-      
-      // Track upload progress
-      xhr.upload.addEventListener('progress', (e) => {
-        if (e.lengthComputable) {
-          const progress = Math.round((e.loaded / e.total) * 100);
-          setAttachments(prev => 
-            prev.map(att => 
-              att.id === attachmentId 
-                ? { ...att, uploadProgress: progress }
-                : att
-            )
-          );
-        }
-      });
-      
-      xhr.addEventListener('load', () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          try {
-            const data = JSON.parse(xhr.responseText);
-            resolve(data.url);
-          } catch (error) {
-            reject(new Error('Invalid response format'));
-          }
-        } else {
-          reject(new Error(`Large file upload failed with status ${xhr.status}`));
-        }
-      });
-      
-      xhr.addEventListener('error', () => {
-        reject(new Error('Network error during large file upload'));
-      });
-      
-      xhr.addEventListener('timeout', () => {
-        reject(new Error('Large file upload timeout'));
-      });
-      
-      xhr.open('POST', '/api/fileupload');
-      xhr.timeout = 600000; // 10 minutes timeout for large files
-      xhr.send(formData);
-    });
   };
 
   const handleFileSelect = async (files: FileList | null, type?: 'file' | 'image' | 'gif') => {
@@ -461,11 +378,7 @@ export default function ChatInput({ onSendMessage, replyingTo, onCancelReply }: 
   };
 
   const formatFileSize = (bytes: number): string => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    return fileUploader.formatFileSize(bytes);
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -582,6 +495,11 @@ export default function ChatInput({ onSendMessage, replyingTo, onCancelReply }: 
                         {attachment.uploadProgress || 0}%
                       </span>
                     </div>
+                    {attachment.file.size > 100 * 1024 * 1024 && (
+                      <div className="text-xs text-primary mt-1">
+                        ⚡ Fast chunked upload
+                      </div>
+                    )}
                   </div>
                 )}
                 
@@ -759,7 +677,8 @@ export default function ChatInput({ onSendMessage, replyingTo, onCancelReply }: 
                     <span className="font-medium text-xs">GIF</span>
                   </button>
                   <div className="px-2 py-2 text-xs text-on-surface-variant border-t border-outline-variant mt-2">
-                    Max 3GB per file • Drag & drop or Ctrl+V supported
+                    Max 3GB per file • Drag & drop or Ctrl+V supported<br/>
+                    Files over 100MB use fast chunked upload ⚡
                   </div>
                 </div>
               )}

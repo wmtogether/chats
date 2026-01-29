@@ -29,9 +29,6 @@ export default defineConfig({
     assetsInlineLimit: 0, // Ensure fonts are properly handled
   },
   assetsInclude: ['**/*.ttf', '**/*.otf', '**/*.woff', '**/*.woff2'],
-  define: {
-    global: 'globalThis',
-  },
   resolve: {
     alias: {
       buffer: 'buffer',
@@ -41,5 +38,9 @@ export default defineConfig({
   },
   optimizeDeps: {
     include: ['buffer', 'process'],
+    exclude: ['redis'], // Exclude Redis from browser bundling
+  },
+  define: {
+    global: 'globalThis',
   },
 })

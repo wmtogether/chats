@@ -140,3 +140,25 @@ func InitAuth() {
 	}
 	jwtKey = []byte(secret)
 }
+
+// ValidateToken validates a JWT token and returns the associated user
+func ValidateToken(tokenString string) (*User, error) {
+	claims := &Claims{}
+	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+		return jwtKey, nil
+	})
+
+	if err != nil || !token.Valid {
+		return nil, fmt.Errorf("invalid or expired token: %v", err)
+	}
+
+	user, err := GetUserByID(claims.UserID)
+	if err != nil {
+		return nil, fmt.Errorf("user not found: %v", err)
+	}
+
+	return user, nil
+}
