@@ -7,6 +7,8 @@ import CustomEmojiPicker from './EmojiPicker'
 import { showInputDialog } from '../Library/Native/dialog' // Keep showInputDialog for now
 import ConfirmDialog from './ui/ConfirmDialog'
 import { useToast } from '../Library/hooks/useToast.tsx'
+import { useDownload } from '../Library/hooks/useDownload'
+import DownloadProgress from './DownloadProgress'
 import { getApiUrl } from '../Library/utils/env'
 import type { MessageBubbleData } from '../Library/types' // Import shared types
 
@@ -76,6 +78,7 @@ export default function MessageBubble({ data, searchQuery, onReply, onReaction, 
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false); // New state
   const [messageToDelete, setMessageToDelete] = useState<string | null>(null); // New state
   const { addToast } = useToast(); // Initialize useToast
+  const { startDownload, downloads, clearDownload } = useDownload();
 
   // Check if this is a checkpoint message
   const isCheckpoint = data.content === '---CHECKPOINT---';
@@ -86,15 +89,23 @@ export default function MessageBubble({ data, searchQuery, onReply, onReaction, 
   };
 
   // Handle file download
-  const handleFileDownload = (fileUrl: string, filename: string) => {
-    // Create a temporary anchor element to trigger download
-    const link = document.createElement('a');
-    link.href = fileUrl;
-    link.download = filename;
-    link.target = '_blank';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const handleFileDownload = async (fileUrl: string, filename: string) => {
+    try {
+      await startDownload(fileUrl, filename);
+      addToast({ message: `Download started: ${filename}`, type: 'info' });
+    } catch (error) {
+      console.error('Failed to start download:', error);
+      addToast({ message: `Failed to start download: ${filename}`, type: 'error' });
+      
+      // Fallback to browser download
+      const link = document.createElement('a');
+      link.href = fileUrl;
+      link.download = filename;
+      link.target = '_blank';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
   };
 
   const isImageFile = (url: string) => {
@@ -262,35 +273,51 @@ export default function MessageBubble({ data, searchQuery, onReply, onReaction, 
                 const FileIconComponent = getFileIcon(filename);
                 const fileExtension = getFileExtension(filename);
                 
+                // Find active download for this file
+                const activeDownload = downloads.find(d => d.url === imageUrl);
+                
                 return (
-                  <div key={index} className="flex items-center gap-3 p-3 bg-surface-container border border-outline-variant rounded-2xl hover:bg-surface-variant transition-colors">
-                    <div className="relative flex-shrink-0">
-                      <FileIconComponent className="h-6 w-6 text-on-surface-variant" />
-                      {fileExtension && (
-                        <span className="absolute -bottom-1 -right-1 text-xs font-bold text-primary bg-primary-container px-1 rounded">
-                          {fileExtension}
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
+                  <div key={index} className="space-y-2">
+                    <div className="flex items-center gap-3 p-3 bg-surface-container border border-outline-variant rounded-2xl hover:bg-surface-variant transition-colors">
+                      <div className="relative flex-shrink-0">
+                        <FileIconComponent className="h-6 w-6 text-on-surface-variant" />
+                        {fileExtension && (
+                          <span className="absolute -bottom-1 -right-1 text-xs font-bold text-primary bg-primary-container px-1 rounded">
+                            {fileExtension}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <button
+                          onClick={() => handleFileDownload(imageUrl, filename)}
+                          className="body-small text-primary hover:underline truncate block text-left w-full font-medium"
+                          title={`Download ${filename}`}
+                          disabled={activeDownload?.status === 'downloading'}
+                        >
+                          {filename}
+                        </button>
+                        <div className="text-xs text-on-surface-variant">
+                          {activeDownload?.status === 'downloading' ? 'Downloading...' : 'Click to download'}
+                        </div>
+                      </div>
                       <button
                         onClick={() => handleFileDownload(imageUrl, filename)}
-                        className="body-small text-primary hover:underline truncate block text-left w-full font-medium"
-                        title={`Download ${filename}`}
+                        className="p-2 hover:bg-primary-container rounded-full text-on-surface-variant hover:text-primary transition-colors flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Download file"
+                        disabled={activeDownload?.status === 'downloading'}
                       >
-                        {filename}
+                        <Download className="h-4 w-4" />
                       </button>
-                      <div className="text-xs text-on-surface-variant">
-                        Click to download
-                      </div>
                     </div>
-                    <button
-                      onClick={() => handleFileDownload(imageUrl, filename)}
-                      className="p-2 hover:bg-primary-container rounded-full text-on-surface-variant hover:text-primary transition-colors flex-shrink-0"
-                      title="Download file"
-                    >
-                      <Download className="h-4 w-4" />
-                    </button>
+                    
+                    {/* Show download progress if active */}
+                    {activeDownload && (
+                      <DownloadProgress 
+                        download={activeDownload}
+                        onClear={() => clearDownload(`${activeDownload.url}_${activeDownload.filename}`)}
+                        compact
+                      />
+                    )}
                   </div>
                 );
               }

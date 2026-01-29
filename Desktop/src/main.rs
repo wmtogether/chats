@@ -1,4 +1,4 @@
-#![windows_subsystem = "windows"]
+// #![windows_subsystem = "windows"]
 use wry::WebViewBuilder;
 #[cfg(windows)]
 use wry::WebViewBuilderExtWindows;
@@ -10,6 +10,10 @@ use winit::{
     dpi::LogicalSize,
 };
 use std::sync::Arc;
+use std::process::{Command, Stdio};
+use std::io::{BufRead, BufReader};
+use std::collections::HashMap;
+use serde_json;
 
 mod context_menu;
 mod menubar;
@@ -102,6 +106,103 @@ const DEV_SERVER_URL: &str = "http://localhost:5173";
 const INDEX_HTML_BYTES: &[u8] = include_bytes!("../../Distribution/index.html");
 
 
+
+fn start_download_process(url: String, filename: String) {
+    println!("Starting download: {} -> {}", url, filename);
+    
+    // Get the path to the downloader executable
+    let exe_path = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|p| p.join("downloaderservice.exe")))
+        .unwrap_or_else(|| std::path::PathBuf::from("./target/debug/downloaderservice.exe"));
+    
+    println!("Using downloader executable: {}", exe_path.display());
+    
+    // Determine output path (Downloads folder)
+    let downloads_dir = dirs::download_dir().unwrap_or_else(|| {
+        std::env::current_dir().unwrap().join("Downloads")
+    });
+    
+    // Create downloads directory if it doesn't exist
+    if !downloads_dir.exists() {
+        if let Err(e) = std::fs::create_dir_all(&downloads_dir) {
+            println!("Failed to create downloads directory: {}", e);
+            return;
+        }
+    }
+    
+    let output_path = downloads_dir.join(&filename);
+    
+    // Start the downloader process
+    match Command::new(&exe_path)
+        .arg(&url)
+        .arg(&output_path)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+    {
+        Ok(mut child) => {
+            println!("Downloader process started with PID: {}", child.id());
+            
+            // Read stdout in a separate thread
+            if let Some(stdout) = child.stdout.take() {
+                let reader = BufReader::new(stdout);
+                
+                for line in reader.lines() {
+                    match line {
+                        Ok(json_line) => {
+                            println!("Download progress: {}", json_line);
+                            
+                            // Parse JSON and emit progress events
+                            if let Ok(progress) = serde_json::from_str::<serde_json::Value>(&json_line) {
+                                let status = progress["status"].as_str().unwrap_or("unknown");
+                                
+                                match status {
+                                    "downloading" => {
+                                        // Emit progress event to webview
+                                        // Note: In a real implementation, you'd need to store the webview reference
+                                        // and emit events to it. For now, we just log.
+                                        println!("Progress: {}%", progress["progress_percent"].as_f64().unwrap_or(0.0));
+                                    }
+                                    "completed" => {
+                                        println!("Download completed: {}", filename);
+                                        break;
+                                    }
+                                    "error" => {
+                                        println!("Download error: {}", progress["error"].as_str().unwrap_or("Unknown error"));
+                                        break;
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            println!("Error reading download output: {}", e);
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            // Wait for the process to complete
+            match child.wait() {
+                Ok(status) => {
+                    if status.success() {
+                        println!("Download completed successfully");
+                    } else {
+                        println!("Download failed with exit code: {:?}", status.code());
+                    }
+                }
+                Err(e) => {
+                    println!("Error waiting for download process: {}", e);
+                }
+            }
+        }
+        Err(e) => {
+            println!("Failed to start downloader process: {}", e);
+        }
+    }
+}
 
 struct App {
     window: Option<Arc<Window>>,
@@ -294,6 +395,48 @@ impl App {
         // In debug mode, use dev server. In release, use custom protocol with embedded HTML
         #[cfg(debug_assertions)]
         {
+            // Add custom protocol for download functionality even in debug mode
+            webview_builder = webview_builder.with_custom_protocol("miko".into(), move |_webview, request| {
+                let uri = request.uri();
+                
+                // Handle download requests
+                if uri.to_string().starts_with("miko://download/start") {
+                    // Parse query parameters
+                    if let Ok(url) = url::Url::parse(&uri.to_string()) {
+                        let query_pairs: HashMap<_, _> = url.query_pairs().collect();
+                        
+                        if let (Some(download_url), Some(filename)) = (query_pairs.get("url"), query_pairs.get("filename")) {
+                            // Start download in background thread
+                            let download_url = download_url.to_string();
+                            let filename = filename.to_string();
+                            
+                            std::thread::spawn(move || {
+                                start_download_process(download_url, filename);
+                            });
+                            
+                            return http::Response::builder()
+                                .header("Content-Type", "application/json")
+                                .header("Access-Control-Allow-Origin", "*")
+                                .body(std::borrow::Cow::Borrowed("{\"success\": true, \"message\": \"Download started\"}".as_bytes()))
+                                .unwrap();
+                        }
+                    }
+                    
+                    return http::Response::builder()
+                        .status(400)
+                        .header("Content-Type", "application/json")
+                        .header("Access-Control-Allow-Origin", "*")
+                        .body(std::borrow::Cow::Borrowed("{\"success\": false, \"error\": \"Invalid parameters\"}".as_bytes()))
+                        .unwrap();
+                }
+                
+                // Return 404 for other requests
+                http::Response::builder()
+                    .status(404)
+                    .body(std::borrow::Cow::Borrowed(&[] as &[u8]))
+                    .unwrap()
+            });
+            
             webview_builder = webview_builder.with_url(DEV_SERVER_URL);
         }
 
@@ -304,6 +447,35 @@ impl App {
             
             webview_builder = webview_builder.with_custom_protocol("miko".into(), move |_webview, request| {
                 let uri = request.uri();
+                
+                // Handle download requests
+                if uri.to_string().starts_with("miko://download/start") {
+                    // Parse query parameters
+                    if let Ok(url) = url::Url::parse(&uri.to_string()) {
+                        let query_pairs: HashMap<_, _> = url.query_pairs().collect();
+                        
+                        if let (Some(download_url), Some(filename)) = (query_pairs.get("url"), query_pairs.get("filename")) {
+                            // Start download in background thread
+                            let download_url = download_url.to_string();
+                            let filename = filename.to_string();
+                            
+                            std::thread::spawn(move || {
+                                start_download_process(download_url, filename);
+                            });
+                            
+                            return http::Response::builder()
+                                .header("Content-Type", "application/json")
+                                .body(Cow::Borrowed("{\"success\": true, \"message\": \"Download started\"}".as_bytes()))
+                                .unwrap();
+                        }
+                    }
+                    
+                    return http::Response::builder()
+                        .status(400)
+                        .header("Content-Type", "application/json")
+                        .body(Cow::Borrowed("{\"success\": false, \"error\": \"Invalid parameters\"}".as_bytes()))
+                        .unwrap();
+                }
                 
                 // Serve the main HTML file
                 if uri == "miko://app/" || uri == "miko://app/index.html" {
@@ -331,7 +503,21 @@ impl App {
                 console.log('WebView initialized');
                 window.sessionId = 'desktop-session';
                 
+                // Simple download API using fetch to custom protocol
+                window.downloadAPI = {
+                    startDownload: async function(url, filename) {
+                        try {
+                            const response = await fetch(`miko://download/start?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(filename)}`);
+                            return await response.json();
+                        } catch (error) {
+                            console.error('Download start error:', error);
+                            return { success: false, error: error.message };
+                        }
+                    }
+                };
+                
                 console.log('Session ID set:', window.sessionId);
+                console.log('Download API initialized');
                 "#
             );
 

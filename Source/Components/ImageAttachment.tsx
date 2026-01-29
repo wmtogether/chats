@@ -1,8 +1,10 @@
 
 
 import React, { useState } from 'react';
-import { ImageOff } from 'lucide-react';
+import { ImageOff, Download } from 'lucide-react';
 import { getApiUrl } from '../Library/utils/env';
+import { useDownload } from '../Library/hooks/useDownload';
+import DownloadProgress from './DownloadProgress';
 
 interface ImageAttachmentProps {
     src: string;
@@ -13,6 +15,7 @@ interface ImageAttachmentProps {
 const ImageAttachment: React.FC<ImageAttachmentProps> = ({ src, alt, onClick }) => {
     const [hasError, setHasError] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
+    const { startDownload, downloads, clearDownload } = useDownload();
 
     // Convert relative URL to absolute URL using the API server
     const fullImageUrl = src.startsWith('http') ? src : `${getApiUrl()}${src}`;
@@ -27,6 +30,20 @@ const ImageAttachment: React.FC<ImageAttachmentProps> = ({ src, alt, onClick }) 
         setHasError(true);
         setIsLoading(false);
     };
+
+    const handleDownload = async (e: React.MouseEvent) => {
+        e.stopPropagation();
+        
+        try {
+            const filename = src.split('/').pop() || 'image';
+            await startDownload(fullImageUrl, filename);
+        } catch (error) {
+            console.error('Failed to start download:', error);
+        }
+    };
+
+    // Find active download for this image
+    const activeDownload = downloads.find(d => d.url === fullImageUrl);
 
     return (
         <div className="relative">
@@ -47,17 +64,46 @@ const ImageAttachment: React.FC<ImageAttachmentProps> = ({ src, alt, onClick }) 
                         <p className="body-small text-on-surface-variant truncate">{alt}</p>
                         <p className="body-small text-error truncate">{src}</p>
                     </div>
+                    <button
+                        onClick={handleDownload}
+                        className="p-2 hover:bg-surface-variant rounded-full text-on-surface-variant hover:text-on-surface transition-colors"
+                        title="Download image"
+                    >
+                        <Download className="h-4 w-4" />
+                    </button>
                 </div>
             ) : (
-                <img
-                    src={fullImageUrl}
-                    alt={alt}
-                    className="max-w-full max-h-96 rounded-2xl border border-outline-variant shadow-sm cursor-pointer hover:shadow-md transition-all duration-200"
-                    onClick={onClick}
-                    onError={handleImageError}
-                    onLoad={handleImageLoad}
-                    loading="lazy"
-                />
+                <div className="relative group">
+                    <img
+                        src={fullImageUrl}
+                        alt={alt}
+                        className="max-w-full max-h-96 rounded-2xl border border-outline-variant shadow-sm cursor-pointer hover:shadow-md transition-all duration-200"
+                        onClick={onClick}
+                        onError={handleImageError}
+                        onLoad={handleImageLoad}
+                        loading="lazy"
+                    />
+                    
+                    {/* Download button overlay */}
+                    <button
+                        onClick={handleDownload}
+                        className="absolute top-2 right-2 p-2 bg-black/50 hover:bg-black/70 rounded-full text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+                        title="Download image"
+                    >
+                        <Download className="h-4 w-4" />
+                    </button>
+                </div>
+            )}
+            
+            {/* Show download progress if active */}
+            {activeDownload && (
+                <div className="mt-2">
+                    <DownloadProgress 
+                        download={activeDownload}
+                        onClear={() => clearDownload(`${activeDownload.url}_${activeDownload.filename}`)}
+                        compact
+                    />
+                </div>
             )}
         </div>
     );

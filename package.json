@@ -4,7 +4,7 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "concurrently \"vite\" \"cargo run --bin mikochat\"",
+    "dev": "concurrently \"vite\" \"cargo run --bin mikochat\" \"cd Server && go run . \" ",
     "build": "vite build && cargo build --release && bun run Library/Shared/Scripts/postbuild.ts",
     "postbuild": "bun run Library/Shared/Scripts/postbuild.ts",
     "build-installer": "bun run Library/Shared/Scripts/build-installer.ts",
