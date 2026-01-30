@@ -1,4 +1,4 @@
-// #![windows_subsystem = "windows"]
+#![windows_subsystem = "windows"]
 use wry::WebViewBuilder;
 #[cfg(windows)]
 use wry::WebViewBuilderExtWindows;
