@@ -27,6 +27,7 @@ interface AppState {
   replyingTo: { messageId: string; userName: string; content: string } | null;
   isLoadingChats: boolean;
   isLoadingMessages: boolean;
+  deletingMessages: string[];
 }
 
 type AppAction =
@@ -38,6 +39,8 @@ type AppAction =
   | { type: 'SET_REPLYING_TO'; payload: { messageId: string; userName: string; content: string } | null }
   | { type: 'SET_LOADING_CHATS'; payload: boolean }
   | { type: 'SET_LOADING_MESSAGES'; payload: boolean }
+  | { type: 'SET_DELETING_MESSAGE'; payload: string }
+  | { type: 'REMOVE_DELETING_MESSAGE'; payload: string }
   | { type: 'RESTORE_STATE'; payload: { page: Page; selectedChat: ChatType | null } };
 
 const initialState: AppState = {
@@ -48,6 +51,7 @@ const initialState: AppState = {
   replyingTo: null,
   isLoadingChats: false,
   isLoadingMessages: false,
+  deletingMessages: [],
 };
 
 function appReducer(state: AppState, action: AppAction): AppState {
@@ -85,6 +89,10 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, isLoadingChats: action.payload };
     case 'SET_LOADING_MESSAGES':
       return { ...state, isLoadingMessages: action.payload };
+    case 'SET_DELETING_MESSAGE':
+      return { ...state, deletingMessages: [...state.deletingMessages, action.payload] };
+    case 'REMOVE_DELETING_MESSAGE':
+      return { ...state, deletingMessages: state.deletingMessages.filter(id => id !== action.payload) };
     case 'RESTORE_STATE':
       // Restore state from localStorage
       console.log('🔄 RESTORE_STATE action triggered:', action.payload);
@@ -368,6 +376,15 @@ const ChatLayout = ({ state, dispatch, onLogout, wsConnected }: { state: AppStat
   const handleDeleteMessage = async (messageId: string) => {
     console.log('Deleting message:', messageId);
     
+    // Check if this message is already being deleted
+    if (state.deletingMessages?.includes(messageId)) {
+      console.log('Message already being deleted, skipping:', messageId);
+      return;
+    }
+    
+    // Add to deleting messages list
+    dispatch({ type: 'SET_DELETING_MESSAGE', payload: messageId });
+    
     try {
       // Call the API to delete the message
       const result = await deleteMessage(messageId);
@@ -395,6 +412,9 @@ const ChatLayout = ({ state, dispatch, onLogout, wsConnected }: { state: AppStat
         type: 'error' 
       });
       throw error;
+    } finally {
+      // Remove from deleting messages list
+      dispatch({ type: 'REMOVE_DELETING_MESSAGE', payload: messageId });
     }
   };
 

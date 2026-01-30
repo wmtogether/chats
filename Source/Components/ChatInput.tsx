@@ -1,7 +1,9 @@
 import { useState, useRef, useEffect, type KeyboardEvent } from 'react';
 import { Send, Bold, Italic, Code, Smile, PlusCircle, File, Image, FileImage, X, Upload, Reply, Clipboard } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
 import CustomEmojiPicker from './EmojiPicker';
 import { fileUploader, type UploadProgress, type UploadResult } from '../Library/utils/fileUpload';
+import { cn } from '../Library/utils';
 
 interface Attachment {
   id: string;
@@ -60,19 +62,24 @@ export default function ChatInput({ onSendMessage, replyingTo, onCancelReply }: 
         e.preventDefault();
         setIsPasting(true);
 
-        // Convert FileList to FileList-like object for handleFileSelect
-        const fileList = {
-          length: files.length,
-          item: (index: number) => files[index],
-          [Symbol.iterator]: function* () {
-            for (let i = 0; i < files.length; i++) {
-              yield files[i];
+        try {
+          // Convert FileList to FileList-like object for handleFileSelect
+          const fileList = {
+            length: files.length,
+            item: (index: number) => files[index],
+            [Symbol.iterator]: function* () {
+              for (let i = 0; i < files.length; i++) {
+                yield files[i];
+              }
             }
-          }
-        } as FileList;
+          } as FileList;
 
-        await handleFileSelect(fileList);
-        setIsPasting(false);
+          await handleFileSelect(fileList);
+        } catch (error) {
+          console.error('Error processing clipboard files:', error);
+        } finally {
+          setIsPasting(false);
+        }
         return;
       }
 
@@ -84,40 +91,55 @@ export default function ChatInput({ onSendMessage, replyingTo, onCancelReply }: 
         e.preventDefault();
         setIsPasting(true);
 
-        for (const item of imageItems) {
-          const file = item.getAsFile();
-          if (file) {
-            // Create a unique filename for pasted images
-            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-            const extension = file.type.split('/')[1] || 'png';
+        try {
+          const attachmentPromises = imageItems.map(async (item) => {
+            const file = item.getAsFile();
+            if (file) {
+              // Create a unique filename for pasted images
+              const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+              const extension = file.type.split('/')[1] || 'png';
 
-            // Create a new file with a proper name using Object.assign
-            const renamedFile = Object.assign(file, {
-              name: `pasted-image-${timestamp}.${extension}`
-            });
+              // Create a new file with a proper name
+              const renamedFile = Object.assign(file, {
+                name: `pasted-image-${timestamp}.${extension}`
+              }) as File;
 
-            const fileList = {
-              length: 1,
-              item: () => renamedFile,
-              [Symbol.iterator]: function* () {
-                yield renamedFile;
-              }
-            } as FileList;
+              return await createAttachment(renamedFile);
+            }
+            return null;
+          });
 
-            await handleFileSelect(fileList);
+          const newAttachments = (await Promise.all(attachmentPromises)).filter(Boolean) as Attachment[];
+          
+          if (newAttachments.length > 0) {
+            setAttachments(prev => [...prev, ...newAttachments]);
+            // Upload files immediately after adding them
+            await uploadFiles(newAttachments);
           }
+        } catch (error) {
+          console.error('Error processing clipboard images:', error);
+        } finally {
+          setIsPasting(false);
         }
-        setIsPasting(false);
       }
     };
 
     document.addEventListener('paste', handlePaste);
     return () => {
-      document.removeEventListener('paste', handlePaste);
+          document.removeEventListener('paste', handlePaste);
+        };
+      }, [message, attachments]); // Added message and attachments to deps, as createAttachment and uploadFiles depend on current state
+  // Cleanup object URLs when component unmounts or attachments change
+  useEffect(() => {
+    return () => {
+      // Clean up any remaining object URLs
+      attachments.forEach(attachment => {
+        if (attachment.preview && attachment.preview.startsWith('blob:')) {
+          URL.revokeObjectURL(attachment.preview);
+        }
+      });
     };
-  }, []);
-
-  // Enhanced drag and drop support
+  }, [attachments]);
   useEffect(() => {
     const handleGlobalDragOver = (e: DragEvent) => {
       // Prevent default behavior for the entire document
@@ -205,14 +227,25 @@ export default function ChatInput({ onSendMessage, replyingTo, onCancelReply }: 
         uploadStatus: 'pending'
       };
 
-      // Create preview for images and GIFs
+      // Create preview for images and GIFs using URL.createObjectURL for better performance
       if (file.type.startsWith('image/')) {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          attachment.preview = e.target?.result as string;
+        try {
+          // Use URL.createObjectURL for immediate preview (faster than FileReader)
+          attachment.preview = URL.createObjectURL(file);
           resolve(attachment);
-        };
-        reader.readAsDataURL(file);
+        } catch (error) {
+          // Fallback to FileReader if URL.createObjectURL fails
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            attachment.preview = e.target?.result as string;
+            resolve(attachment);
+          };
+          reader.onerror = () => {
+            // If FileReader also fails, resolve without preview
+            resolve(attachment);
+          };
+          reader.readAsDataURL(file);
+        }
       } else {
         resolve(attachment);
       }
@@ -374,6 +407,11 @@ export default function ChatInput({ onSendMessage, replyingTo, onCancelReply }: 
   };
 
   const removeAttachment = (id: string) => {
+    // Clean up object URL to prevent memory leaks
+    const attachment = attachments.find(att => att.id === id);
+    if (attachment?.preview && attachment.preview.startsWith('blob:')) {
+      URL.revokeObjectURL(attachment.preview);
+    }
     setAttachments(prev => prev.filter(att => att.id !== id));
   };
 
@@ -411,6 +449,30 @@ export default function ChatInput({ onSendMessage, replyingTo, onCancelReply }: 
     if (files.length > 0) {
       handleFileSelect(files);
     }
+  };
+
+  const dropdownVariants = {
+    hidden: { opacity: 0, scale: 0.95, y: -10 },
+    visible: { opacity: 1, scale: 1, y: 0, transition: { duration: 0.2, ease: "easeInOut" } },
+    exit: { opacity: 0, scale: 0.95, y: -10, transition: { duration: 0.15, ease: "easeIn" } }
+  };
+
+  const overlayVariants = {
+    hidden: { opacity: 0, scale: 0.98 },
+    visible: { opacity: 1, scale: 1, transition: { duration: 0.2, ease: "easeOut" } },
+    exit: { opacity: 0, scale: 0.98, transition: { duration: 0.15, ease: "easeIn" } }
+  };
+
+  const replyVariants = {
+    hidden: { opacity: 0, y: -20, height: 0 },
+    visible: { opacity: 1, y: 0, height: 'auto', transition: { duration: 0.2, ease: "easeOut" } },
+    exit: { opacity: 0, y: -20, height: 0, transition: { duration: 0.15, ease: "easeIn" } }
+  };
+
+  const attachmentCardVariants = {
+    hidden: { opacity: 0, scale: 0.8, x: -20 },
+    visible: { opacity: 1, scale: 1, x: 0, transition: { duration: 0.2, ease: "easeOut" } },
+    exit: { opacity: 0, scale: 0.8, x: 20, transition: { duration: 0.15, ease: "easeIn" } }
   };
 
   return (
@@ -576,12 +638,12 @@ export default function ChatInput({ onSendMessage, replyingTo, onCancelReply }: 
         {isPasting && (
           <div className="absolute inset-0 bg-primary/5 border-2 border-dashed border-primary rounded-3xl flex items-center justify-center z-30 backdrop-blur-sm">
             <div className="text-center p-8 flex items-center">
-              <div className="w-12 h-12 mx-auto  bg-primary/10 rounded-full flex items-center justify-center">
-                <Clipboard size={24} className="text-primary animate-pulse" />
+              <div className="w-12 h-12 mx-auto bg-primary/10 rounded-full flex items-center justify-center">
+                <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
               </div>
-              <div className='pl-2'>
+              <div className='pl-4'>
                 <div className="label-large text-primary text-left">Processing clipboard...</div>
-                <div className="label-small text-on-surface-variant text-left">Please wait</div>
+                <div className="label-small text-on-surface-variant text-left">Creating preview and preparing upload</div>
               </div>
             </div>
           </div>
@@ -622,37 +684,58 @@ export default function ChatInput({ onSendMessage, replyingTo, onCancelReply }: 
               {showAttachmentDropdown && (
                 <div className="absolute bottom-full px-2 mb-2 bg-surface-container border border-outline-variant rounded-2xl shadow-lg py-2 z-10 min-w-[240px]">
                   <button
-                    onClick={() => {
-                      navigator.clipboard.read().then(async (clipboardItems) => {
+                    onClick={async () => {
+                      setIsPasting(true);
+                      try {
+                        const clipboardItems = await navigator.clipboard.read();
+                        let hasImages = false;
+                        
                         for (const item of clipboardItems) {
                           for (const type of item.types) {
                             if (type.startsWith('image/')) {
+                              hasImages = true;
                               const blob = await item.getType(type);
                               const extension = type.split('/')[1] || 'png';
-                              // Use Object.assign to rename the file
+                              const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+                              
+                              // Create a proper File object using Object.assign
                               const file = Object.assign(blob, {
-                                name: `clipboard-image.${extension}`,
+                                name: `clipboard-image-${timestamp}.${extension}`,
                                 lastModified: Date.now()
                               }) as File;
-                              const fileList = {
-                                length: 1,
-                                item: () => file,
-                                [Symbol.iterator]: function* () { yield file; }
-                              } as FileList;
-                              handleFileSelect(fileList);
+                              
+                              const attachment = await createAttachment(file);
+                              setAttachments(prev => [...prev, attachment]);
+                              
+                              // Upload immediately
+                              await uploadFiles([attachment]);
                               break;
                             }
                           }
                         }
-                      }).catch(() => {
-                        alert('Unable to access clipboard. Try using Ctrl+V instead.');
-                      });
-                      setShowAttachmentDropdown(false);
+                        
+                        if (!hasImages) {
+                          alert('No images found in clipboard. Try copying an image first.');
+                        }
+                      } catch (error) {
+                        console.error('Clipboard access error:', error);
+                        alert('Unable to access clipboard. Try using Ctrl+V instead or check browser permissions.');
+                      } finally {
+                        setIsPasting(false);
+                        setShowAttachmentDropdown(false);
+                      }
                     }}
-                    className="w-full px-2 space-x-2 py-3 text-left hover:bg-surface-variant flex items-center text-on-surface transition-colors rounded-xl"
+                    disabled={isPasting}
+                    className="w-full px-2 space-x-2 py-3 text-left hover:bg-surface-variant flex items-center text-on-surface transition-colors rounded-xl disabled:opacity-50"
                   >
-                    <Clipboard size={18} />
-                    <span className="font-medium text-xs">Paste from Clipboard</span>
+                    {isPasting ? (
+                      <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <Clipboard size={18} />
+                    )}
+                    <span className="font-medium text-xs">
+                      {isPasting ? 'Processing...' : 'Paste from Clipboard'}
+                    </span>
                   </button>
                   <div className="border-t border-outline-variant my-1" />
                   <button

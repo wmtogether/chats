@@ -149,6 +149,7 @@ body {
   /* Apply theme background and text color globally */
   background-color: var(--sys-background);
   color: var(--sys-on-background);
+  overflow: hidden;
 }
 
 code {

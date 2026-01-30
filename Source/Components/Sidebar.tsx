@@ -57,7 +57,7 @@ const REQUEST_TYPES: {
     },
     {
       id: 'sample-i',
-      label: 'ตัวอย่าง (Internal)', // Sample Type I
+      label: 'ตัวอย่าง(Inkjet)', // Sample Type I
       description: 'Inkjet sample request',
       icon: Package,
       color: 'bg-surface-variant/12 text-on-surface-variant border-surface-variant/20 hover:bg-surface-variant/16',
@@ -423,87 +423,105 @@ export default function Sidebar({
                   <Plus className="text-on-surface-variant opacity-0 group-hover/header:opacity-100 hover:text-on-surface transition-opacity" size={16} />
                 </div>
               )}
-              <div className="flex flex-col gap-1">
+              <div className="flex flex-col gap-2">
                 {groupChats.slice(0, 5).map((chat: ChatType) => (
                   <div
                     key={chat.id}
-                    className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-all hover:bg-surface-variant group relative ${selectedChat?.id === chat.id ? 'bg-primary/10 text-primary' : 'text-on-surface'}`}
+                    className={`flex items-start gap-3 p-3 rounded-xl cursor-pointer transition-all hover:bg-surface-variant group relative ${selectedChat?.id === chat.id ? 'bg-primary/10 border border-primary/20' : 'border border-transparent'}`}
                   >
                     <div
-                      className="flex-1 flex items-center gap-3 min-w-0"
+                      className="flex-1 flex flex-col gap-2 min-w-0"
                       onClick={() => onChatSelect(chat)}
                     >
-                      <div className="flex-shrink-0">
-                        <div className="size-8 rounded-full bg-surface-variant border border-outline flex items-center justify-center">
-                          <MessageSquare size={16} className="text-on-surface-variant" />
-                        </div>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between">
-                          <h3 className="label-medium truncate pr-2">
-                            {searchQuery ? highlightMatch(chat.channelName, searchQuery) : chat.channelName}
-                          </h3>
-                          <span className="label-small text-on-surface-variant flex-shrink-0">
-                            {(() => {
-                              try {
-                                const date = new Date(chat.updatedAt);
-                                if (isNaN(date.getTime())) {
-                                  return '--:--';
-                                }
-                                return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                              } catch {
+                      {/* Header Row: Chat Name + Time */}
+                      <div className="flex items-center justify-between">
+                        <h3 className="title-small font-medium truncate pr-2 text-on-surface">
+                          {searchQuery ? highlightMatch(chat.channelName, searchQuery) : chat.channelName}
+                        </h3>
+                        <span className="body-small text-on-surface-variant flex-shrink-0">
+                          {(() => {
+                            try {
+                              const date = new Date(chat.updatedAt);
+                              if (isNaN(date.getTime())) {
                                 return '--:--';
                               }
-                            })()}
-                          </span>
-                        </div>
+                              return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                            } catch {
+                              return '--:--';
+                            }
+                          })()}
+                        </span>
+                      </div>
+
+                      {/* Creator Row - Only show in channels tab */}
+                      {activeTab === 'channels' && (
                         <div className="flex items-center gap-2">
-                          {/* Only show creator info in "channels" tab */}
-                          {activeTab === 'channels' && (
-                            <span className="label-small text-on-surface-variant">
-                              by {searchQuery ? highlightMatch(chat.createdByName, searchQuery) : chat.createdByName}
-                              {chat.createdById === user?.id && (
-                                <span className="ml-1 px-1.5 py-0.5 bg-primary/10 text-primary rounded text-xs">You</span>
-                              )}
+                          <span className="body-small text-on-surface-variant">
+                            by {searchQuery ? highlightMatch(chat.createdByName, searchQuery) : chat.createdByName}
+                          </span>
+                          {chat.createdById === user?.id && (
+                            <span className="px-2 py-0.5 bg-primary/12 text-primary rounded-full text-xs font-medium">
+                              You
                             </span>
                           )}
+                        </div>
+                      )}
+
+                      {/* Customer Info Row */}
+                      {(getNullStringValue(chat.customers) || getNullStringValue(chat.customerId)) && (
+                        <div className="flex items-center gap-2 flex-wrap">
                           {getNullStringValue(chat.customers) && (
-                            <span className="label-small text-on-surface-variant">
+                            <span className="body-small text-on-surface font-medium">
                               {searchQuery ? highlightMatch(getNullStringValue(chat.customers)!, searchQuery) : getNullStringValue(chat.customers)}
                             </span>
                           )}
                           {getNullStringValue(chat.customerId) && (
-                            <span className="label-small text-on-surface-variant">
+                            <span className="body-small text-on-surface-variant bg-surface-variant px-2 py-1 rounded-md">
                               #{searchQuery ? highlightMatch(getNullStringValue(chat.customerId)!, searchQuery) : getNullStringValue(chat.customerId)}
                             </span>
                           )}
                         </div>
-                        <div className="flex items-center gap-2 mt-1">
-                          {chat.parsedMetadata?.requestType && (
-                            () => {
-                              const reqType = REQUEST_TYPES.find(rt => rt.id === chat.parsedMetadata?.requestType);
-                              if (reqType) {
-                                return (
-                                  <div className={`label-small px-2 py-1 rounded-md ${reqType.color} border border-transparent`}>
-                                    {reqType.label}
-                                  </div>
-                                );
-                              }
-                              return null;
-                            })()
-                          }
-                          {chat.channelType && (
-                            <span className="label-small text-on-surface-variant capitalize">
-                              {chat.channelType}
-                            </span>
-                          )}
-                        </div>
+                      )}
+
+                      {/* Tags Row: Request Type + Channel Type */}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {chat.parsedMetadata?.requestType && (
+                          (() => {
+                            const reqType = REQUEST_TYPES.find(rt => rt.id === chat.parsedMetadata?.requestType);
+                            if (reqType) {
+                              const IconComponent = reqType.icon;
+                              return (
+                                <div className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-medium ${reqType.color} border`}>
+                                  <IconComponent size={12} />
+                                  <span>{reqType.label}</span>
+                                </div>
+                              );
+                            }
+                            return null;
+                          })()
+                        )}
+                        {chat.channelType && (
+                          <span className="body-small text-on-surface-variant bg-outline/8 px-2 py-1 rounded-md capitalize">
+                            {chat.channelType}
+                          </span>
+                        )}
+                        {chat.status && chat.status !== 'PENDING' && (
+                          <span className={`body-small px-2 py-1 rounded-md font-medium ${
+                            chat.status === 'COMPLETED' ? 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400' :
+                            chat.status === 'HOLD' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400' :
+                            chat.status === 'CANCEL' ? 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400' :
+                            'bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400'
+                          }`}>
+                            {chat.status}
+                          </span>
+                        )}
                       </div>
                     </div>
-                    <div className="relative" ref={el => { chatMenuRefs.current[chat.id] = el; }}>
+                    {/* Menu Button */}
+                    <div className="relative flex-shrink-0" ref={el => { chatMenuRefs.current[chat.id] = el; }}>
                       <button
                         onClick={(e) => toggleChatMenu(chat.id, e)}
-                        className="p-1 rounded-md opacity-0 group-hover:opacity-100 hover:bg-surface-container transition-all"
+                        className="p-2 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-surface-container transition-all"
                         title="Chat options"
                       >
                         <MoreHorizontal size={16} className="text-on-surface-variant" />

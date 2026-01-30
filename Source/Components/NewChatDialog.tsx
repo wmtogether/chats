@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, MessageSquarePlus, Ruler, Palette, Edit, FileCheck, Eye, Package, Briefcase, Settings } from 'lucide-react';
+import { X, MessageSquarePlus, Ruler, Palette, Edit, FileCheck, Eye, Package, Briefcase, Settings, ChevronDown, Search, Plus } from 'lucide-react';
+import { fetchCustomers, createCustomer } from '../Library/utils/api';
+import type { CustomerType } from '../Library/types';
 
 type RequestType = 'design' | 'dimension' | 'checkfile' | 'adjustdesign' | 'proof' | 'sample-i' | 'sample-t' | 'general' | 'consultation';
 
@@ -61,7 +63,7 @@ const REQUEST_TYPES: {
     },
     {
         id: 'sample-i',
-        label: 'ตัวอย่าง (Internal)',
+        label: 'ตัวอย่าง (Inkjet)',
         description: 'Inkjet sample request',
         icon: Package,
         color: 'bg-surface-variant/12 text-on-surface-variant border-surface-variant/20 hover:bg-surface-variant/16',
@@ -123,18 +125,80 @@ const itemVariants = {
 
 export default function NewChatDialog({ open, onOpenChange, onCreateChat }: NewChatDialogProps) {
     const [chatName, setChatName] = useState('');
-    const [customerId, setCustomerId] = useState('');
-    const [customerName, setCustomerName] = useState('');
+    const [selectedCustomer, setSelectedCustomer] = useState<CustomerType | null>(null);
+    const [customerSearch, setCustomerSearch] = useState('');
+    const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
+    const [customers, setCustomers] = useState<CustomerType[]>([]);
+    const [loadingCustomers, setLoadingCustomers] = useState(false);
+    const [creatingCustomer, setCreatingCustomer] = useState(false);
     const [description, setDescription] = useState('');
     const [requestType, setRequestType] = useState<RequestType>('general');
     const [isCreating, setIsCreating] = useState(false);
+
+    // Fetch customers when dialog opens
+    useEffect(() => {
+        if (open) {
+            loadCustomers();
+        }
+    }, [open]);
+
+    // Close dropdown when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            const target = event.target as Element;
+            if (!target.closest('.customer-dropdown-container')) {
+                setShowCustomerDropdown(false);
+            }
+        };
+
+        if (showCustomerDropdown) {
+            document.addEventListener('mousedown', handleClickOutside);
+            return () => document.removeEventListener('mousedown', handleClickOutside);
+        }
+        
+        return undefined;
+    }, [showCustomerDropdown]);
+
+    const loadCustomers = async () => {
+        setLoadingCustomers(true);
+        try {
+            const response = await fetchCustomers();
+            if (response.success && response.data) {
+                setCustomers(response.data);
+            } else {
+                console.error('Failed to fetch customers:', response.error);
+                setCustomers([]);
+            }
+        } catch (error) {
+            console.error('Error loading customers:', error);
+            setCustomers([]);
+        } finally {
+            setLoadingCustomers(false);
+        }
+    };
+
+    // Filter customers based on search
+    const filteredCustomers = customers.filter(customer =>
+        customer.name.toLowerCase().includes(customerSearch.toLowerCase()) ||
+        customer.cusId.toLowerCase().includes(customerSearch.toLowerCase())
+    );
+
+    // Check if search term matches any existing customer exactly
+    const exactMatch = customers.find(customer => 
+        customer.name.toLowerCase() === customerSearch.toLowerCase()
+    );
+
+    // Show create option if there's a search term, no exact match, and search term is not empty
+    const showCreateOption = customerSearch.trim() && !exactMatch && customerSearch.trim().length > 0;
 
     // Reset form when dialog opens
     useEffect(() => {
         if (open) {
             setChatName('');
-            setCustomerId('');
-            setCustomerName('');
+            setSelectedCustomer(null);
+            setCustomerSearch('');
+            setShowCustomerDropdown(false);
+            setCreatingCustomer(false);
             setDescription('');
             setRequestType('general');
             setIsCreating(false);
@@ -149,8 +213,8 @@ export default function NewChatDialog({ open, onOpenChange, onCreateChat }: NewC
             await onCreateChat({
                 name: chatName.trim(),
                 requestType,
-                customerId: customerId.trim() || undefined,
-                customerName: customerName.trim() || undefined,
+                customerId: selectedCustomer?.cusId || undefined,
+                customerName: selectedCustomer?.name || undefined,
                 description: description.trim() || undefined,
             });
 
@@ -160,6 +224,45 @@ export default function NewChatDialog({ open, onOpenChange, onCreateChat }: NewC
             console.error('Failed to create chat:', error);
         } finally {
             setIsCreating(false);
+        }
+    };
+
+    const handleCustomerSelect = (customer: CustomerType) => {
+        setSelectedCustomer(customer);
+        setCustomerSearch(customer.name);
+        setShowCustomerDropdown(false);
+    };
+
+    const handleCustomerSearchChange = (value: string) => {
+        setCustomerSearch(value);
+        setShowCustomerDropdown(true);
+        if (!value) {
+            setSelectedCustomer(null);
+        }
+    };
+
+    const handleCreateCustomer = async () => {
+        if (!customerSearch.trim()) return;
+
+        setCreatingCustomer(true);
+        try {
+            const response = await createCustomer(customerSearch.trim());
+            if (response.success && response.data) {
+                // Add the new customer to the list
+                setCustomers(prev => [...prev, response.data!]);
+                // Select the newly created customer
+                setSelectedCustomer(response.data);
+                setCustomerSearch(response.data.name);
+                setShowCustomerDropdown(false);
+            } else {
+                console.error('Failed to create customer:', response.error);
+                // You might want to show a toast notification here
+            }
+        } catch (error) {
+            console.error('Error creating customer:', error);
+            // You might want to show a toast notification here
+        } finally {
+            setCreatingCustomer(false);
         }
     };
 
@@ -242,23 +345,123 @@ export default function NewChatDialog({ open, onOpenChange, onCreateChat }: NewC
                                             ข้อมูลลูกค้า (ไม่บังคับ)
                                         </label>
 
-                                        <div className="space-y-2 pt-2">
-                                            <input
-                                                type="text"
-                                                value={customerId}
-                                                onChange={(e) => setCustomerId(e.target.value)}
-                                                placeholder="รหัสลูกค้า (Customer ID)"
-                                                className="w-full px-3 py-2.5 bg-surface-variant/50 border border-outline-variant rounded-lg text-on-surface placeholder:text-on-surface-variant focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all body-small"
-                                                disabled={isCreating}
-                                            />
-                                            <input
-                                                type="text"
-                                                value={customerName}
-                                                onChange={(e) => setCustomerName(e.target.value)}
-                                                placeholder="ชื่อลูกค้า (Customer Name)"
-                                                className="w-full px-3 py-2.5 bg-surface-variant/50 border border-outline-variant rounded-lg text-on-surface placeholder:text-on-surface-variant focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all body-small"
-                                                disabled={isCreating}
-                                            />
+                                        <div className="relative pt-2 customer-dropdown-container">
+                                            <div className="relative">
+                                                <input
+                                                    type="text"
+                                                    value={customerSearch}
+                                                    onChange={(e) => handleCustomerSearchChange(e.target.value)}
+                                                    onFocus={() => setShowCustomerDropdown(true)}
+                                                    placeholder={loadingCustomers ? "กำลังโหลดลูกค้า..." : "ค้นหาลูกค้า..."}
+                                                    className="w-full px-3 py-2.5 pr-10 bg-surface-variant/50 border border-outline-variant rounded-lg text-on-surface placeholder:text-on-surface-variant focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all body-small"
+                                                    disabled={isCreating || loadingCustomers}
+                                                />
+                                                <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                                                    {loadingCustomers ? (
+                                                        <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin text-on-surface-variant" />
+                                                    ) : (
+                                                        <>
+                                                            <Search size={16} className="text-on-surface-variant" />
+                                                            <ChevronDown size={16} className={`text-on-surface-variant transition-transform ${showCustomerDropdown ? 'rotate-180' : ''}`} />
+                                                        </>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {/* Customer Dropdown */}
+                                            <AnimatePresence>
+                                                {showCustomerDropdown && !loadingCustomers && (
+                                                    <motion.div
+                                                        initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                                                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                                                        exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                                                        transition={{ duration: 0.15 }}
+                                                        className="absolute top-full left-0 right-0 mt-1 bg-surface border border-outline-variant rounded-lg shadow-elevation-2 z-50 max-h-48 overflow-y-auto"
+                                                    >
+                                                        {filteredCustomers.length > 0 || showCreateOption ? (
+                                                            <>
+                                                                {filteredCustomers.map((customer) => (
+                                                                    <button
+                                                                        key={customer.id}
+                                                                        type="button"
+                                                                        onClick={() => handleCustomerSelect(customer)}
+                                                                        className="w-full px-3 py-2.5 text-left hover:bg-surface-variant/50 transition-colors border-b border-outline-variant/30 last:border-b-0"
+                                                                    >
+                                                                        <div className="body-small font-medium text-on-surface">
+                                                                            {customer.name}
+                                                                        </div>
+                                                                        <div className="body-small text-on-surface-variant">
+                                                                            รหัส: {customer.cusId}
+                                                                        </div>
+                                                                    </button>
+                                                                ))}
+                                                                
+                                                                {/* Create Customer Option */}
+                                                                {showCreateOption && (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={handleCreateCustomer}
+                                                                        disabled={creatingCustomer}
+                                                                        className="w-full px-3 py-2.5 text-left hover:bg-primary-container/20 transition-colors border-b border-outline-variant/30 last:border-b-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                                    >
+                                                                        <div className="flex items-center gap-2">
+                                                                            {creatingCustomer ? (
+                                                                                <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin text-primary" />
+                                                                            ) : (
+                                                                                <Plus size={16} className="text-primary" />
+                                                                            )}
+                                                                            <div>
+                                                                                <div className="body-small font-medium text-primary">
+                                                                                    {creatingCustomer ? 'กำลังสร้างลูกค้า...' : `สร้างลูกค้าใหม่: "${customerSearch}"`}
+                                                                                </div>
+                                                                                <div className="body-small text-primary/70">
+                                                                                    รหัสลูกค้าจะถูกสร้างอัตโนมัติ
+                                                                                </div>
+                                                                            </div>
+                                                                        </div>
+                                                                    </button>
+                                                                )}
+                                                            </>
+                                                        ) : (
+                                                            <div className="px-3 py-4 text-center">
+                                                                <div className="body-small text-on-surface-variant">
+                                                                    {customerSearch ? 'ไม่พบลูกค้าที่ค้นหา' : 'ไม่มีข้อมูลลูกค้า'}
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                    </motion.div>
+                                                )}
+                                            </AnimatePresence>
+
+                                            {/* Selected Customer Display */}
+                                            {selectedCustomer && (
+                                                <motion.div
+                                                    initial={{ opacity: 0, y: 10 }}
+                                                    animate={{ opacity: 1, y: 0 }}
+                                                    className="mt-2 p-2 bg-primary-container/20 border border-primary-container/40 rounded-lg"
+                                                >
+                                                    <div className="flex items-center justify-between">
+                                                        <div>
+                                                            <div className="body-small font-medium text-on-surface">
+                                                                {selectedCustomer.name}
+                                                            </div>
+                                                            <div className="body-small text-on-surface-variant">
+                                                                รหัส: {selectedCustomer.cusId}
+                                                            </div>
+                                                        </div>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setSelectedCustomer(null);
+                                                                setCustomerSearch('');
+                                                            }}
+                                                            className="p-1 rounded-full hover:bg-on-surface/8 transition-colors"
+                                                        >
+                                                            <X size={14} className="text-on-surface-variant" />
+                                                        </button>
+                                                    </div>
+                                                </motion.div>
+                                            )}
                                         </div>
                                     </div>
                                 </div>

@@ -35,6 +35,7 @@ type Chat struct {
 	QueueID       sql.NullInt64     `json:"queueId"`
 	CustomerID    sql.NullString    `json:"customerId"`
 	Customers     sql.NullString    `json:"customers"`
+	Status        string            `json:"status"` // Queue status enum: PENDING, ACCEPTED, WAIT_DIMENSION, etc.
 	Metadata      []byte            `json:"metadata"` // jsonb type
 	IsArchived    int               `json:"isArchived"`
 	CreatedByID   int               `json:"createdById"`

@@ -12,7 +12,6 @@ use winit::{
 use std::sync::Arc;
 use std::process::{Command, Stdio};
 use std::io::{BufRead, BufReader};
-use std::collections::HashMap;
 use serde_json;
 
 mod context_menu;
@@ -106,6 +105,63 @@ const DEV_SERVER_URL: &str = "http://localhost:5173";
 const INDEX_HTML_BYTES: &[u8] = include_bytes!("../../Distribution/index.html");
 
 
+
+fn show_file_in_explorer(filename: &str) {
+    println!("📂 Showing file in Windows Explorer: {}", filename);
+    
+    // Determine the file path in Downloads folder
+    let downloads_dir = dirs::download_dir().unwrap_or_else(|| {
+        std::env::current_dir().unwrap().join("Downloads")
+    });
+    
+    let file_path = downloads_dir.join(filename);
+    
+    if file_path.exists() {
+        println!("✅ File exists, opening in Explorer: {}", file_path.display());
+        
+        // Use Windows Explorer with /select parameter to highlight the file
+        match std::process::Command::new("explorer")
+            .arg("/select,")
+            .arg(&file_path)
+            .spawn()
+        {
+            Ok(_) => {
+                println!("✅ Successfully opened file in Explorer");
+            }
+            Err(e) => {
+                println!("❌ Failed to open file in Explorer: {}", e);
+                
+                // Fallback: just open the Downloads folder
+                match std::process::Command::new("explorer")
+                    .arg(&downloads_dir)
+                    .spawn()
+                {
+                    Ok(_) => {
+                        println!("✅ Opened Downloads folder as fallback");
+                    }
+                    Err(e2) => {
+                        println!("❌ Failed to open Downloads folder: {}", e2);
+                    }
+                }
+            }
+        }
+    } else {
+        println!("❌ File not found: {}", file_path.display());
+        
+        // Just open the Downloads folder
+        match std::process::Command::new("explorer")
+            .arg(&downloads_dir)
+            .spawn()
+        {
+            Ok(_) => {
+                println!("✅ Opened Downloads folder (file not found)");
+            }
+            Err(e) => {
+                println!("❌ Failed to open Downloads folder: {}", e);
+            }
+        }
+    }
+}
 
 fn start_download_process(url: String, filename: String) {
     println!("Starting download: {} -> {}", url, filename);
@@ -387,95 +443,29 @@ impl App {
                 std::env::remove_var("WEBVIEW2_BROWSER_EXECUTABLE_FOLDER");
             }
             
-            // Add WebView2 arguments to disable CORS and web security
+            // Set WebView2 user data folder to ensure consistent permissions
+            let user_data_dir = std::env::temp_dir().join("MikoWorkspace_WebView2");
+            std::env::set_var("WEBVIEW2_USER_DATA_FOLDER", &user_data_dir);
+            println!("WebView2 user data folder: {}", user_data_dir.display());
+            
+            // Add WebView2 arguments to disable CORS and web security, and enable clipboard access
             webview_builder = webview_builder
-                .with_additional_browser_args("--disable-web-security --disable-features=VizDisplayCompositor --allow-running-insecure-content --disable-site-isolation-trials");
+                .with_additional_browser_args("--disable-web-security --disable-features=VizDisplayCompositor --allow-running-insecure-content --disable-site-isolation-trials --enable-clipboard-api --disable-permissions-api --autoplay-policy=no-user-gesture-required --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-renderer-backgrounding --disable-features=msWebOOUI,msPdfOOUI --enable-features=msEdgeEnableClipboardAPI");
         }
 
         // In debug mode, use dev server. In release, use custom protocol with embedded HTML
         #[cfg(debug_assertions)]
         {
-            // Add custom protocol for download functionality even in debug mode
-            webview_builder = webview_builder.with_custom_protocol("miko".into(), move |_webview, request| {
-                let uri = request.uri();
-                
-                // Handle download requests
-                if uri.to_string().starts_with("miko://download/start") {
-                    // Parse query parameters
-                    if let Ok(url) = url::Url::parse(&uri.to_string()) {
-                        let query_pairs: HashMap<_, _> = url.query_pairs().collect();
-                        
-                        if let (Some(download_url), Some(filename)) = (query_pairs.get("url"), query_pairs.get("filename")) {
-                            // Start download in background thread
-                            let download_url = download_url.to_string();
-                            let filename = filename.to_string();
-                            
-                            std::thread::spawn(move || {
-                                start_download_process(download_url, filename);
-                            });
-                            
-                            return http::Response::builder()
-                                .header("Content-Type", "application/json")
-                                .header("Access-Control-Allow-Origin", "*")
-                                .body(std::borrow::Cow::Borrowed("{\"success\": true, \"message\": \"Download started\"}".as_bytes()))
-                                .unwrap();
-                        }
-                    }
-                    
-                    return http::Response::builder()
-                        .status(400)
-                        .header("Content-Type", "application/json")
-                        .header("Access-Control-Allow-Origin", "*")
-                        .body(std::borrow::Cow::Borrowed("{\"success\": false, \"error\": \"Invalid parameters\"}".as_bytes()))
-                        .unwrap();
-                }
-                
-                // Return 404 for other requests
-                http::Response::builder()
-                    .status(404)
-                    .body(std::borrow::Cow::Borrowed(&[] as &[u8]))
-                    .unwrap()
-            });
-            
             webview_builder = webview_builder.with_url(DEV_SERVER_URL);
         }
 
         #[cfg(not(debug_assertions))]
         {
-            // Use custom protocol to serve embedded HTML and proxy API requests
+            // Use custom protocol to serve embedded HTML
             use std::borrow::Cow;
             
             webview_builder = webview_builder.with_custom_protocol("miko".into(), move |_webview, request| {
                 let uri = request.uri();
-                
-                // Handle download requests
-                if uri.to_string().starts_with("miko://download/start") {
-                    // Parse query parameters
-                    if let Ok(url) = url::Url::parse(&uri.to_string()) {
-                        let query_pairs: HashMap<_, _> = url.query_pairs().collect();
-                        
-                        if let (Some(download_url), Some(filename)) = (query_pairs.get("url"), query_pairs.get("filename")) {
-                            // Start download in background thread
-                            let download_url = download_url.to_string();
-                            let filename = filename.to_string();
-                            
-                            std::thread::spawn(move || {
-                                start_download_process(download_url, filename);
-                            });
-                            
-                            return http::Response::builder()
-                                .header("Content-Type", "application/json")
-                                .body(Cow::Borrowed("{\"success\": true, \"message\": \"Download started\"}".as_bytes()))
-                                .unwrap();
-                        }
-                    }
-                    
-                    return http::Response::builder()
-                        .status(400)
-                        .header("Content-Type", "application/json")
-                        .body(Cow::Borrowed("{\"success\": false, \"error\": \"Invalid parameters\"}".as_bytes()))
-                        .unwrap();
-                }
                 
                 // Serve the main HTML file
                 if uri == "miko://app/" || uri == "miko://app/index.html" {
@@ -496,28 +486,116 @@ impl App {
             webview_builder = webview_builder.with_url("miko://app/");
         }
 
-        // Add minimal initialization script
+        // Add minimal initialization script with clipboard permissions
         webview_builder = webview_builder
             .with_initialization_script(
                 r#"
-                console.log('WebView initialized');
+                console.log('WebView initialized - Direct download mode (no CORS/fetch)');
                 window.sessionId = 'desktop-session';
                 
-                // Simple download API using fetch to custom protocol
-                window.downloadAPI = {
-                    startDownload: async function(url, filename) {
-                        try {
-                            const response = await fetch(`miko://download/start?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(filename)}`);
-                            return await response.json();
-                        } catch (error) {
-                            console.error('Download start error:', error);
-                            return { success: false, error: error.message };
+                // Override clipboard permissions to always allow
+                if (navigator.permissions && navigator.permissions.query) {
+                    const originalQuery = navigator.permissions.query;
+                    navigator.permissions.query = function(permissionDesc) {
+                        if (permissionDesc.name === 'clipboard-read' || permissionDesc.name === 'clipboard-write') {
+                            return Promise.resolve({ state: 'granted' });
                         }
+                        return originalQuery.call(this, permissionDesc);
+                    };
+                }
+                
+                // Ensure clipboard API is available
+                if (!navigator.clipboard) {
+                    console.warn('Clipboard API not available, creating fallback');
+                    navigator.clipboard = {
+                        read: function() {
+                            return Promise.resolve([]);
+                        },
+                        readText: function() {
+                            return Promise.resolve('');
+                        },
+                        write: function(data) {
+                            return Promise.resolve();
+                        },
+                        writeText: function(text) {
+                            return Promise.resolve();
+                        }
+                    };
+                } else {
+                    console.log('✅ Clipboard API is available');
+                }
+                
+                // Override clipboard read to never prompt for permission
+                if (navigator.clipboard.read) {
+                    const originalRead = navigator.clipboard.read;
+                    navigator.clipboard.read = function() {
+                        console.log('📋 Clipboard read requested (auto-granted)');
+                        return originalRead.call(this);
+                    };
+                }
+                
+                // Direct IPC download API - bypasses all web requests
+                window.downloadAPI = {
+                    startDownload: function(url, filename) {
+                        return new Promise((resolve, reject) => {
+                            try {
+                                console.log('Sending direct IPC download request:', url, '->', filename);
+                                
+                                // Create IPC message for Rust backend
+                                const message = JSON.stringify({
+                                    type: 'start_download',
+                                    url: url,
+                                    filename: filename,
+                                    timestamp: Date.now()
+                                });
+                                
+                                // Send IPC message directly to Rust (no web requests)
+                                window.ipc.postMessage(message);
+                                
+                                // Return success immediately since IPC is fire-and-forget
+                                resolve({ 
+                                    success: true, 
+                                    message: 'Download request sent to native backend' 
+                                });
+                                
+                            } catch (error) {
+                                console.error('IPC download error:', error);
+                                reject(error);
+                            }
+                        });
+                    },
+                    
+                    showInFolder: function(filename) {
+                        return new Promise((resolve, reject) => {
+                            try {
+                                console.log('Sending show in folder IPC request:', filename);
+                                
+                                // Create IPC message for Rust backend
+                                const message = JSON.stringify({
+                                    type: 'show_in_folder',
+                                    filename: filename,
+                                    timestamp: Date.now()
+                                });
+                                
+                                // Send IPC message directly to Rust
+                                window.ipc.postMessage(message);
+                                
+                                resolve({ 
+                                    success: true, 
+                                    message: 'Show in folder request sent' 
+                                });
+                                
+                            } catch (error) {
+                                console.error('IPC show in folder error:', error);
+                                reject(error);
+                            }
+                        });
                     }
                 };
                 
                 console.log('Session ID set:', window.sessionId);
-                console.log('Download API initialized');
+                console.log('Direct download API initialized (no web requests)');
+                console.log('📋 Clipboard permissions configured (auto-grant)');
                 "#
             );
 
@@ -578,6 +656,65 @@ impl App {
 
         let webview = webview_builder
             .with_devtools(true) // Enable DevTools for debugging
+            .with_ipc_handler(|request| {
+                let body = request.body();
+                println!("📨 IPC message received: {}", body);
+                
+                // Parse the IPC message
+                match serde_json::from_str::<serde_json::Value>(body) {
+                    Ok(message) => {
+                        if let Some(msg_type) = message["type"].as_str() {
+                            match msg_type {
+                                "start_download" => {
+                                    if let (Some(url), Some(filename)) = (
+                                        message["url"].as_str(),
+                                        message["filename"].as_str()
+                                    ) {
+                                        println!("🚀 Starting direct download (no web requests): {} -> {}", url, filename);
+                                        
+                                        // Start download process in background thread
+                                        let url = url.to_string();
+                                        let filename = filename.to_string();
+                                        
+                                        std::thread::spawn(move || {
+                                            println!("📥 Download thread started for: {}", filename);
+                                            start_download_process(url, filename);
+                                        });
+                                        
+                                        println!("✅ Download IPC message processed successfully");
+                                    } else {
+                                        println!("❌ Invalid download IPC message: missing url or filename");
+                                    }
+                                }
+                                "show_in_folder" => {
+                                    if let Some(filename) = message["filename"].as_str() {
+                                        println!("📂 Show in folder IPC request: {}", filename);
+                                        
+                                        // Show file in Windows Explorer in background thread
+                                        let filename = filename.to_string();
+                                        
+                                        std::thread::spawn(move || {
+                                            show_file_in_explorer(&filename);
+                                        });
+                                        
+                                        println!("✅ Show in folder IPC message processed successfully");
+                                    } else {
+                                        println!("❌ Invalid show in folder IPC message: missing filename");
+                                    }
+                                }
+                                _ => {
+                                    println!("❓ Unknown IPC message type: {}", msg_type);
+                                }
+                            }
+                        } else {
+                            println!("❌ IPC message missing 'type' field");
+                        }
+                    }
+                    Err(e) => {
+                        println!("❌ Failed to parse IPC message JSON: {}", e);
+                    }
+                }
+            })
             .build(&**window)
             .map_err(|e| {
                 eprintln!("WebView creation error: {:?}", e);

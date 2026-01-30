@@ -1,8 +1,10 @@
 import { Search, Palette, Ruler, CheckCircle, Settings, Eye, Package, Briefcase, Wifi, WifiOff } from 'lucide-react'
 import { useState, useRef, useEffect } from 'react'
-import { updateChatRequestType } from '../Library/utils/api'
+import { motion, AnimatePresence } from 'framer-motion'
+import { updateChatRequestType, updateChatStatus } from '../Library/utils/api' // Import updateChatStatus
 import { useToast } from '../Library/hooks/useToast'
 import type { ChatType } from '../Library/types'
+import { cn } from '../Library/utils' // Assuming cn utility is available
 
 interface ChatHeaderProps {
   selectedChat: ChatType | null;
@@ -73,23 +75,39 @@ export default function ChatHeader({ selectedChat, chatCount, wsConnected = fals
     setIsUpdating(true);
     
     try {
-      const result = await updateChatRequestType(selectedChat.uuid, newRequestType);
+      // First, update the request type
+      const requestTypeUpdateResult = await updateChatRequestType(selectedChat.uuid, newRequestType);
       
-      if (result.success && result.data) {
-        // Update the chat in the parent component
+      if (requestTypeUpdateResult.success && requestTypeUpdateResult.data) {
+        let updatedChat = requestTypeUpdateResult.data;
+
+        // Then, set the status to PENDING
+        const statusUpdateResult = await updateChatStatus(selectedChat.uuid, 'PENDING');
+        
+        if (statusUpdateResult.success && statusUpdateResult.data) {
+          updatedChat = statusUpdateResult.data; // Use the chat data returned from status update
+          addToast({
+            message: `Request type changed to "${REQUEST_TYPES.find(t => t.id === newRequestType)?.label || newRequestType}" and status set to PENDING.`,
+            type: 'success'
+          });
+        } else {
+          // Even if status update fails, the request type change was successful
+          addToast({
+            message: `Request type changed to "${REQUEST_TYPES.find(t => t.id === newRequestType)?.label || newRequestType}", but failed to set status to PENDING: ${statusUpdateResult.error || 'Unknown error'}.`,
+            type: 'warning'
+          });
+        }
+
+        // Update the chat in the parent component with the final updated chat data
         if (onChatUpdate) {
-          onChatUpdate(result.data);
+          onChatUpdate(updatedChat);
         }
         
-        addToast({
-          message: `Request type updated to "${REQUEST_TYPES.find(t => t.id === newRequestType)?.label || newRequestType}"`,
-          type: 'success'
-        });
       } else {
-        throw new Error(result.error || 'Failed to update request type');
+        throw new Error(requestTypeUpdateResult.error || 'Failed to update request type');
       }
     } catch (error) {
-      console.error('Error updating request type:', error);
+      console.error('Error updating request type or status:', error);
       addToast({
         message: `Failed to update request type: ${error instanceof Error ? error.message : 'Unknown error'}`,
         type: 'error'
@@ -100,8 +118,14 @@ export default function ChatHeader({ selectedChat, chatCount, wsConnected = fals
     }
   };
 
+  const dropdownVariants = {
+    hidden: { opacity: 0, scale: 0.95, y: -10 },
+    visible: { opacity: 1, scale: 1, y: 0, transition: { duration: 0.2, ease: "easeInOut" } },
+    exit: { opacity: 0, scale: 0.95, y: -10, transition: { duration: 0.15, ease: "easeIn" } }
+  };
+
   return (
-    <header className="flex items-center gap-4 p-4 border-b border-outline shrink-0 z-[2] bg-surface relative">
+    <header className="flex items-center gap-4 p-4 border-b border-outline shrink-0 z-[30] bg-surface relative">
       <div className="flex items-center gap-3">
         {selectedChat ? (
           <>
@@ -109,9 +133,11 @@ export default function ChatHeader({ selectedChat, chatCount, wsConnected = fals
               <button
                 onClick={() => !isUpdating && setShowRequestTypeMenu(!showRequestTypeMenu)}
                 disabled={isUpdating}
-                className={`size-8 rounded-full bg-surface-variant border border-outline flex items-center justify-center hover:bg-surface-variant/80 transition-all duration-200 group hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed ${
-                  showRequestTypeMenu ? 'ring-2 ring-primary/20 bg-primary-container/10' : ''
-                }`}
+                className={cn(
+                  `size-8 rounded-full bg-surface-variant border border-outline flex items-center justify-center hover:bg-surface-variant/80 transition-all duration-200 group`,
+                  showRequestTypeMenu ? 'ring-2 ring-primary/20 bg-primary-container/10' : '',
+                  isUpdating ? 'opacity-50 cursor-not-allowed' : 'hover:scale-105'
+                )}
                 title={`Current: ${REQUEST_TYPES.find(t => t.id === selectedChat.parsedMetadata?.requestType)?.label || 'Unknown'} - Click to change`}
               >
                 {(() => {
@@ -120,35 +146,45 @@ export default function ChatHeader({ selectedChat, chatCount, wsConnected = fals
                 })()}
               </button>
               
-              {showRequestTypeMenu && !isUpdating && (
-                <div className="absolute top-full left-0 mt-2 w-64 bg-surface-container border border-outline-variant rounded-2xl shadow-lg z-50">
-                  <div className="px-3 py-2 border-b border-outline-variant">
-                    <span className="text-sm font-medium text-on-surface">Change Request Type</span>
-                  </div>
-                  <div className="max-h-64 overflow-y-auto">
-                    {REQUEST_TYPES.map((type) => {
-                      const IconComponent = type.icon;
-                      const isSelected = selectedChat.parsedMetadata?.requestType === type.id;
-                      
-                      return (
-                        <button
-                          key={type.id}
-                          onClick={() => handleRequestTypeChange(type.id)}
-                          className={`w-full px-3 py-2.5 text-left hover:bg-surface-variant flex items-center gap-3 transition-colors ${
-                            isSelected ? 'bg-primary-container/20 text-primary' : 'text-on-surface'
-                          }`}
-                        >
-                          <IconComponent size={16} className={isSelected ? 'text-primary' : 'text-on-surface-variant'} />
-                          <span className="text-sm">{type.label}</span>
-                          {isSelected && (
-                            <CheckCircle size={14} className="ml-auto text-primary" />
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
+              <AnimatePresence>
+                {showRequestTypeMenu && !isUpdating && (
+                  <motion.div
+                  //@ts-expect-error
+                    variants={dropdownVariants}
+                    initial="hidden"
+                    animate="visible"
+                    exit="exit"
+                    className="absolute top-full left-0 mt-2 w-64 bg-surface-container border border-outline-variant rounded-2xl shadow-lg z-50 overflow-hidden"
+                  >
+                    <div className="px-3 py-2 border-b border-outline-variant">
+                      <span className="text-sm font-medium text-on-surface">Change Request Type</span>
+                    </div>
+                    <div className="max-h-64 overflow-y-auto custom-scrollbar">
+                      {REQUEST_TYPES.map((type) => {
+                        const IconComponent = type.icon;
+                        const isSelected = selectedChat.parsedMetadata?.requestType === type.id;
+                        
+                        return (
+                          <button
+                            key={type.id}
+                            onClick={() => handleRequestTypeChange(type.id)}
+                            className={cn(
+                              `w-full px-3 py-2.5 text-left hover:bg-surface-variant flex items-center gap-3 transition-colors`,
+                              isSelected ? 'bg-primary-container/20 text-primary' : 'text-on-surface'
+                            )}
+                          >
+                            <IconComponent size={16} className={isSelected ? 'text-primary' : 'text-on-surface-variant'} />
+                            <span className="text-sm">{type.label}</span>
+                            {isSelected && (
+                              <CheckCircle size={14} className="ml-auto text-primary" />
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
             <h1 className="title-medium text-on-surface truncate">
               {selectedChat.channelName}
@@ -164,11 +200,12 @@ export default function ChatHeader({ selectedChat, chatCount, wsConnected = fals
       <div className="flex items-center gap-3">
         {/* Redis Connection Status */}
         <div 
-          className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs ${
+          className={cn(
+            `flex items-center gap-1 px-2 py-1 rounded-full text-xs`,
             wsConnected 
               ? 'bg-success/10 text-success' 
               : 'bg-error/10 text-error'
-          }`}
+          )}
           title={wsConnected ? 'Real-time connected' : 'Real-time disconnected'}
         >
           {wsConnected ? <Wifi size={12} /> : <WifiOff size={12} />}

@@ -55,6 +55,12 @@ impl DownloadProgress {
         println!("{}", self.to_json());
         io::stdout().flush().unwrap();
     }
+    
+    fn broadcast(&self) {
+        // For now, just print to stdout
+        // TCP client functionality can be added later if needed
+        self.print_json();
+    }
 }
 
 // Helper function to format speed in human readable format
@@ -100,27 +106,26 @@ async fn download_file_multiconnection(url: &str, output_path: &str) -> Result<(
         .to_string_lossy()
         .to_string();
 
-    // Check if server supports range requests
+    // Skip HEAD request to avoid 405 errors with some servers
+    // Use GET request directly and check headers from the response
     let client = reqwest::Client::new();
-    let head_response = client.head(url).send().await?;
     
-    if !head_response.status().is_success() {
-        return Err(format!("HTTP error: {}", head_response.status()).into());
+    // Make a GET request to get file info
+    let response = client.get(url).send().await?;
+    
+    if !response.status().is_success() {
+        return Err(format!("HTTP error: {}", response.status()).into());
     }
 
-    let total_size = head_response.content_length().unwrap_or(0);
-    let supports_ranges = head_response.headers().get("accept-ranges")
+    let total_size = response.content_length().unwrap_or(0);
+    let _supports_ranges = response.headers().get("accept-ranges")
         .map(|v| v.to_str().unwrap_or("") == "bytes")
         .unwrap_or(false);
 
-    // Determine number of connections
-    let connections = if supports_ranges && total_size > MIN_CHUNK_SIZE {
-        std::cmp::min(DEFAULT_CONNECTIONS, (total_size / MIN_CHUNK_SIZE) as usize).max(1)
-    } else {
-        1 // Fallback to single connection
-    };
+    // For simplicity, always use single connection to avoid range request issues
+    let connections = 1;
 
-    let mut progress = DownloadProgress {
+    let progress = DownloadProgress {
         url: url.to_string(),
         filename: filename.clone(),
         total_size,
@@ -133,79 +138,10 @@ async fn download_file_multiconnection(url: &str, output_path: &str) -> Result<(
         error: None,
     };
 
-    progress.print_json();
+    progress.broadcast();
 
-    if connections == 1 || !supports_ranges {
-        // Single connection fallback
-        return download_file_single(url, &final_output_path, progress).await;
-    }
-
-    // Multi-connection download
-    progress.status = "connecting".to_string();
-    progress.print_json();
-
-    // Create output file
-    let file = File::create(&final_output_path)?;
-    file.set_len(total_size)?; // Pre-allocate file space
-    drop(file);
-
-    // Calculate chunk ranges for each connection
-    let chunk_size = total_size / connections as u64;
-    let mut ranges = Vec::new();
-    
-    for i in 0..connections {
-        let start = i as u64 * chunk_size;
-        let end = if i == connections - 1 {
-            total_size - 1
-        } else {
-            (i + 1) as u64 * chunk_size - 1
-        };
-        ranges.push((start, end));
-    }
-
-    progress.status = "downloading".to_string();
-    progress.print_json();
-
-    // Shared progress tracking
-    let progress_shared = Arc::new(Mutex::new(progress.clone()));
-    let start_time = Instant::now();
-
-    // Spawn download tasks for each connection
-    let mut tasks = Vec::new();
-    
-    for (i, (start, end)) in ranges.into_iter().enumerate() {
-        let url = url.to_string();
-        let output_path = final_output_path.clone();
-        let progress_shared = Arc::clone(&progress_shared);
-        let client = client.clone();
-        
-        let task = tokio::spawn(async move {
-            download_range(client, &url, &output_path, start, end, i, progress_shared, start_time).await
-        });
-        
-        tasks.push(task);
-    }
-
-    // Wait for all downloads to complete
-    for task in tasks {
-        match task.await? {
-            Ok(()) => continue,
-            Err(e) => {
-                let mut progress = progress_shared.lock().unwrap();
-                progress.status = "error".to_string();
-                progress.error = Some(format!("Connection failed: {}", e));
-                progress.print_json();
-                return Err(format!("Connection failed: {}", e).into());
-            }
-        }
-    }
-
-    // Final completion status
-    let mut final_progress = progress_shared.lock().unwrap().clone();
-    final_progress.status = "completed".to_string();
-    final_progress.print_json();
-
-    Ok(())
+    // Always use single connection to avoid range request complications
+    download_file_single_with_response(url, &final_output_path, progress, response).await
 }
 
 async fn download_range(
@@ -279,6 +215,69 @@ async fn download_range(
     }
 
     writer.flush()?;
+    Ok(())
+}
+
+async fn download_file_single_with_response(
+    url: &str, 
+    output_path: &str, 
+    mut progress: DownloadProgress,
+    response: reqwest::Response
+) -> Result<(), Box<dyn std::error::Error>> {
+    progress.status = "connecting".to_string();
+    progress.broadcast();
+
+    progress.total_size = response.content_length().unwrap_or(0);
+    progress.status = "downloading".to_string();
+    progress.broadcast();
+
+    let file = File::create(output_path)?;
+    let mut writer = BufWriter::new(file);
+    
+    let mut stream = response.bytes_stream();
+    let mut last_speed_update = Instant::now();
+    let mut bytes_since_last_update = 0u64;
+    let mut current_speed = 0.0f64;
+    
+    while let Some(chunk_result) = stream.next().await {
+        match chunk_result {
+            Ok(chunk) => {
+                let chunk_size = chunk.len() as u64;
+                
+                writer.write_all(&chunk)?;
+                
+                progress.downloaded += chunk_size;
+                progress.chunk_size = chunk_size;
+                bytes_since_last_update += chunk_size;
+                
+                let now = Instant::now();
+                let time_since_last_update = now.duration_since(last_speed_update);
+                
+                if time_since_last_update >= Duration::from_millis(100) {
+                    current_speed = bytes_since_last_update as f64 / time_since_last_update.as_secs_f64();
+                    bytes_since_last_update = 0;
+                    last_speed_update = now;
+                }
+                
+                progress.download_speed_bps = current_speed;
+                
+                if progress.total_size > 0 && current_speed > 0.0 {
+                    let remaining_bytes = progress.total_size - progress.downloaded;
+                    progress.eta_seconds = Some((remaining_bytes as f64 / current_speed) as u64);
+                }
+                
+                progress.broadcast();
+            }
+            Err(e) => {
+                return Err(format!("Stream error: {}", e).into());
+            }
+        }
+    }
+
+    writer.flush()?;
+    progress.status = "completed".to_string();
+    progress.broadcast();
+
     Ok(())
 }
 

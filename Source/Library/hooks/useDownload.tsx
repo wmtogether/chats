@@ -29,11 +29,13 @@ export function useDownload() {
     try {
       // Check if we're in desktop environment
       if (window.downloadAPI) {
-        // Use desktop download API
+        // Use desktop download API - direct IPC, no web requests
+        console.log('Starting direct download via IPC:', url, '->', finalFilename);
+        
         const result = await window.downloadAPI.startDownload(url, finalFilename);
         
         if (result.success) {
-          console.log('Download started successfully:', result.message);
+          console.log('Download IPC message sent successfully:', result.message);
           
           // For now, simulate progress since we don't have real-time updates yet
           // In a full implementation, you'd listen to progress events from the desktop app
@@ -42,10 +44,14 @@ export function useDownload() {
           throw new Error(result.error || 'Failed to start download');
         }
       } else {
-        // Fallback to browser download
+        // Fallback: create download link without fetch (browser environment)
+        console.log('Browser environment: creating download link');
+        
         const link = document.createElement('a');
         link.href = url;
         link.download = finalFilename;
+        link.target = '_blank';
+        link.style.display = 'none';
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -137,6 +143,11 @@ declare global {
   interface Window {
     downloadAPI?: {
       startDownload: (url: string, filename: string) => Promise<{
+        success: boolean;
+        message?: string;
+        error?: string;
+      }>;
+      showInFolder: (filename: string) => Promise<{
         success: boolean;
         message?: string;
         error?: string;

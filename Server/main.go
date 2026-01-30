@@ -70,6 +70,16 @@ func main() {
 			r.Get("/{id}", getUserHandler)
 		})
 
+		// Customer routes
+		r.Route("/api/customers", func(r chi.Router) {
+			r.Get("/", getCustomersHandler)
+			r.Post("/", createCustomerHandler)
+			r.Get("/{id}", getCustomerHandler)
+			r.Put("/{id}", updateCustomerHandler)
+			r.Delete("/{id}", deleteCustomerHandler)
+			r.Get("/cusId/{cusId}", getCustomerByCusIdHandler)
+		})
+
 				// Auth routes
 
 				r.Get("/api/auth/me", meHandler)
@@ -92,6 +102,7 @@ func main() {
 
 							r.Get("/{uuid}", getChatHandler)
 							r.Patch("/{uuid}", updateChatHandler)
+							r.Patch("/{uuid}/status", updateChatStatusHandler)
 
 		
 

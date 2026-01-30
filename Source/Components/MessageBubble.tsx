@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Smile, Reply, MoreHorizontal, Copy, Edit, Trash2, MapPin, File, FileText, Archive, FileVideo, FileAudio, FileCode, FileSpreadsheet, Presentation, Download } from 'lucide-react'
+import { Smile, Reply, MoreHorizontal, Copy, Edit, Trash2, MapPin } from 'lucide-react'
 import Avatar from './Avatar'
 import MessageContent from './MessageContent'
 import ImageAttachment from './ImageAttachment'
@@ -8,59 +8,9 @@ import { showInputDialog } from '../Library/Native/dialog' // Keep showInputDial
 import ConfirmDialog from './ui/ConfirmDialog'
 import { useToast } from '../Library/hooks/useToast.tsx'
 import { useDownload } from '../Library/hooks/useDownload'
-import DownloadProgress from './DownloadProgress'
+import FileAttachmentCard from './FileAttachmentCard'
 import { getApiUrl } from '../Library/utils/env'
 import type { MessageBubbleData } from '../Library/types' // Import shared types
-
-// Function to get appropriate file icon based on file extension
-const getFileIcon = (filename: string) => {
-  const extension = filename.split('.').pop()?.toLowerCase() || '';
-  
-  // Archive files
-  if (['zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz'].includes(extension)) {
-    return Archive;
-  }
-  
-  // Document files
-  if (['pdf', 'doc', 'docx', 'txt', 'rtf', 'odt'].includes(extension)) {
-    return FileText;
-  }
-  
-  // Spreadsheet files
-  if (['xls', 'xlsx', 'csv', 'ods'].includes(extension)) {
-    return FileSpreadsheet;
-  }
-  
-  // Presentation files
-  if (['ppt', 'pptx', 'odp'].includes(extension)) {
-    return Presentation;
-  }
-  
-  // Video files
-  if (['mp4', 'avi', 'mkv', 'mov', 'wmv', 'flv', 'webm', 'm4v'].includes(extension)) {
-    return FileVideo;
-  }
-  
-  // Audio files
-  if (['mp3', 'wav', 'flac', 'aac', 'ogg', 'wma', 'm4a'].includes(extension)) {
-    return FileAudio;
-  }
-  
-  // Code files
-  if (['js', 'ts', 'jsx', 'tsx', 'html', 'css', 'scss', 'json', 'xml', 'py', 'java', 'cpp', 'c', 'h', 'php', 'rb', 'go', 'rs', 'swift', 'kt'].includes(extension)) {
-    return FileCode;
-  }
-  
-  // Default file icon
-  return File;
-};
-
-// Function to get file extension for display
-const getFileExtension = (filename: string): string => {
-  const extension = filename.split('.').pop()?.toLowerCase() || '';
-  return extension ? `.${extension.toUpperCase()}` : '';
-};
-
 
 interface MessageBubbleProps {
   data: MessageBubbleData // Use imported MessageBubbleData
@@ -78,7 +28,7 @@ export default function MessageBubble({ data, searchQuery, onReply, onReaction, 
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false); // New state
   const [messageToDelete, setMessageToDelete] = useState<string | null>(null); // New state
   const { addToast } = useToast(); // Initialize useToast
-  const { startDownload, downloads, clearDownload } = useDownload();
+  const { startDownload } = useDownload();
 
   // Check if this is a checkpoint message
   const isCheckpoint = data.content === '---CHECKPOINT---';
@@ -88,20 +38,27 @@ export default function MessageBubble({ data, searchQuery, onReply, onReaction, 
     window.open(imageUrl, '_blank');
   };
 
-  // Handle file download
+  // Handle file download - direct IPC, no web requests
   const handleFileDownload = async (fileUrl: string, filename: string) => {
     try {
+      console.log('Starting direct file download (no web requests):', fileUrl, '->', filename);
+      
+      // Use direct download API - bypasses CORS/fetch entirely
       await startDownload(fileUrl, filename);
       addToast({ message: `Download started: ${filename}`, type: 'info' });
+      
+      console.log('Direct file download initiated successfully');
     } catch (error) {
-      console.error('Failed to start download:', error);
+      console.error('Failed to start direct download:', error);
       addToast({ message: `Failed to start download: ${filename}`, type: 'error' });
       
-      // Fallback to browser download
+      // Fallback: create download link (browser environment only)
+      console.log('Fallback: creating download link for browser');
       const link = document.createElement('a');
       link.href = fileUrl;
       link.download = filename;
       link.target = '_blank';
+      link.style.display = 'none';
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -162,7 +119,7 @@ export default function MessageBubble({ data, searchQuery, onReply, onReaction, 
   const handleConfirmDeleteMessage = () => {
     if (onDelete && messageToDelete) {
       onDelete(messageToDelete);
-      addToast({ message: `Message deleted successfully!`, type: 'success' });
+      // Toast notification is handled by the parent component
     }
     setMessageToDelete(null);
     setShowDeleteConfirm(false);
@@ -270,55 +227,14 @@ export default function MessageBubble({ data, searchQuery, onReply, onReaction, 
               } else {
                 // Non-image attachments
                 const filename = attachment.split('/').pop() || 'File attachment';
-                const FileIconComponent = getFileIcon(filename);
-                const fileExtension = getFileExtension(filename);
-                
-                // Find active download for this file
-                const activeDownload = downloads.find(d => d.url === imageUrl);
                 
                 return (
-                  <div key={index} className="space-y-2">
-                    <div className="flex items-center gap-3 p-3 bg-surface-container border border-outline-variant rounded-2xl hover:bg-surface-variant transition-colors">
-                      <div className="relative flex-shrink-0">
-                        <FileIconComponent className="h-6 w-6 text-on-surface-variant" />
-                        {fileExtension && (
-                          <span className="absolute -bottom-1 -right-1 text-xs font-bold text-primary bg-primary-container px-1 rounded">
-                            {fileExtension}
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <button
-                          onClick={() => handleFileDownload(imageUrl, filename)}
-                          className="body-small text-primary hover:underline truncate block text-left w-full font-medium"
-                          title={`Download ${filename}`}
-                          disabled={activeDownload?.status === 'downloading'}
-                        >
-                          {filename}
-                        </button>
-                        <div className="text-xs text-on-surface-variant">
-                          {activeDownload?.status === 'downloading' ? 'Downloading...' : 'Click to download'}
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => handleFileDownload(imageUrl, filename)}
-                        className="p-2 hover:bg-primary-container rounded-full text-on-surface-variant hover:text-primary transition-colors flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
-                        title="Download file"
-                        disabled={activeDownload?.status === 'downloading'}
-                      >
-                        <Download className="h-4 w-4" />
-                      </button>
-                    </div>
-                    
-                    {/* Show download progress if active */}
-                    {activeDownload && (
-                      <DownloadProgress 
-                        download={activeDownload}
-                        onClear={() => clearDownload(`${activeDownload.url}_${activeDownload.filename}`)}
-                        compact
-                      />
-                    )}
-                  </div>
+                  <FileAttachmentCard
+                    key={index}
+                    src={imageUrl}
+                    filename={filename}
+                    onClick={() => handleFileDownload(imageUrl, filename)}
+                  />
                 );
               }
             })}

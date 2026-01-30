@@ -4,7 +4,6 @@ import React, { useState } from 'react';
 import { ImageOff, Download } from 'lucide-react';
 import { getApiUrl } from '../Library/utils/env';
 import { useDownload } from '../Library/hooks/useDownload';
-import DownloadProgress from './DownloadProgress';
 
 interface ImageAttachmentProps {
     src: string;
@@ -15,7 +14,7 @@ interface ImageAttachmentProps {
 const ImageAttachment: React.FC<ImageAttachmentProps> = ({ src, alt, onClick }) => {
     const [hasError, setHasError] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
-    const { startDownload, downloads, clearDownload } = useDownload();
+    const { startDownload } = useDownload();
 
     // Convert relative URL to absolute URL using the API server
     const fullImageUrl = src.startsWith('http') ? src : `${getApiUrl()}${src}`;
@@ -36,14 +35,16 @@ const ImageAttachment: React.FC<ImageAttachmentProps> = ({ src, alt, onClick }) 
         
         try {
             const filename = src.split('/').pop() || 'image';
+            console.log('Starting direct download (no web requests):', fullImageUrl, '->', filename);
+            
+            // Use direct download API - no fetch/CORS issues
             await startDownload(fullImageUrl, filename);
+            
+            console.log('Direct download initiated successfully');
         } catch (error) {
-            console.error('Failed to start download:', error);
+            console.error('Failed to start direct download:', error);
         }
     };
-
-    // Find active download for this image
-    const activeDownload = downloads.find(d => d.url === fullImageUrl);
 
     return (
         <div className="relative">
@@ -92,17 +93,6 @@ const ImageAttachment: React.FC<ImageAttachmentProps> = ({ src, alt, onClick }) 
                     >
                         <Download className="h-4 w-4" />
                     </button>
-                </div>
-            )}
-            
-            {/* Show download progress if active */}
-            {activeDownload && (
-                <div className="mt-2">
-                    <DownloadProgress 
-                        download={activeDownload}
-                        onClear={() => clearDownload(`${activeDownload.url}_${activeDownload.filename}`)}
-                        compact
-                    />
                 </div>
             )}
         </div>

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 	"time"
 
@@ -134,7 +135,7 @@ func GetAllUsers() ([]User, error) {
 
 // GetAllChats fetches all chat channels from the database.
 func GetAllChats() ([]Chat, error) {
-	rows, err := db.Query(`SELECT id, uuid, channel_id, channel_name, channel_type, chat_category, description, job_id, queue_id, customer_id, customers, metadata, is_archived, created_by_id, created_by_name, created_at, updated_at FROM chats ORDER BY created_at DESC`)
+	rows, err := db.Query(`SELECT id, uuid, channel_id, channel_name, channel_type, chat_category, description, job_id, queue_id, customer_id, customers, status, metadata, is_archived, created_by_id, created_by_name, created_at, updated_at FROM chats ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, fmt.Errorf("error querying chats: %w", err)
 	}
@@ -145,7 +146,7 @@ func GetAllChats() ([]Chat, error) {
 		var c Chat
 		err := rows.Scan(
 			&c.ID, &c.UUID, &c.ChannelID, &c.ChannelName, &c.ChannelType, &c.ChatCategory,
-			&c.Description, &c.JobID, &c.QueueID, &c.CustomerID, &c.Customers, &c.Metadata,
+			&c.Description, &c.JobID, &c.QueueID, &c.CustomerID, &c.Customers, &c.Status, &c.Metadata,
 			&c.IsArchived, &c.CreatedByID, &c.CreatedByName, &c.CreatedAt, &c.UpdatedAt,
 		)
 		if err != nil {
@@ -158,12 +159,12 @@ func GetAllChats() ([]Chat, error) {
 
 // GetChatByUUID fetches a single chat channel from the database by its UUID.
 func GetChatByUUID(uuid string) (*Chat, error) {
-	row := db.QueryRow(`SELECT id, uuid, channel_id, channel_name, channel_type, chat_category, description, job_id, queue_id, customer_id, customers, metadata, is_archived, created_by_id, created_by_name, created_at, updated_at FROM chats WHERE uuid = $1 LIMIT 1`, uuid)
+	row := db.QueryRow(`SELECT id, uuid, channel_id, channel_name, channel_type, chat_category, description, job_id, queue_id, customer_id, customers, status, metadata, is_archived, created_by_id, created_by_name, created_at, updated_at FROM chats WHERE uuid = $1 LIMIT 1`, uuid)
 
 	var c Chat
 	err := row.Scan(
 		&c.ID, &c.UUID, &c.ChannelID, &c.ChannelName, &c.ChannelType, &c.ChatCategory,
-		&c.Description, &c.JobID, &c.QueueID, &c.CustomerID, &c.Customers, &c.Metadata,
+		&c.Description, &c.JobID, &c.QueueID, &c.CustomerID, &c.Customers, &c.Status, &c.Metadata,
 		&c.IsArchived, &c.CreatedByID, &c.CreatedByName, &c.CreatedAt, &c.UpdatedAt,
 	)
 	if err != nil {
@@ -504,12 +505,12 @@ func CreateChat(params CreateChatParams) (*Chat, error) {
 	query := `
 		INSERT INTO chats (
 			uuid, channel_id, channel_name, channel_type, chat_category,
-			description, customer_id, customers, metadata, is_archived,
+			description, customer_id, customers, status, metadata, is_archived,
 			created_by_id, created_by_name, created_at, updated_at
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
 		) RETURNING id, uuid, channel_id, channel_name, channel_type, chat_category,
-		description, job_id, queue_id, customer_id, customers, metadata,
+		description, job_id, queue_id, customer_id, customers, status, metadata,
 		is_archived, created_by_id, created_by_name, created_at, updated_at
 	`
 
@@ -523,6 +524,7 @@ func CreateChat(params CreateChatParams) (*Chat, error) {
 		description,                 // description
 		customerId,                  // customer_id
 		customerName,                // customers
+		"PENDING",                   // status (default to PENDING)
 		metadataJSON,                // metadata
 		0,                           // is_archived (0 = not archived)
 		params.CreatedByID,          // created_by_id
@@ -534,7 +536,7 @@ func CreateChat(params CreateChatParams) (*Chat, error) {
 	var chat Chat
 	err = row.Scan(
 		&chat.ID, &chat.UUID, &chat.ChannelID, &chat.ChannelName, &chat.ChannelType, &chat.ChatCategory,
-		&chat.Description, &chat.JobID, &chat.QueueID, &chat.CustomerID, &chat.Customers, &chat.Metadata,
+		&chat.Description, &chat.JobID, &chat.QueueID, &chat.CustomerID, &chat.Customers, &chat.Status, &chat.Metadata,
 		&chat.IsArchived, &chat.CreatedByID, &chat.CreatedByName, &chat.CreatedAt, &chat.UpdatedAt,
 	)
 	if err != nil {
@@ -581,4 +583,222 @@ func UpdateChatRequestType(chatUUID string, requestType string) (*Chat, error) {
 
 	// Return the updated chat
 	return GetChatByUUID(chatUUID)
+}
+
+// UpdateChatStatus updates the status of a chat
+func UpdateChatStatus(chatUUID string, status string) (*Chat, error) {
+	// Update the status in the database
+	query := `UPDATE chats SET status = $1, updated_at = $2 WHERE uuid = $3`
+	
+	now := time.Now()
+	_, err := db.Exec(query, status, now, chatUUID)
+	if err != nil {
+		return nil, fmt.Errorf("error updating chat status: %w", err)
+	}
+
+	// Return the updated chat
+	return GetChatByUUID(chatUUID)
+}
+
+// Customer database functions
+
+// GetAllCustomers fetches all customers from the database.
+func GetAllCustomers() ([]Customer, error) {
+	rows, err := db.Query(`SELECT id, cus_id, name, created_at, updated_at FROM customers ORDER BY name ASC`)
+	if err != nil {
+		return nil, fmt.Errorf("error querying customers: %w", err)
+	}
+	defer rows.Close()
+
+	var customers []Customer
+	for rows.Next() {
+		var c Customer
+		err := rows.Scan(&c.ID, &c.CusID, &c.Name, &c.CreatedAt, &c.UpdatedAt)
+		if err != nil {
+			return nil, fmt.Errorf("error scanning customer row: %w", err)
+		}
+		customers = append(customers, c)
+	}
+	return customers, nil
+}
+
+// GetCustomerByID fetches a single customer from the database by their primary key ID.
+func GetCustomerByID(id int) (*Customer, error) {
+	row := db.QueryRow(`SELECT id, cus_id, name, created_at, updated_at FROM customers WHERE id = $1 LIMIT 1`, id)
+
+	var c Customer
+	err := row.Scan(&c.ID, &c.CusID, &c.Name, &c.CreatedAt, &c.UpdatedAt)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("customer not found")
+		}
+		return nil, fmt.Errorf("error scanning customer row: %w", err)
+	}
+	return &c, nil
+}
+
+// GetCustomerByCusID fetches a single customer from the database by their customer ID.
+func GetCustomerByCusID(cusId string) (*Customer, error) {
+	row := db.QueryRow(`SELECT id, cus_id, name, created_at, updated_at FROM customers WHERE cus_id = $1 LIMIT 1`, cusId)
+
+	var c Customer
+	err := row.Scan(&c.ID, &c.CusID, &c.Name, &c.CreatedAt, &c.UpdatedAt)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("customer not found")
+		}
+		return nil, fmt.Errorf("error scanning customer row: %w", err)
+	}
+	return &c, nil
+}
+
+// CreateCustomer creates a new customer in the database.
+func CreateCustomer(cusId string, name string) (*Customer, error) {
+	// Check if customer with this cusId already exists
+	existingCustomer, err := GetCustomerByCusID(cusId)
+	if err == nil && existingCustomer != nil {
+		return nil, fmt.Errorf("customer with ID %s already exists", cusId)
+	}
+
+	// Insert the customer into the database
+	query := `
+		INSERT INTO customers (cus_id, name, created_at, updated_at) 
+		VALUES ($1, $2, $3, $4) 
+		RETURNING id, cus_id, name, created_at, updated_at
+	`
+
+	now := time.Now()
+	row := db.QueryRow(query, cusId, name, now, now)
+
+	var customer Customer
+	err = row.Scan(&customer.ID, &customer.CusID, &customer.Name, &customer.CreatedAt, &customer.UpdatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("error creating customer: %w", err)
+	}
+
+	return &customer, nil
+}
+
+// GenerateNextCustomerID generates the next available customer ID in format A001-Z999
+func GenerateNextCustomerID() (string, error) {
+	// Get all existing customer IDs that match the pattern
+	rows, err := db.Query(`
+		SELECT cus_id FROM customers 
+		WHERE cus_id ~ '^[A-Z][0-9]{3}$' 
+		ORDER BY cus_id DESC 
+		LIMIT 1
+	`)
+	if err != nil {
+		return "", fmt.Errorf("error querying customer IDs: %w", err)
+	}
+	defer rows.Close()
+
+	// Default starting ID
+	nextID := "A001"
+
+	if rows.Next() {
+		var lastID string
+		err := rows.Scan(&lastID)
+		if err != nil {
+			return "", fmt.Errorf("error scanning last customer ID: %w", err)
+		}
+
+		// Parse the last ID
+		if len(lastID) == 4 {
+			letter := lastID[0]
+			numberStr := lastID[1:4]
+			number, err := strconv.Atoi(numberStr)
+			if err != nil {
+				return "", fmt.Errorf("error parsing customer ID number: %w", err)
+			}
+
+			if number < 999 {
+				// Increment number
+				nextID = string(letter) + fmt.Sprintf("%03d", number+1)
+			} else {
+				// Move to next letter
+				if letter < 'Z' {
+					nextLetter := letter + 1
+					nextID = string(nextLetter) + "001"
+				} else {
+					return "", fmt.Errorf("customer ID limit reached (Z999)")
+				}
+			}
+		}
+	}
+
+	return nextID, nil
+}
+
+// CreateCustomerWithAutoID creates a new customer with auto-generated ID
+func CreateCustomerWithAutoID(name string) (*Customer, error) {
+	// Generate next available customer ID
+	cusId, err := GenerateNextCustomerID()
+	if err != nil {
+		return nil, fmt.Errorf("error generating customer ID: %w", err)
+	}
+
+	// Create the customer with the generated ID
+	return CreateCustomer(cusId, name)
+}
+
+// UpdateCustomer updates a customer's information.
+func UpdateCustomer(id int, cusId string, name string) (*Customer, error) {
+	// Check if customer exists
+	existingCustomer, err := GetCustomerByID(id)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check if another customer already has this cusId (if it's being changed)
+	if existingCustomer.CusID != cusId {
+		otherCustomer, err := GetCustomerByCusID(cusId)
+		if err == nil && otherCustomer != nil && otherCustomer.ID != id {
+			return nil, fmt.Errorf("another customer with ID %s already exists", cusId)
+		}
+	}
+
+	// Update the customer in the database
+	query := `
+		UPDATE customers 
+		SET cus_id = $1, name = $2, updated_at = $3 
+		WHERE id = $4
+		RETURNING id, cus_id, name, created_at, updated_at
+	`
+
+	now := time.Now()
+	row := db.QueryRow(query, cusId, name, now, id)
+
+	var customer Customer
+	err = row.Scan(&customer.ID, &customer.CusID, &customer.Name, &customer.CreatedAt, &customer.UpdatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("error updating customer: %w", err)
+	}
+
+	return &customer, nil
+}
+
+// DeleteCustomer deletes a customer from the database.
+func DeleteCustomer(id int) error {
+	// Check if customer exists
+	_, err := GetCustomerByID(id)
+	if err != nil {
+		return err
+	}
+
+	// Delete the customer
+	result, err := db.Exec(`DELETE FROM customers WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("error deleting customer: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("error checking rows affected: %w", err)
+	}
+	if rowsAffected == 0 {
+		return fmt.Errorf("customer not found")
+	}
+
+	return nil
 }

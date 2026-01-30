@@ -126,10 +126,16 @@ const DownloadProgress: React.FC<DownloadProgressProps> = ({
           {download.status === 'completed' && (
             <div className="mt-2">
               <button
-                onClick={() => {
-                  // Try to open the downloads folder
-                  if (window.downloadAPI) {
-                    console.log('Opening downloads folder...');
+                onClick={async () => {
+                  try {
+                    if (window.downloadAPI?.showInFolder) {
+                      console.log('Opening file in Explorer:', download.filename);
+                      await window.downloadAPI.showInFolder(download.filename);
+                    } else {
+                      console.log('showInFolder API not available');
+                    }
+                  } catch (error) {
+                    console.error('Failed to show file in folder:', error);
                   }
                 }}
                 className="body-small text-primary hover:text-primary/80 underline"

@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 
@@ -172,6 +173,7 @@ type CreateChatRequest struct {
 // UpdateChatRequest represents the request body for updating a chat
 type UpdateChatRequest struct {
 	RequestType string `json:"requestType"`
+	Status      string `json:"status"`
 }
 
 // createChatHandler creates a new chat channel.
@@ -254,9 +256,9 @@ func updateChatHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate request type
-	if req.RequestType == "" {
-		http.Error(w, `{"success": false, "error": "Request type is required"}`, http.StatusBadRequest)
+	// Validate request - at least one field should be provided
+	if req.RequestType == "" && req.Status == "" {
+		http.Error(w, `{"success": false, "error": "At least one field (requestType or status) is required"}`, http.StatusBadRequest)
 		return
 	}
 
@@ -291,30 +293,158 @@ func updateChatHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Update the chat's request type
-	updatedChat, err := UpdateChatRequestType(chatUUID, req.RequestType)
+	// Update the chat based on provided fields
+	var updatedChat *Chat
+	var updateField, updateValue string
+	
+	if req.Status != "" {
+		// Validate status value
+		validStatuses := []string{"PENDING", "ACCEPTED", "WAIT_DIMENSION", "WAIT_FEEDBACK", "WAIT_QA", "HOLD", "COMPLETED", "CANCEL"}
+		isValidStatus := false
+		for _, status := range validStatuses {
+			if req.Status == status {
+				isValidStatus = true
+				break
+			}
+		}
+		if !isValidStatus {
+			http.Error(w, `{"success": false, "error": "Invalid status value"}`, http.StatusBadRequest)
+			return
+		}
+		
+		updatedChat, err = UpdateChatStatus(chatUUID, req.Status)
+		updateField = "status"
+		updateValue = req.Status
+		log.Printf("Chat %s status updated to %s by user %s (ID: %d)", chatUUID, req.Status, user.Name, user.ID)
+	} else if req.RequestType != "" {
+		updatedChat, err = UpdateChatRequestType(chatUUID, req.RequestType)
+		updateField = "requestType"
+		updateValue = req.RequestType
+		log.Printf("Chat %s request type updated to %s by user %s (ID: %d)", chatUUID, req.RequestType, user.Name, user.ID)
+	}
+	
 	if err != nil {
-		log.Printf("Error updating chat %s request type: %v", chatUUID, err)
-		http.Error(w, `{"success": false, "error": "Failed to update chat request type"}`, http.StatusInternalServerError)
+		log.Printf("Error updating chat %s %s: %v", chatUUID, updateField, err)
+		http.Error(w, fmt.Sprintf(`{"success": false, "error": "Failed to update chat %s"}`, updateField), http.StatusInternalServerError)
 		return
 	}
-
-	log.Printf("Chat %s request type updated to %s by user %s (ID: %d)", chatUUID, req.RequestType, user.Name, user.ID)
 
 	// Broadcast chat update via WebSocket
 	if wsHub != nil {
 		wsHub.BroadcastMessage("chat_updated", map[string]interface{}{
 			"chat":      updatedChat,
 			"updatedBy": user.Name,
-			"field":     "requestType",
-			"newValue":  req.RequestType,
+			"field":     updateField,
+			"newValue":  updateValue,
 		})
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(APIResponse{
 		Success: true,
-		Message: "Chat request type updated successfully",
+		Message: fmt.Sprintf("Chat %s updated successfully", updateField),
+		Data:    updatedChat,
+	})
+}
+
+// updateChatStatusHandler updates a chat's status specifically
+func updateChatStatusHandler(w http.ResponseWriter, r *http.Request) {
+	// Get user from context (set by authMiddleware)
+	user, ok := r.Context().Value(userContextKey).(*User)
+	if !ok || user == nil {
+		http.Error(w, `{"success": false, "error": "Unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+
+	chatUUID := chi.URLParam(r, "uuid")
+	if chatUUID == "" {
+		http.Error(w, `{"success": false, "error": "Chat UUID is required"}`, http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		Status string `json:"status"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"success": false, "error": "Invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Validate status
+	if req.Status == "" {
+		http.Error(w, `{"success": false, "error": "Status is required"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Validate status value
+	validStatuses := []string{"PENDING", "ACCEPTED", "WAIT_DIMENSION", "WAIT_FEEDBACK", "WAIT_QA", "HOLD", "COMPLETED", "CANCEL"}
+	isValidStatus := false
+	for _, status := range validStatuses {
+		if req.Status == status {
+			isValidStatus = true
+			break
+		}
+	}
+	if !isValidStatus {
+		http.Error(w, `{"success": false, "error": "Invalid status value"}`, http.StatusBadRequest)
+		return
+	}
+
+	// First, get the chat to check if it exists and get permissions
+	chat, err := GetChatByUUID(chatUUID)
+	if err != nil {
+		log.Printf("Error fetching chat %s for status update: %v", chatUUID, err)
+		if err.Error() == "chat not found" {
+			http.Error(w, `{"success": false, "error": "Chat not found"}`, http.StatusNotFound)
+			return
+		}
+		http.Error(w, `{"success": false, "error": "Failed to fetch chat"}`, http.StatusInternalServerError)
+		return
+	}
+
+	// Check if user has permission to update this chat
+	// Allow the creator or admin users to update the chat
+	log.Printf("Status update permission check: User ID %d (role: %s) trying to update chat created by ID %d", user.ID, user.Role, chat.CreatedByID)
+	
+	canUpdate := false
+	if chat.CreatedByID == user.ID {
+		canUpdate = true
+		log.Printf("Permission granted: User is the creator of the chat")
+	} else if user.Role == "manager" || user.Role == "sales" {
+		canUpdate = true
+		log.Printf("Permission granted: User has admin role")
+	}
+	
+	if !canUpdate {
+		log.Printf("Permission denied: User %s (ID: %d, role: %s) cannot update chat '%s' created by ID %d", user.Name, user.ID, user.Role, chat.ChannelName, chat.CreatedByID)
+		http.Error(w, `{"success": false, "error": "You don't have permission to update this chat status. Only the creator or administrators can update chats."}`, http.StatusForbidden)
+		return
+	}
+
+	// Update the chat's status
+	updatedChat, err := UpdateChatStatus(chatUUID, req.Status)
+	if err != nil {
+		log.Printf("Error updating chat %s status: %v", chatUUID, err)
+		http.Error(w, `{"success": false, "error": "Failed to update chat status"}`, http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("Chat %s status updated to %s by user %s (ID: %d)", chatUUID, req.Status, user.Name, user.ID)
+
+	// Broadcast chat status update via WebSocket
+	if wsHub != nil {
+		wsHub.BroadcastMessage("chat_status_updated", map[string]interface{}{
+			"chat":      updatedChat,
+			"updatedBy": user.Name,
+			"oldStatus": chat.Status,
+			"newStatus": req.Status,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(APIResponse{
+		Success: true,
+		Message: "Chat status updated successfully",
 		Data:    updatedChat,
 	})
 }

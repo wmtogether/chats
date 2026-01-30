@@ -34,6 +34,7 @@ export interface ChatType {
   queueId: NullInt64;
   customerId: NullString;
   customers: NullString; // Changed from original analysis to match the provided JSON. It's also NullString.
+  status?: string; // Chat status (PENDING, ACCEPTED, etc.)
   metadata: string; // The raw JSON string
   parsedMetadata?: ChatMetadata; // To store the parsed metadata
   isArchived: number; // 0 or 1
@@ -87,4 +88,13 @@ export interface MessageBubbleData {
     total: string;
     percentage: number;
   };
+}
+
+// Interface for a Customer object (as received from the API)
+export interface CustomerType {
+  id: number;
+  cusId: string;     // Customer ID from jobs
+  name: string;      // Customer name
+  createdAt: string; // ISO 8601 string
+  updatedAt: string; // ISO 8601 string
 }
