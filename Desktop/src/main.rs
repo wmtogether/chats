@@ -13,6 +13,7 @@ use std::sync::Arc;
 use std::process::{Command, Stdio};
 use std::io::{BufRead, BufReader};
 use serde_json;
+use tray_icon::{TrayIcon, TrayIconBuilder, menu::{Menu, MenuItem, MenuEvent, PredefinedMenuItem}};
 
 mod context_menu;
 mod menubar;
@@ -266,6 +267,7 @@ struct App {
     initialization_complete: bool,
     ready_to_show: bool,
     native_menubar: Option<MenuBar>,
+    tray_icon: Option<TrayIcon>,
 }
 
 impl App {
@@ -276,7 +278,134 @@ impl App {
             initialization_complete: false,
             ready_to_show: false,
             native_menubar: None,
+            tray_icon: None,
         }
+    }
+    
+    fn create_tray_icon(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        // Create tray menu
+        let open_window = MenuItem::new("Open Window", true, None);
+        let open_workspace = MenuItem::new("Open Workspace", true, None);
+        let separator = PredefinedMenuItem::separator();
+        let exit = MenuItem::new("Exit", true, None);
+        
+        let menu = Menu::new();
+        menu.append(&open_window)?;
+        menu.append(&open_workspace)?;
+        menu.append(&separator)?;
+        menu.append(&exit)?;
+        
+        // Create tray icon using the existing ICON_BYTES
+        let tray_icon = TrayIconBuilder::new()
+            .with_menu(Box::new(menu))
+            .with_tooltip("Workspace")
+            .with_icon({
+                // Parse the ICO file from ICON_BYTES
+                match ico::IconDir::read(std::io::Cursor::new(ICON_BYTES)) {
+                    Ok(icon_dir) => {
+                        if let Some(entry) = icon_dir.entries().iter()
+                            .max_by_key(|entry| (entry.width() as u32, entry.height() as u32, entry.bits_per_pixel())) {
+                            
+                            match entry.decode() {
+                                Ok(image) => {
+                                    let rgba_data = image.rgba_data().to_vec();
+                                    let width = image.width();
+                                    let height = image.height();
+                                    
+                                    tray_icon::Icon::from_rgba(rgba_data, width, height)?
+                                }
+                                Err(_) => {
+                                    // Fallback to simple icon
+                                    let size = 32;
+                                    let mut rgba_data = Vec::with_capacity((size * size * 4) as usize);
+                                    
+                                    for y in 0..size {
+                                        for x in 0..size {
+                                            let r = ((x as f32 / size as f32) * 255.0) as u8;
+                                            let g = ((y as f32 / size as f32) * 255.0) as u8;
+                                            let b = 128;
+                                            let a = 255;
+                                            
+                                            rgba_data.extend_from_slice(&[r, g, b, a]);
+                                        }
+                                    }
+                                    tray_icon::Icon::from_rgba(rgba_data, size, size)?
+                                }
+                            }
+                        } else {
+                            // Fallback to simple icon
+                            let size = 32;
+                            let mut rgba_data = Vec::with_capacity((size * size * 4) as usize);
+                            
+                            for y in 0..size {
+                                for x in 0..size {
+                                    let r = ((x as f32 / size as f32) * 255.0) as u8;
+                                    let g = ((y as f32 / size as f32) * 255.0) as u8;
+                                    let b = 128;
+                                    let a = 255;
+                                    
+                                    rgba_data.extend_from_slice(&[r, g, b, a]);
+                                }
+                            }
+                            tray_icon::Icon::from_rgba(rgba_data, size, size)?
+                        }
+                    }
+                    Err(_) => {
+                        // Fallback to simple icon
+                        let size = 32;
+                        let mut rgba_data = Vec::with_capacity((size * size * 4) as usize);
+                        
+                        for y in 0..size {
+                            for x in 0..size {
+                                let r = ((x as f32 / size as f32) * 255.0) as u8;
+                                let g = ((y as f32 / size as f32) * 255.0) as u8;
+                                let b = 128;
+                                let a = 255;
+                                
+                                rgba_data.extend_from_slice(&[r, g, b, a]);
+                            }
+                        }
+                        tray_icon::Icon::from_rgba(rgba_data, size, size)?
+                    }
+                }
+            })
+            .build()?;
+        
+        self.tray_icon = Some(tray_icon);
+        
+        // Handle menu events
+        let menu_channel = MenuEvent::receiver();
+        let window_ref = self.window.clone();
+        
+        std::thread::spawn(move || {
+            loop {
+                if let Ok(event) = menu_channel.recv() {
+                    match event.id.0.as_str() {
+                        "Open Window" => {
+                            if let Some(window) = &window_ref {
+                                window.set_visible(true);
+                                window.focus_window();
+                            }
+                        }
+                        "Open Workspace" => {
+                            // Open workspace URL in default browser
+                            if let Err(e) = std::process::Command::new("cmd")
+                                .args(&["/c", "start", "http://10.10.60.8:1669"])
+                                .spawn()
+                            {
+                                println!("Failed to open workspace URL: {}", e);
+                            }
+                        }
+                        "Exit" => {
+                            std::process::exit(0);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        });
+        
+        Ok(())
     }
     
     
@@ -358,6 +487,13 @@ impl ApplicationHandler for App {
             // Show the window immediately
             window.set_visible(true);
             
+            // Create tray icon
+            if let Err(e) = self.create_tray_icon() {
+                println!("⚠️ Failed to create tray icon: {}", e);
+            } else {
+                println!("✅ Tray icon created successfully");
+            }
+            
             self.initialization_complete = true;
         }
         
@@ -378,7 +514,10 @@ impl ApplicationHandler for App {
         
         match event {
             WindowEvent::CloseRequested => {
-                event_loop.exit();
+                // Instead of exiting, hide the window to system tray
+                if let Some(window) = &self.window {
+                    window.set_visible(false);
+                }
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 // F12 to toggle DevTools

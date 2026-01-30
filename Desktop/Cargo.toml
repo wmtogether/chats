@@ -66,6 +66,7 @@ tokio-util = { version = "0.7", features = ["io"] }
 futures-util = "0.3"
 dirs = "5.0"
 url = "2.5"
+tray-icon = "0.19"
 
 [build-dependencies]
 winres = "0.1"
