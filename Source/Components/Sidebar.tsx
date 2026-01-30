@@ -396,7 +396,7 @@ export default function Sidebar({
             <h3 className="title-medium text-on-surface mb-2">
               {activeTab === 'me' ? 'No chats created by you yet' : 'No chats yet'}
             </h3>
-            <p className="body-medium text-on-surface-variant max-w-sm mb-4">
+            <p className="body-small text-on-surface-variant max-w-sm mb-4">
               {activeTab === 'me' 
                 ? 'Start a conversation by creating your first chat.' 
                 : 'Start a conversation by creating your first chat.'
