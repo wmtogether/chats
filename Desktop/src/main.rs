@@ -13,6 +13,19 @@ use std::sync::Arc;
 use std::process::{Command, Stdio};
 use std::io::{BufRead, BufReader};
 use serde_json;
+use tray_icon::{TrayIcon, TrayIconBuilder, menu::{Menu, MenuItem, MenuEvent, PredefinedMenuItem}};
+use std::sync::{Mutex};
+use lazy_static::lazy_static;
+
+#[cfg(windows)]
+use winreg::enums::*;
+#[cfg(windows)]
+use winreg::RegKey;
+
+// Global flag to ensure only one tray icon is created system-wide
+lazy_static! {
+    static ref TRAY_ICON_CREATED: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
+}
 
 mod context_menu;
 mod menubar;
@@ -23,6 +36,93 @@ use hooks::{init_notifications, init_redis, connect_redis, show_notification};
 
 // Include the icon at compile time
 const ICON_BYTES: &[u8] = include_bytes!("../../Library/Shared/Icons/icon.ico");
+
+#[cfg(windows)]
+fn configure_webview2_permissions() -> Result<(), Box<dyn std::error::Error>> {
+    use winreg::enums::*;
+    use winreg::RegKey;
+    
+    println!("🔧 Configuring WebView2 permissions in registry...");
+    
+    // Try to set permissions for the current user
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    
+    // Create/open the WebView2 permissions key
+    let webview2_key_path = r"SOFTWARE\Microsoft\Edge\WebView2\Settings";
+    
+    match hkcu.create_subkey(webview2_key_path) {
+        Ok((webview2_key, _)) => {
+            // Set clipboard permissions to always allow
+            if let Err(e) = webview2_key.set_value("ClipboardReadWritePermission", &1u32) {
+                println!("⚠️ Failed to set clipboard permission: {}", e);
+            } else {
+                println!("✅ Clipboard permission set to always allow");
+            }
+            
+            // Disable permission prompts
+            if let Err(e) = webview2_key.set_value("DisablePermissionPrompts", &1u32) {
+                println!("⚠️ Failed to disable permission prompts: {}", e);
+            } else {
+                println!("✅ Permission prompts disabled");
+            }
+            
+            // Set default permissions to granted
+            if let Err(e) = webview2_key.set_value("DefaultPermissionState", &"granted") {
+                println!("⚠️ Failed to set default permission state: {}", e);
+            } else {
+                println!("✅ Default permission state set to granted");
+            }
+            
+            // Disable security warnings
+            if let Err(e) = webview2_key.set_value("DisableSecurityWarnings", &1u32) {
+                println!("⚠️ Failed to disable security warnings: {}", e);
+            } else {
+                println!("✅ Security warnings disabled");
+            }
+            
+            println!("✅ WebView2 permissions configured successfully");
+        }
+        Err(e) => {
+            println!("⚠️ Failed to create WebView2 registry key: {}", e);
+            println!("   This is normal if running without admin privileges");
+        }
+    }
+    
+    // Also try to set permissions for the specific application
+    let app_key_path = r"SOFTWARE\Microsoft\Edge\WebView2\Applications\MikoWorkspace";
+    
+    match hkcu.create_subkey(app_key_path) {
+        Ok((app_key, _)) => {
+            // Set clipboard permissions for this specific app
+            if let Err(e) = app_key.set_value("clipboard", &"allow") {
+                println!("⚠️ Failed to set app-specific clipboard permission: {}", e);
+            } else {
+                println!("✅ App-specific clipboard permission set");
+            }
+            
+            // Set all permissions to allow for this app
+            let permissions = ["clipboard-read", "clipboard-write", "clipboard"];
+            for permission in &permissions {
+                if let Err(e) = app_key.set_value(permission, &"allow") {
+                    println!("⚠️ Failed to set {} permission: {}", permission, e);
+                } else {
+                    println!("✅ {} permission set to allow", permission);
+                }
+            }
+        }
+        Err(e) => {
+            println!("⚠️ Failed to create app-specific registry key: {}", e);
+        }
+    }
+    
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn configure_webview2_permissions() -> Result<(), Box<dyn std::error::Error>> {
+    println!("⚠️ WebView2 permission configuration only available on Windows");
+    Ok(())
+}
 
 fn load_window_icon() -> Option<Icon> {
     // First try to load from embedded bytes
@@ -120,11 +220,18 @@ fn show_file_in_explorer(filename: &str) {
         println!("✅ File exists, opening in Explorer: {}", file_path.display());
         
         // Use Windows Explorer with /select parameter to highlight the file
-        match std::process::Command::new("explorer")
-            .arg("/select,")
-            .arg(&file_path)
-            .spawn()
+        let mut command = std::process::Command::new("explorer");
+        command.arg("/select,").arg(&file_path);
+        
+        // Hide the console window on Windows
+        #[cfg(windows)]
         {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x08000000;
+            command.creation_flags(CREATE_NO_WINDOW);
+        }
+        
+        match command.spawn() {
             Ok(_) => {
                 println!("✅ Successfully opened file in Explorer");
             }
@@ -132,10 +239,17 @@ fn show_file_in_explorer(filename: &str) {
                 println!("❌ Failed to open file in Explorer: {}", e);
                 
                 // Fallback: just open the Downloads folder
-                match std::process::Command::new("explorer")
-                    .arg(&downloads_dir)
-                    .spawn()
+                let mut fallback_command = std::process::Command::new("explorer");
+                fallback_command.arg(&downloads_dir);
+                
+                #[cfg(windows)]
                 {
+                    use std::os::windows::process::CommandExt;
+                    const CREATE_NO_WINDOW: u32 = 0x08000000;
+                    fallback_command.creation_flags(CREATE_NO_WINDOW);
+                }
+                
+                match fallback_command.spawn() {
                     Ok(_) => {
                         println!("✅ Opened Downloads folder as fallback");
                     }
@@ -149,10 +263,17 @@ fn show_file_in_explorer(filename: &str) {
         println!("❌ File not found: {}", file_path.display());
         
         // Just open the Downloads folder
-        match std::process::Command::new("explorer")
-            .arg(&downloads_dir)
-            .spawn()
+        let mut command = std::process::Command::new("explorer");
+        command.arg(&downloads_dir);
+        
+        #[cfg(windows)]
         {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x08000000;
+            command.creation_flags(CREATE_NO_WINDOW);
+        }
+        
+        match command.spawn() {
             Ok(_) => {
                 println!("✅ Opened Downloads folder (file not found)");
             }
@@ -189,16 +310,25 @@ fn start_download_process(url: String, filename: String) {
     
     let output_path = downloads_dir.join(&filename);
     
-    // Start the downloader process
-    match Command::new(&exe_path)
+    // Start the downloader process with hidden window
+    let mut command = Command::new(&exe_path);
+    command
         .arg(&url)
         .arg(&output_path)
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
+        .stderr(Stdio::piped());
+    
+    // Hide the console window on Windows
+    #[cfg(windows)]
     {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    
+    match command.spawn() {
         Ok(mut child) => {
-            println!("Downloader process started with PID: {}", child.id());
+            println!("Downloader process started with PID: {} (hidden window)", child.id());
             
             // Read stdout in a separate thread
             if let Some(stdout) = child.stdout.take() {
@@ -266,6 +396,7 @@ struct App {
     initialization_complete: bool,
     ready_to_show: bool,
     native_menubar: Option<MenuBar>,
+    tray_icon: Option<TrayIcon>,
 }
 
 impl App {
@@ -276,7 +407,245 @@ impl App {
             initialization_complete: false,
             ready_to_show: false,
             native_menubar: None,
+            tray_icon: None,
         }
+    }
+    
+    fn create_tray_icon(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        // Check global flag to prevent multiple tray icons system-wide
+        {
+            let mut created = TRAY_ICON_CREATED.lock().unwrap();
+            if *created {
+                println!("⚠️ Tray icon already exists globally, skipping creation");
+                return Ok(());
+            }
+            *created = true;
+        }
+        
+        // Ensure we don't have an existing tray icon
+        if self.tray_icon.is_some() {
+            println!("⚠️ Tray icon already exists locally, removing old one first");
+            self.tray_icon = None; // This should drop the old tray icon
+        }
+        
+        // Create tray menu with explicit IDs to avoid conflicts
+        let show_window = MenuItem::with_id("show_window", "Show Window", true, None);
+        let hide_window = MenuItem::with_id("hide_window", "Hide Window", true, None);
+        let separator1 = PredefinedMenuItem::separator();
+        
+        let open_workspace = MenuItem::with_id("open_workspace", "Open Workspace (Web)", true, None);
+        let open_downloads = MenuItem::with_id("open_downloads", "Open Downloads Folder", true, None);
+        let separator2 = PredefinedMenuItem::separator();
+        
+        let about = MenuItem::with_id("about", "About", true, None);
+        let separator3 = PredefinedMenuItem::separator();
+        let exit = MenuItem::with_id("exit", "Exit", true, None);
+        
+        let menu = Menu::new();
+        menu.append(&show_window)?;
+        menu.append(&hide_window)?;
+        menu.append(&separator1)?;
+        menu.append(&open_workspace)?;
+        menu.append(&open_downloads)?;
+        menu.append(&separator2)?;
+        menu.append(&about)?;
+        menu.append(&separator3)?;
+        menu.append(&exit)?;
+        
+        // Create tray icon using the existing ICON_BYTES
+        let tray_icon = TrayIconBuilder::new()
+            .with_menu(Box::new(menu))
+            .with_tooltip("Workspace - Desktop Application")
+            .with_icon({
+                // Parse the ICO file from ICON_BYTES
+                match ico::IconDir::read(std::io::Cursor::new(ICON_BYTES)) {
+                    Ok(icon_dir) => {
+                        if let Some(entry) = icon_dir.entries().iter()
+                            .max_by_key(|entry| (entry.width() as u32, entry.height() as u32, entry.bits_per_pixel())) {
+                            
+                            match entry.decode() {
+                                Ok(image) => {
+                                    let rgba_data = image.rgba_data().to_vec();
+                                    let width = image.width();
+                                    let height = image.height();
+                                    
+                                    tray_icon::Icon::from_rgba(rgba_data, width, height)?
+                                }
+                                Err(_) => {
+                                    // Fallback to simple icon
+                                    let size = 32;
+                                    let mut rgba_data = Vec::with_capacity((size * size * 4) as usize);
+                                    
+                                    for y in 0..size {
+                                        for x in 0..size {
+                                            let r = ((x as f32 / size as f32) * 255.0) as u8;
+                                            let g = ((y as f32 / size as f32) * 255.0) as u8;
+                                            let b = 128;
+                                            let a = 255;
+                                            
+                                            rgba_data.extend_from_slice(&[r, g, b, a]);
+                                        }
+                                    }
+                                    tray_icon::Icon::from_rgba(rgba_data, size, size)?
+                                }
+                            }
+                        } else {
+                            // Fallback to simple icon
+                            let size = 32;
+                            let mut rgba_data = Vec::with_capacity((size * size * 4) as usize);
+                            
+                            for y in 0..size {
+                                for x in 0..size {
+                                    let r = ((x as f32 / size as f32) * 255.0) as u8;
+                                    let g = ((y as f32 / size as f32) * 255.0) as u8;
+                                    let b = 128;
+                                    let a = 255;
+                                    
+                                    rgba_data.extend_from_slice(&[r, g, b, a]);
+                                }
+                            }
+                            tray_icon::Icon::from_rgba(rgba_data, size, size)?
+                        }
+                    }
+                    Err(_) => {
+                        // Fallback to simple icon
+                        let size = 32;
+                        let mut rgba_data = Vec::with_capacity((size * size * 4) as usize);
+                        
+                        for y in 0..size {
+                            for x in 0..size {
+                                let r = ((x as f32 / size as f32) * 255.0) as u8;
+                                let g = ((y as f32 / size as f32) * 255.0) as u8;
+                                let b = 128;
+                                let a = 255;
+                                
+                                rgba_data.extend_from_slice(&[r, g, b, a]);
+                            }
+                        }
+                        tray_icon::Icon::from_rgba(rgba_data, size, size)?
+                    }
+                }
+            })
+            .build()?;
+        
+        self.tray_icon = Some(tray_icon);
+        println!("✅ Single tray icon created with ID-based menu items (globally unique)");
+        
+        // Handle menu events
+        let menu_channel = MenuEvent::receiver();
+        let window_ref = self.window.clone();
+        
+        std::thread::spawn(move || {
+            loop {
+                if let Ok(event) = menu_channel.recv() {
+                    println!("🔔 Tray menu event received: {}", event.id.0);
+                    match event.id.0.as_str() {
+                        "show_window" => {
+                            if let Some(window) = &window_ref {
+                                window.set_visible(true);
+                                window.focus_window();
+                                println!("✅ Window shown from tray");
+                            }
+                        }
+                        "hide_window" => {
+                            if let Some(window) = &window_ref {
+                                window.set_visible(false);
+                                println!("✅ Window hidden to tray");
+                            }
+                        }
+                        "open_workspace" => {
+                            // Open workspace URL in default browser with hidden window
+                            let mut command = std::process::Command::new("cmd");
+                            command.args(&["/c", "start", "http://10.10.60.8:1669"]);
+                            
+                            #[cfg(windows)]
+                            {
+                                use std::os::windows::process::CommandExt;
+                                const CREATE_NO_WINDOW: u32 = 0x08000000;
+                                command.creation_flags(CREATE_NO_WINDOW);
+                            }
+                            
+                            if let Err(e) = command.spawn() {
+                                println!("❌ Failed to open workspace URL: {}", e);
+                            } else {
+                                println!("✅ Opened workspace in browser");
+                            }
+                        }
+                        "open_downloads" => {
+                            // Open Downloads folder
+                            let downloads_dir = dirs::download_dir().unwrap_or_else(|| {
+                                std::env::current_dir().unwrap().join("Downloads")
+                            });
+                            
+                            let mut command = std::process::Command::new("explorer");
+                            command.arg(&downloads_dir);
+                            
+                            #[cfg(windows)]
+                            {
+                                use std::os::windows::process::CommandExt;
+                                const CREATE_NO_WINDOW: u32 = 0x08000000;
+                                command.creation_flags(CREATE_NO_WINDOW);
+                            }
+                            
+                            if let Err(e) = command.spawn() {
+                                println!("❌ Failed to open Downloads folder: {}", e);
+                            } else {
+                                println!("✅ Opened Downloads folder");
+                            }
+                        }
+                        "about" => {
+                            // Show about dialog (you could implement a proper dialog here)
+                            println!("📋 Workspace Desktop Application v0.1.0");
+                            println!("Built with Rust, Wry, and Winit");
+                            
+                            // For now, just show a Windows message box
+                            #[cfg(windows)]
+                            {
+                                use windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_OK, MB_ICONINFORMATION};
+                                use windows::Win32::Foundation::HWND;
+                                use std::ffi::OsStr;
+                                use std::os::windows::ffi::OsStrExt;
+                                
+                                let title: Vec<u16> = OsStr::new("About Workspace")
+                                    .encode_wide()
+                                    .chain(std::iter::once(0))
+                                    .collect();
+                                
+                                let message: Vec<u16> = OsStr::new("Workspace Desktop Application v0.1.0\n\nBuilt with Rust, Wry, and Winit\nFeatures: File downloads, tray integration, WebView2")
+                                    .encode_wide()
+                                    .chain(std::iter::once(0))
+                                    .collect();
+                                
+                                unsafe {
+                                    MessageBoxW(
+                                        HWND::default(),
+                                        windows::core::PCWSTR(message.as_ptr()),
+                                        windows::core::PCWSTR(title.as_ptr()),
+                                        MB_OK | MB_ICONINFORMATION
+                                    );
+                                }
+                            }
+                        }
+                        "exit" => {
+                            println!("👋 Exiting application from tray menu");
+                            
+                            // Reset the global flag when exiting
+                            {
+                                let mut created = TRAY_ICON_CREATED.lock().unwrap();
+                                *created = false;
+                            }
+                            
+                            std::process::exit(0);
+                        }
+                        _ => {
+                            println!("❓ Unknown tray menu action: {}", event.id.0);
+                        }
+                    }
+                }
+            }
+        });
+        
+        Ok(())
     }
     
     
@@ -357,6 +726,17 @@ impl ApplicationHandler for App {
             
             // Show the window immediately
             window.set_visible(true);
+            
+            // Create tray icon
+            if self.tray_icon.is_none() {
+                if let Err(e) = self.create_tray_icon() {
+                    println!("⚠️ Failed to create tray icon: {}", e);
+                } else {
+                    println!("✅ Tray icon created successfully");
+                }
+            } else {
+                println!("⚠️ Tray icon already exists, skipping creation");
+            }
             
             self.initialization_complete = true;
         }
@@ -448,9 +828,20 @@ impl App {
             std::env::set_var("WEBVIEW2_USER_DATA_FOLDER", &user_data_dir);
             println!("WebView2 user data folder: {}", user_data_dir.display());
             
+            // Configure WebView2 permissions in registry
+            if let Err(e) = configure_webview2_permissions() {
+                println!("⚠️ Failed to configure WebView2 permissions: {}", e);
+            }
+            
+            // Set environment variables to disable permission prompts
+            std::env::set_var("WEBVIEW2_DISABLE_PERMISSION_PROMPTS", "1");
+            std::env::set_var("WEBVIEW2_AUTO_GRANT_PERMISSIONS", "1");
+            std::env::set_var("WEBVIEW2_CLIPBOARD_PERMISSION", "granted");
+            std::env::set_var("WEBVIEW2_DEFAULT_PERMISSION_STATE", "granted");
+            
             // Add WebView2 arguments to disable CORS and web security, and enable clipboard access
             webview_builder = webview_builder
-                .with_additional_browser_args("--disable-web-security --disable-features=VizDisplayCompositor --allow-running-insecure-content --disable-site-isolation-trials --enable-clipboard-api --disable-permissions-api --autoplay-policy=no-user-gesture-required --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-renderer-backgrounding --disable-features=msWebOOUI,msPdfOOUI --enable-features=msEdgeEnableClipboardAPI");
+                .with_additional_browser_args("--disable-web-security --disable-features=VizDisplayCompositor --allow-running-insecure-content --disable-site-isolation-trials --enable-clipboard-api --disable-permissions-api --autoplay-policy=no-user-gesture-required --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-renderer-backgrounding --disable-features=msWebOOUI,msPdfOOUI --enable-features=msEdgeEnableClipboardAPI --disable-permission-request-handling --disable-prompt-on-repost --disable-default-apps --disable-extensions --disable-plugins --disable-popup-blocking --disable-translate --disable-background-networking --disable-sync --disable-speech-api --disable-file-system --disable-presentation-api --disable-permissions-api --disable-notifications --disable-desktop-notifications --disable-geolocation --disable-media-stream --disable-camera --disable-microphone --disable-usb --disable-bluetooth --disable-sensors --disable-midi --disable-payment-request --disable-background-sync --disable-push-messaging --disable-wake-lock --disable-screen-wake-lock --disable-idle-detection --disable-web-bluetooth --disable-web-usb --disable-web-serial --disable-web-hid --disable-web-nfc --disable-ambient-light-sensor --disable-accelerometer --disable-gyroscope --disable-magnetometer --disable-device-motion --disable-device-orientation --disable-gamepad --disable-vr --disable-xr --disable-webgl --disable-webgl2 --disable-webgpu --disable-webrtc --disable-media-devices --disable-clipboard-read-write-permissions --disable-clipboard-sanitized-write --enable-unsafe-webgpu --allow-clipboard-read-write --disable-features=PermissionsAPI,PermissionsPolicyAPI --enable-features=ClipboardAPI,AsyncClipboardAPI --disable-blink-features=PermissionsAPI --enable-blink-features=ClipboardAPI,AsyncClipboardAPI");
         }
 
         // In debug mode, use dev server. In release, use custom protocol with embedded HTML
@@ -486,53 +877,166 @@ impl App {
             webview_builder = webview_builder.with_url("miko://app/");
         }
 
-        // Add minimal initialization script with clipboard permissions
+        // Add comprehensive initialization script with clipboard permissions override
         webview_builder = webview_builder
             .with_initialization_script(
                 r#"
                 console.log('WebView initialized - Direct download mode (no CORS/fetch)');
                 window.sessionId = 'desktop-session';
                 
-                // Override clipboard permissions to always allow
-                if (navigator.permissions && navigator.permissions.query) {
-                    const originalQuery = navigator.permissions.query;
-                    navigator.permissions.query = function(permissionDesc) {
-                        if (permissionDesc.name === 'clipboard-read' || permissionDesc.name === 'clipboard-write') {
-                            return Promise.resolve({ state: 'granted' });
-                        }
-                        return originalQuery.call(this, permissionDesc);
+                // Completely override permissions API to always grant clipboard access
+                if (navigator.permissions) {
+                    // Override the entire permissions object
+                    Object.defineProperty(navigator, 'permissions', {
+                        value: {
+                            query: function(permissionDesc) {
+                                console.log('📋 Permission query intercepted:', permissionDesc.name);
+                                if (permissionDesc.name === 'clipboard-read' || 
+                                    permissionDesc.name === 'clipboard-write' ||
+                                    permissionDesc.name === 'clipboard') {
+                                    console.log('📋 Auto-granting clipboard permission');
+                                    return Promise.resolve({ 
+                                        state: 'granted',
+                                        onchange: null,
+                                        addEventListener: function() {},
+                                        removeEventListener: function() {},
+                                        dispatchEvent: function() { return true; }
+                                    });
+                                }
+                                // For other permissions, return granted to avoid dialogs
+                                return Promise.resolve({ 
+                                    state: 'granted',
+                                    onchange: null,
+                                    addEventListener: function() {},
+                                    removeEventListener: function() {},
+                                    dispatchEvent: function() { return true; }
+                                });
+                            }
+                        },
+                        writable: false,
+                        configurable: false
+                    });
+                }
+                
+                // Override Permissions API constructor if it exists
+                if (window.Permissions) {
+                    window.Permissions.prototype.query = function(permissionDesc) {
+                        console.log('📋 Permissions.prototype.query intercepted:', permissionDesc.name);
+                        return Promise.resolve({ state: 'granted' });
                     };
                 }
                 
-                // Ensure clipboard API is available
+                // Ensure clipboard API is available and functional
                 if (!navigator.clipboard) {
-                    console.warn('Clipboard API not available, creating fallback');
-                    navigator.clipboard = {
-                        read: function() {
-                            return Promise.resolve([]);
+                    console.warn('Clipboard API not available, creating enhanced fallback');
+                    Object.defineProperty(navigator, 'clipboard', {
+                        value: {
+                            read: function() {
+                                console.log('📋 Clipboard read (fallback)');
+                                return Promise.resolve([]);
+                            },
+                            readText: function() {
+                                console.log('📋 Clipboard readText (fallback)');
+                                return Promise.resolve('');
+                            },
+                            write: function(data) {
+                                console.log('📋 Clipboard write (fallback)');
+                                return Promise.resolve();
+                            },
+                            writeText: function(text) {
+                                console.log('📋 Clipboard writeText (fallback)');
+                                return Promise.resolve();
+                            }
                         },
-                        readText: function() {
-                            return Promise.resolve('');
-                        },
-                        write: function(data) {
-                            return Promise.resolve();
-                        },
-                        writeText: function(text) {
-                            return Promise.resolve();
-                        }
-                    };
+                        writable: false,
+                        configurable: false
+                    });
                 } else {
-                    console.log('✅ Clipboard API is available');
+                    console.log('✅ Native Clipboard API is available');
+                    
+                    // Wrap existing clipboard methods to prevent permission prompts
+                    const originalRead = navigator.clipboard.read;
+                    const originalReadText = navigator.clipboard.readText;
+                    const originalWrite = navigator.clipboard.write;
+                    const originalWriteText = navigator.clipboard.writeText;
+                    
+                    if (originalRead) {
+                        navigator.clipboard.read = function() {
+                            console.log('📋 Clipboard read requested (auto-granted)');
+                            return originalRead.call(this).catch(err => {
+                                console.warn('Clipboard read failed, returning empty:', err);
+                                return [];
+                            });
+                        };
+                    }
+                    
+                    if (originalReadText) {
+                        navigator.clipboard.readText = function() {
+                            console.log('📋 Clipboard readText requested (auto-granted)');
+                            return originalReadText.call(this).catch(err => {
+                                console.warn('Clipboard readText failed, returning empty:', err);
+                                return '';
+                            });
+                        };
+                    }
+                    
+                    if (originalWrite) {
+                        navigator.clipboard.write = function(data) {
+                            console.log('📋 Clipboard write requested (auto-granted)');
+                            return originalWrite.call(this, data).catch(err => {
+                                console.warn('Clipboard write failed:', err);
+                                return Promise.resolve();
+                            });
+                        };
+                    }
+                    
+                    if (originalWriteText) {
+                        navigator.clipboard.writeText = function(text) {
+                            console.log('📋 Clipboard writeText requested (auto-granted)');
+                            return originalWriteText.call(this, text).catch(err => {
+                                console.warn('Clipboard writeText failed:', err);
+                                return Promise.resolve();
+                            });
+                        };
+                    }
                 }
                 
-                // Override clipboard read to never prompt for permission
-                if (navigator.clipboard.read) {
-                    const originalRead = navigator.clipboard.read;
-                    navigator.clipboard.read = function() {
-                        console.log('📋 Clipboard read requested (auto-granted)');
-                        return originalRead.call(this);
+                // Override any permission request dialogs
+                if (window.Notification && window.Notification.requestPermission) {
+                    window.Notification.requestPermission = function() {
+                        console.log('📋 Notification permission auto-granted');
+                        return Promise.resolve('granted');
                     };
                 }
+                
+                // Prevent any permission-related dialogs from showing
+                const originalAlert = window.alert;
+                const originalConfirm = window.confirm;
+                const originalPrompt = window.prompt;
+                
+                window.alert = function(message) {
+                    if (message && message.toLowerCase().includes('clipboard')) {
+                        console.log('📋 Clipboard alert blocked:', message);
+                        return;
+                    }
+                    return originalAlert.call(this, message);
+                };
+                
+                window.confirm = function(message) {
+                    if (message && message.toLowerCase().includes('clipboard')) {
+                        console.log('📋 Clipboard confirm auto-accepted:', message);
+                        return true;
+                    }
+                    return originalConfirm.call(this, message);
+                };
+                
+                window.prompt = function(message, defaultText) {
+                    if (message && message.toLowerCase().includes('clipboard')) {
+                        console.log('📋 Clipboard prompt auto-accepted:', message);
+                        return defaultText || '';
+                    }
+                    return originalPrompt.call(this, message, defaultText);
+                };
                 
                 // Direct IPC download API - bypasses all web requests
                 window.downloadAPI = {
@@ -595,7 +1099,8 @@ impl App {
                 
                 console.log('Session ID set:', window.sessionId);
                 console.log('Direct download API initialized (no web requests)');
-                console.log('📋 Clipboard permissions configured (auto-grant)');
+                console.log('📋 Clipboard permissions completely overridden (no dialogs)');
+                console.log('✅ All permission dialogs disabled and auto-granted');
                 "#
             );
 
@@ -733,7 +1238,25 @@ impl App {
     }
 }
 
+impl Drop for App {
+    fn drop(&mut self) {
+        // Reset the global flag when the app is dropped
+        if let Ok(mut created) = TRAY_ICON_CREATED.lock() {
+            *created = false;
+            println!("🧹 Tray icon global flag reset on app drop");
+        }
+        
+        // Explicitly drop the tray icon
+        if self.tray_icon.is_some() {
+            self.tray_icon = None;
+            println!("🧹 Tray icon dropped");
+        }
+    }
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    println!("🚀 Starting Workspace Desktop Application");
+    
     let event_loop = EventLoop::new()?;
     
     let mut app = App::new();

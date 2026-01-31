@@ -1,7 +1,7 @@
 import { Search, Palette, Ruler, CheckCircle, Settings, Eye, Package, Briefcase, Wifi, WifiOff } from 'lucide-react'
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { updateChatRequestType, updateChatStatus } from '../Library/utils/api' // Import updateChatStatus
+import { updateChatRequestType, updateChatStatus, sendMessage } from '../Library/utils/api' // Import sendMessage
 import { useToast } from '../Library/hooks/useToast'
 import type { ChatType } from '../Library/types'
 import { cn } from '../Library/utils' // Assuming cn utility is available
@@ -75,6 +75,10 @@ export default function ChatHeader({ selectedChat, chatCount, wsConnected = fals
     setIsUpdating(true);
     
     try {
+      const oldRequestType = selectedChat.parsedMetadata?.requestType || 'unknown';
+      const oldTypeLabel = REQUEST_TYPES.find(t => t.id === oldRequestType)?.label || oldRequestType;
+      const newTypeLabel = REQUEST_TYPES.find(t => t.id === newRequestType)?.label || newRequestType;
+      
       // First, update the request type
       const requestTypeUpdateResult = await updateChatRequestType(selectedChat.uuid, newRequestType);
       
@@ -87,13 +91,13 @@ export default function ChatHeader({ selectedChat, chatCount, wsConnected = fals
         if (statusUpdateResult.success && statusUpdateResult.data) {
           updatedChat = statusUpdateResult.data; // Use the chat data returned from status update
           addToast({
-            message: `Request type changed to "${REQUEST_TYPES.find(t => t.id === newRequestType)?.label || newRequestType}" and status set to PENDING.`,
+            message: `Request type changed to "${newTypeLabel}" and status set to PENDING.`,
             type: 'success'
           });
         } else {
           // Even if status update fails, the request type change was successful
           addToast({
-            message: `Request type changed to "${REQUEST_TYPES.find(t => t.id === newRequestType)?.label || newRequestType}", but failed to set status to PENDING: ${statusUpdateResult.error || 'Unknown error'}.`,
+            message: `Request type changed to "${newTypeLabel}", but failed to set status to PENDING: ${statusUpdateResult.error || 'Unknown error'}.`,
             type: 'warning'
           });
         }
@@ -101,6 +105,33 @@ export default function ChatHeader({ selectedChat, chatCount, wsConnected = fals
         // Update the chat in the parent component with the final updated chat data
         if (onChatUpdate) {
           onChatUpdate(updatedChat);
+        }
+
+        // Send a MetaCard message to the chat about the request type change
+        try {
+          const customerName = selectedChat.customers?.Valid ? selectedChat.customers.String : '';
+          const queueId = selectedChat.parsedMetadata?.queueId || selectedChat.id;
+          const jobName = selectedChat.channelName;
+          
+          // Create MetaCard message format: [QUEUE_REQTYPE_CHANGE|queueId|oldType|newType|customerName]JobName
+          const metaCardContent = `[QUEUE_REQTYPE_CHANGE|${queueId}|${oldRequestType}|${newRequestType}|${customerName}]${jobName}`;
+          
+          console.log('🔄 Sending MetaCard message for request type change:', {
+            chatUuid: selectedChat.uuid,
+            content: metaCardContent,
+            oldType: oldRequestType,
+            newType: newRequestType
+          });
+          
+          const messageResult = await sendMessage(selectedChat.uuid, {
+            content: metaCardContent
+          });
+          
+          console.log('🔄 MetaCard message send result:', messageResult);
+          
+        } catch (messageError) {
+          console.error('❌ Failed to send MetaCard message:', messageError);
+          // Don't show error to user as the main operation succeeded
         }
         
       } else {
@@ -125,7 +156,7 @@ export default function ChatHeader({ selectedChat, chatCount, wsConnected = fals
   };
 
   return (
-    <header className="flex items-center gap-4 p-4 border-b border-outline shrink-0 z-[30] bg-surface relative">
+    <header className="flex items-center gap-4 p-4 border-b border-outline shrink-0 z-[2] bg-surface relative">
       <div className="flex items-center gap-3">
         {selectedChat ? (
           <>

@@ -1,9 +1,12 @@
 import React from 'react';
-import { QueueStatusUpdateCard } from './MetaCards/QueueStatusUpdateCard';
-import { QueueAcceptedCard } from './MetaCards/QueueAcceptedCard';
-import { FileCheckCard } from './MetaCards/FileCheckCard';
-import { ReqTypeChangeCard } from './MetaCards/ReqTypeChangeCard';
-// import { Hyperlink } from './MetaCards/Hyperlink';
+import { 
+  QueueStatusUpdateCard, 
+  QueueAcceptedCard, 
+  QueuePreviewCard,
+  FileCheckCard, 
+  ReqTypeChangeCard,
+  Hyperlink 
+} from './MetaCards';
 
 interface MessageContentProps {
   content: string;
@@ -99,6 +102,79 @@ export function MessageContent({
         userProfilePicture={userProfilePicture || null}
         customerName={customerName}
       />
+    );
+  }
+
+  // Detect queue preview format: [QUEUE_PREVIEW|queueId]
+  const queuePreviewRegex = /^\[QUEUE_PREVIEW\|(\d+)\]$/;
+  const queuePreviewMatch = content.match(queuePreviewRegex);
+
+  if (queuePreviewMatch) {
+    const [, queueId] = queuePreviewMatch;
+    return (
+      <QueuePreviewCard queueId={queueId} />
+    );
+  }
+
+  // Detect status post format: [STATUS_POST|status|message]
+  const statusPostRegex = /^\[STATUS_POST\|([A-Z_]+)\|(.+)\]$/;
+  const statusPostMatch = content.match(statusPostRegex);
+
+  if (statusPostMatch) {
+    const [, status, statusMessage] = statusPostMatch;
+    return (
+      <div className="my-3 max-w-md">
+        <div className="p-4 bg-surface-container border border-outline-variant rounded-2xl shadow-sm">
+          <div className="flex items-start gap-3">
+            <div className="p-2 rounded-full bg-primary/10 flex-shrink-0">
+              <svg className="h-5 w-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-2">
+                <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                  status === 'COMPLETED' ? 'bg-green-100 text-green-800' :
+                  status === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-800' :
+                  status === 'PENDING' ? 'bg-yellow-100 text-yellow-800' :
+                  status === 'ERROR' ? 'bg-red-100 text-red-800' :
+                  'bg-gray-100 text-gray-800'
+                }`}>
+                  {status.replace('_', ' ')}
+                </span>
+              </div>
+              <p className="body-medium text-on-surface">{statusMessage}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Detect action format: [ACTION|type|data]
+  const actionRegex = /^\[ACTION\|([A-Z_]+)\|(.+)\]$/;
+  const actionMatch = content.match(actionRegex);
+
+  if (actionMatch) {
+    const [, actionType, actionData] = actionMatch;
+    return (
+      <div className="my-3 max-w-md">
+        <div className="p-4 bg-surface-container border border-outline-variant rounded-2xl shadow-sm hover:shadow-md transition-all duration-200">
+          <div className="flex items-start gap-3">
+            <div className="p-2 rounded-full bg-secondary/10 flex-shrink-0">
+              <svg className="h-5 w-5 text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+            </div>
+            <div className="flex-1 min-w-0">
+              <h4 className="title-medium font-medium text-on-surface mb-1">
+                {actionType.replace('_', ' ').toLowerCase().replace(/\b\w/g, l => l.toUpperCase())}
+              </h4>
+              <p className="body-small text-on-surface-variant">{actionData}</p>
+            </div>
+          </div>
+        </div>
+      </div>
     );
   }
 
@@ -281,7 +357,7 @@ export function MessageContent({
       } else if (match.type === 'url') {
         parts.push(
           <div key={`url-${i}`}>
-            {/* <Hyperlink url={(match as any).url} /> */}
+            <Hyperlink url={(match as any).url} />
           </div>
         );
       }
@@ -335,7 +411,7 @@ export function MessageContent({
       // Add URL preview
       parts.push(
         <div key={`url-${i}`}>
-          {/* <Hyperlink url={url} /> */}
+          <Hyperlink url={url} />
         </div>
       );
 

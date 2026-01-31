@@ -109,16 +109,10 @@ func sendMessageHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Broadcast the message via WebSocket
 	if wsHub != nil {
-		broadcastData := map[string]interface{}{
-			"type": "chat_message",
-			"data": map[string]interface{}{
-				"chatUuid": chatUUID,
-				"message":  message,
-			},
-		}
-		if jsonData, err := json.Marshal(broadcastData); err == nil {
-			wsHub.broadcast <- jsonData
-		}
+		wsHub.BroadcastMessage("chat_message", map[string]interface{}{
+			"chatUuid": chatUUID,
+			"message":  message,
+		})
 	}
 
 	// Return success response
@@ -171,16 +165,10 @@ func deleteMessageHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Broadcast the message deletion via WebSocket
 	if wsHub != nil {
-		broadcastData := map[string]interface{}{
-			"type": "message_deleted",
-			"data": map[string]interface{}{
-				"messageId": messageID,
-				"channelId": message.ChannelID,
-			},
-		}
-		if jsonData, err := json.Marshal(broadcastData); err == nil {
-			wsHub.broadcast <- jsonData
-		}
+		wsHub.BroadcastMessage("message_deleted", map[string]interface{}{
+			"messageId": messageID,
+			"channelId": message.ChannelID,
+		})
 	}
 
 	// Return success response
@@ -248,15 +236,9 @@ func editMessageHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Broadcast the message update via WebSocket
 	if wsHub != nil {
-		broadcastData := map[string]interface{}{
-			"type": "message_updated",
-			"data": map[string]interface{}{
-				"message": updatedMessage,
-			},
-		}
-		if jsonData, err := json.Marshal(broadcastData); err == nil {
-			wsHub.broadcast <- jsonData
-		}
+		wsHub.BroadcastMessage("message_updated", map[string]interface{}{
+			"message": updatedMessage,
+		})
 	}
 
 	// Return success response

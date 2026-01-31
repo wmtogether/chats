@@ -5,7 +5,7 @@ import {
   Pause, XCircle, HelpCircle, ChevronLeft, ChevronRight
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { getChat, updateChatStatus } from '../Library/utils/api'
+import { getChat, updateChatStatus, sendMessage } from '../Library/utils/api'
 import { useToast } from '../Library/hooks/useToast'
 import { cn } from '../Library/utils'
 
@@ -101,10 +101,19 @@ export default function StickyStatus({
       document.addEventListener('mousedown', handleClickOutside);
       return () => document.removeEventListener('mousedown', handleClickOutside);
     }
+    return undefined; // Explicit return for when showStatusDropdown is false
   }, [showStatusDropdown]);
 
   const handleStatusUpdate = async (newStatus: string) => {
     if (isUpdating || !selectedChat?.uuid) return;
+
+    const oldStatus = queueData?.status || 'UNKNOWN';
+    
+    // Don't update if it's the same status
+    if (oldStatus === newStatus) {
+      setShowStatusDropdown(false);
+      return;
+    }
 
     setIsUpdating(true);
     setUpdatingStatus(newStatus);
@@ -120,6 +129,33 @@ export default function StickyStatus({
         const statusConfig = getStatusConfig(newStatus);
         addToast({ type: 'success', message: `Status updated to "${statusConfig.label}"` });
         setShowStatusDropdown(false);
+
+        // Send a MetaCard message to the chat about the status update
+        try {
+          const customerName = queueData?.customers?.Valid ? queueData.customers.String : '';
+          const queueId = queueData?.parsedMetadata?.queueId || queueData?.id;
+          const queueName = queueData?.channelName || 'Queue';
+          
+          // Create MetaCard message format: [QUEUE_STATUS_UPDATE|queueId|oldStatus|newStatus|customerName]QueueName
+          const metaCardContent = `[QUEUE_STATUS_UPDATE|${queueId}|${oldStatus}|${newStatus}|${customerName}]${queueName}`;
+          
+          console.log('📊 Sending MetaCard message for status update:', {
+            chatUuid: selectedChat.uuid,
+            content: metaCardContent,
+            oldStatus,
+            newStatus
+          });
+          
+          const messageResult = await sendMessage(selectedChat.uuid, {
+            content: metaCardContent
+          });
+          
+          console.log('📊 MetaCard message send result:', messageResult);
+          
+        } catch (messageError) {
+          console.error('❌ Failed to send MetaCard message:', messageError);
+          // Don't show error to user as the main operation succeeded
+        }
       } else {
         throw new Error(result.error || 'Failed to update');
       }
@@ -150,7 +186,7 @@ export default function StickyStatus({
   };
 
   return (
-    <div className="sticky top-0 z-10 px-4 pt-4 pb-6 bg-gradient-to-b from-background via-background to-transparent pointer-events-none select-none">
+    <div className="sticky top-0 z-1 px-4 pt-4 pb-6 bg-gradient-to-b from-background via-background to-transparent pointer-events-none select-none">
       <div className="pointer-events-auto relative rounded-xl bg-surface border border-outline shadow-lg flex items-center justify-between p-3 group">
         
         <div className="flex items-center gap-4 min-w-0 flex-1">

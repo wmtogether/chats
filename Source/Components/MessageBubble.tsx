@@ -15,13 +15,14 @@ import type { MessageBubbleData } from '../Library/types' // Import shared types
 interface MessageBubbleProps {
   data: MessageBubbleData // Use imported MessageBubbleData
   searchQuery?: string
+  isNewMessage?: boolean // Add prop for indicating new real-time messages
   onReply?: (messageId: string, userName: string, content: string) => void
   onReaction?: (messageId: string, emoji: string) => void
   onEdit?: (messageId: string, newContent: string, attachments?: string[]) => void
   onDelete?: (messageId: string) => void
 }
 
-export default function MessageBubble({ data, searchQuery, onReply, onReaction, onEdit, onDelete }: MessageBubbleProps) {
+export default function MessageBubble({ data, searchQuery, isNewMessage = false, onReply, onReaction, onEdit, onDelete }: MessageBubbleProps) {
   const [showActions, setShowActions] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
@@ -152,6 +153,8 @@ export default function MessageBubble({ data, searchQuery, onReply, onReaction, 
     <div 
       className={`group flex gap-4 p-3 -mx-3 rounded-2xl hover:bg-surface-container/40 transition-all duration-200 ${
         data.isHighlighted ? 'bg-primary-container/20 border border-primary/20' : ''
+      } ${
+        isNewMessage ? 'animate-pulse bg-primary-container/10' : ''
       }`}
       onMouseEnter={() => setShowActions(true)}
       onMouseLeave={(e) => {

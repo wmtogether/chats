@@ -41,6 +41,7 @@ export default function ChatInput({ onSendMessage, replyingTo, onCancelReply }: 
   const gifInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Add clipboard paste support
   useEffect(() => {
@@ -63,18 +64,7 @@ export default function ChatInput({ onSendMessage, replyingTo, onCancelReply }: 
         setIsPasting(true);
 
         try {
-          // Convert FileList to FileList-like object for handleFileSelect
-          const fileList = {
-            length: files.length,
-            item: (index: number) => files[index],
-            [Symbol.iterator]: function* () {
-              for (let i = 0; i < files.length; i++) {
-                yield files[i];
-              }
-            }
-          } as FileList;
-
-          await handleFileSelect(fileList);
+          await handleFileSelect(clipboardData.files);
         } catch (error) {
           console.error('Error processing clipboard files:', error);
         } finally {
@@ -93,18 +83,21 @@ export default function ChatInput({ onSendMessage, replyingTo, onCancelReply }: 
 
         try {
           const attachmentPromises = imageItems.map(async (item) => {
-            const file = item.getAsFile();
-            if (file) {
+            const blob = item.getAsFile();
+            if (blob) {
               // Create a unique filename for pasted images
               const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-              const extension = file.type.split('/')[1] || 'png';
+              const extension = blob.type.split('/')[1] || 'png';
+              const filename = `pasted-image-${timestamp}.${extension}`;
 
-              // Create a new file with a proper name
-              const renamedFile = Object.assign(file, {
-                name: `pasted-image-${timestamp}.${extension}`
+              // Create a proper File object from the blob by extending it
+              const file = Object.assign(blob, {
+                name: filename,
+                lastModified: Date.now(),
+                size: blob.size || 0
               }) as File;
 
-              return await createAttachment(renamedFile);
+              return await createAttachment(file);
             }
             return null;
           });
@@ -129,6 +122,23 @@ export default function ChatInput({ onSendMessage, replyingTo, onCancelReply }: 
           document.removeEventListener('paste', handlePaste);
         };
       }, [message, attachments]); // Added message and attachments to deps, as createAttachment and uploadFiles depend on current state
+
+  // Click outside handler for dropdown
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setShowAttachmentDropdown(false);
+      }
+    };
+
+    if (showAttachmentDropdown) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showAttachmentDropdown]);
   // Cleanup object URLs when component unmounts or attachments change
   useEffect(() => {
     return () => {
@@ -388,6 +398,7 @@ export default function ChatInput({ onSendMessage, replyingTo, onCancelReply }: 
     const inputRef = type === 'image' ? imageInputRef :
       type === 'gif' ? gifInputRef : fileInputRef;
     inputRef.current?.click();
+    setShowAttachmentDropdown(false); // Close dropdown after clicking
   };
 
   const retryUpload = async (attachmentId: string) => {
@@ -673,7 +684,7 @@ export default function ChatInput({ onSendMessage, replyingTo, onCancelReply }: 
         <div className="flex items-center justify-between px-4 pb-3">
           <div className="flex items-center gap-1">
             {/* Attachment Dropdown */}
-            <div className="relative">
+            <div className="relative" ref={dropdownRef}>
               <ActionButton
                 icon="add_circle"
                 title="Attach file"
@@ -697,11 +708,13 @@ export default function ChatInput({ onSendMessage, replyingTo, onCancelReply }: 
                               const blob = await item.getType(type);
                               const extension = type.split('/')[1] || 'png';
                               const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+                              const filename = `clipboard-image-${timestamp}.${extension}`;
                               
-                              // Create a proper File object using Object.assign
+                              // Create a proper File object from the blob by extending it
                               const file = Object.assign(blob, {
-                                name: `clipboard-image-${timestamp}.${extension}`,
-                                lastModified: Date.now()
+                                name: filename,
+                                lastModified: Date.now(),
+                                size: blob.size || 0
                               }) as File;
                               
                               const attachment = await createAttachment(file);

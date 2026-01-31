@@ -28,6 +28,7 @@ interface AppState {
   isLoadingChats: boolean;
   isLoadingMessages: boolean;
   deletingMessages: string[];
+  newMessageIds: Set<string>; // Track recently added messages for animation
 }
 
 type AppAction =
@@ -36,11 +37,17 @@ type AppAction =
   | { type: 'SET_MESSAGES'; payload: any[] }
   | { type: 'SELECT_CHAT'; payload: any | null }
   | { type: 'UPDATE_CHAT'; payload: ChatType }
+  | { type: 'ADD_CHAT'; payload: ChatType }
+  | { type: 'REMOVE_CHAT'; payload: string }
+  | { type: 'ADD_MESSAGE'; payload: { message: MessageType; chatUuid: string } }
+  | { type: 'REMOVE_MESSAGE'; payload: string }
+  | { type: 'UPDATE_MESSAGE'; payload: MessageType }
   | { type: 'SET_REPLYING_TO'; payload: { messageId: string; userName: string; content: string } | null }
   | { type: 'SET_LOADING_CHATS'; payload: boolean }
   | { type: 'SET_LOADING_MESSAGES'; payload: boolean }
   | { type: 'SET_DELETING_MESSAGE'; payload: string }
   | { type: 'REMOVE_DELETING_MESSAGE'; payload: string }
+  | { type: 'CLEAR_NEW_MESSAGE_IDS' }
   | { type: 'RESTORE_STATE'; payload: { page: Page; selectedChat: ChatType | null } };
 
 const initialState: AppState = {
@@ -52,6 +59,7 @@ const initialState: AppState = {
   isLoadingChats: false,
   isLoadingMessages: false,
   deletingMessages: [],
+  newMessageIds: new Set(),
 };
 
 function appReducer(state: AppState, action: AppAction): AppState {
@@ -63,12 +71,12 @@ function appReducer(state: AppState, action: AppAction): AppState {
     case 'SET_CHATS':
       return { ...state, chats: action.payload, isLoadingChats: false };
     case 'SET_MESSAGES':
-        return { ...state, messages: action.payload, isLoadingMessages: false };
+        return { ...state, messages: action.payload, isLoadingMessages: false, newMessageIds: new Set() };
     case 'SELECT_CHAT':
       // When a chat is selected, clear previous messages and navigate back to the main chat view
       // Save selected chat to localStorage
       localStorageManager.saveSelectedChat(action.payload);
-      return { ...state, selectedChat: action.payload, messages: [], currentPage: 'chat', replyingTo: null, isLoadingMessages: false };
+      return { ...state, selectedChat: action.payload, messages: [], currentPage: 'chat', replyingTo: null, isLoadingMessages: false, newMessageIds: new Set() };
     case 'UPDATE_CHAT':
       // Update a specific chat in the chats array and selectedChat if it matches
       const updatedChats = state.chats.map(chat => 
@@ -83,6 +91,50 @@ function appReducer(state: AppState, action: AppAction): AppState {
         chats: updatedChats, 
         selectedChat: updatedSelectedChat 
       };
+    case 'ADD_CHAT':
+      // Add a new chat to the chats array
+      return { 
+        ...state, 
+        chats: [...state.chats, action.payload] 
+      };
+    case 'REMOVE_CHAT':
+      // Remove a chat by UUID and deselect if it was selected
+      const filteredChats = state.chats.filter(chat => chat.uuid !== action.payload);
+      const newSelectedChat = state.selectedChat?.uuid === action.payload ? null : state.selectedChat;
+      return { 
+        ...state, 
+        chats: filteredChats,
+        selectedChat: newSelectedChat,
+        messages: newSelectedChat ? state.messages : [] // Clear messages if chat was deselected
+      };
+    case 'ADD_MESSAGE':
+      // Add a new message if it's for the currently selected chat
+      if (state.selectedChat?.uuid === action.payload.chatUuid) {
+        const newMessageIds = new Set(state.newMessageIds);
+        newMessageIds.add(action.payload.message.messageId);
+        return { 
+          ...state, 
+          messages: [...state.messages, action.payload.message],
+          newMessageIds
+        };
+      }
+      return state; // No change if message is not for current chat
+    case 'REMOVE_MESSAGE':
+      // Remove a message by messageId
+      return { 
+        ...state, 
+        messages: state.messages.filter(msg => msg.messageId !== action.payload) 
+      };
+    case 'UPDATE_MESSAGE':
+      // Update a message by messageId
+      return { 
+        ...state, 
+        messages: state.messages.map(msg => 
+          msg.messageId === action.payload.messageId ? action.payload : msg
+        ) 
+      };
+    case 'CLEAR_NEW_MESSAGE_IDS':
+      return { ...state, newMessageIds: new Set() };
     case 'SET_REPLYING_TO':
       return { ...state, replyingTo: action.payload };
     case 'SET_LOADING_CHATS':
@@ -182,6 +234,69 @@ const ChatLayout = ({ state, dispatch, onLogout, wsConnected }: { state: AppStat
       };
       fetchMessages();
     }
+  }, [selectedChat]);
+
+  // Auto-scroll to bottom when new messages are added
+  useEffect(() => {
+    const messageContainer = document.getElementById('message-container');
+    if (messageContainer && messages.length > 0) {
+      // Small delay to ensure the message is rendered
+      setTimeout(() => {
+        messageContainer.scrollTop = messageContainer.scrollHeight;
+      }, 100);
+    }
+  }, [messages.length]); // Only trigger when message count changes
+
+  // Clear new message indicators after a delay
+  useEffect(() => {
+    if (state.newMessageIds.size > 0) {
+      const timer = setTimeout(() => {
+        dispatch({ type: 'CLEAR_NEW_MESSAGE_IDS' });
+      }, 3000); // Clear after 3 seconds
+
+      return () => clearTimeout(timer);
+    }
+    return undefined; // Explicit return for when condition is false
+  }, [state.newMessageIds.size]);
+
+  // Debug function to test WebSocket connectivity
+  useEffect(() => {
+    // Add a global function for testing WebSocket
+    (window as any).testWebSocket = () => {
+      const wsManager = getWebSocketManager();
+      if (wsManager) {
+        console.log('🧪 Testing WebSocket connection...');
+        console.log('🧪 WebSocket connected:', wsManager.getConnectionStatus());
+        
+        // Send a test ping
+        wsManager.send({
+          type: 'ping',
+          data: Date.now()
+        });
+      } else {
+        console.log('❌ WebSocket manager not available');
+      }
+    };
+
+    // Add a global function to test message sending
+    (window as any).testSendMessage = async (content: string) => {
+      if (selectedChat) {
+        console.log('🧪 Testing message send:', content);
+        try {
+          const result = await sendMessage(selectedChat.uuid, { content });
+          console.log('🧪 Message send result:', result);
+        } catch (error) {
+          console.error('🧪 Message send error:', error);
+        }
+      } else {
+        console.log('❌ No chat selected for testing');
+      }
+    };
+
+    return () => {
+      delete (window as any).testWebSocket;
+      delete (window as any).testSendMessage;
+    };
   }, [selectedChat]);
 
 
@@ -293,7 +408,7 @@ const ChatLayout = ({ state, dispatch, onLogout, wsConnected }: { state: AppStat
         console.log('Message sent successfully:', result.message);
         
         // Show success toast
-        addToast({ message: 'Message sent successfully!', type: 'success' });
+        // addToast({ message: 'Message sent successfully!', type: 'success' });
       } else {
         console.error('Failed to send message:', result.error);
         throw new Error(result.error || 'Failed to send message');
@@ -482,6 +597,7 @@ const ChatLayout = ({ state, dispatch, onLogout, wsConnected }: { state: AppStat
                         <MessageBubble 
                           key={msg.messageId} 
                           data={messageData}
+                          isNewMessage={state.newMessageIds.has(msg.messageId)}
                           onReply={(messageId, userName, content) => 
                             dispatch({ type: 'SET_REPLYING_TO', payload: { messageId, userName, content } })
                           }
@@ -645,12 +761,14 @@ export default function Main() {
 
     wsManager.on('message', (data: any) => {
       // Handle incoming real-time messages
-      console.log('� Real-time message received:', data);
+      console.log('📨 Real-time message received:', data);
+      console.log('📨 Message type:', data.type);
+      console.log('📨 Message data:', data.data);
       
       // Handle different message types
       switch (data.type) {
         case 'queue_update':
-          console.log('� Queue update:', data.data);
+          console.log('📊 Queue update:', data.data);
           // You can dispatch actions here to update the queue in UI
           break;
         case 'chat_created':
@@ -659,20 +777,14 @@ export default function Main() {
           if (data.data?.chat) {
             const processedChat = preprocessChat(data.data.chat);
             // Add the new chat to the chats list
-            dispatch({ type: 'SET_CHATS', payload: [...state.chats, processedChat] });
+            dispatch({ type: 'ADD_CHAT', payload: processedChat });
           }
           break;
         case 'chat_deleted':
           console.log('💬 Chat deleted:', data.data);
           // Handle real-time chat deletion
           if (data.data?.chatUuid) {
-            // Remove the deleted chat from the chats list using current state
-            dispatch({ type: 'SET_CHATS', payload: state.chats.filter(chat => chat.uuid !== data.data.chatUuid) });
-            
-            // If the deleted chat was selected, deselect it
-            if (state.selectedChat?.uuid === data.data.chatUuid) {
-              dispatch({ type: 'SELECT_CHAT', payload: null });
-            }
+            dispatch({ type: 'REMOVE_CHAT', payload: data.data.chatUuid });
           }
           break;
         case 'chat_updated':
@@ -684,15 +796,31 @@ export default function Main() {
           }
           break;
         case 'chat_message':
-          console.log('� Chat message:', data.data);
+          console.log('💬 Chat message received via WebSocket:', data.data);
+          console.log('💬 Message object:', data.data?.message);
+          console.log('💬 Chat UUID:', data.data?.chatUuid);
+          console.log('💬 Current selected chat UUID:', state.selectedChat?.uuid);
+          
           // Handle real-time chat messages
-          if (data.data?.message && data.data?.chatUuid === state.selectedChat?.uuid) {
-            // Add the new message to the current chat if it's selected
-            dispatch({ type: 'SET_MESSAGES', payload: [...state.messages, data.data.message] });
+          if (data.data?.message && data.data?.chatUuid) {
+            console.log('💬 Adding message to chat via WebSocket');
+            dispatch({ 
+              type: 'ADD_MESSAGE', 
+              payload: { 
+                message: data.data.message, 
+                chatUuid: data.data.chatUuid 
+              } 
+            });
+          } else {
+            console.warn('💬 WebSocket chat_message missing required data:', {
+              hasMessage: !!data.data?.message,
+              hasChatUuid: !!data.data?.chatUuid,
+              data: data.data
+            });
           }
           break;
         case 'upload_progress':
-          console.log('� Upload progress:', data.data);
+          console.log('📤 Upload progress:', data.data);
           // Handle real-time upload progress updates
           break;
         case 'image_uploaded':
@@ -700,7 +828,7 @@ export default function Main() {
           // Handle image upload notifications
           break;
         case 'user_joined':
-          console.log('� User joined:', data.data);
+          console.log('👤 User joined:', data.data);
           break;
         case 'status_update':
           console.log('📊 Status update:', data.data);
@@ -711,29 +839,19 @@ export default function Main() {
         case 'message_deleted':
           console.log('🗑️ Message deleted:', data.data);
           // Handle real-time message deletion
-          if (data.data?.messageId && state.selectedChat) {
-            // Remove the deleted message from the current chat
-            dispatch({ 
-              type: 'SET_MESSAGES', 
-              payload: state.messages.filter(msg => msg.messageId !== data.data.messageId)
-            });
+          if (data.data?.messageId) {
+            dispatch({ type: 'REMOVE_MESSAGE', payload: data.data.messageId });
           }
           break;
         case 'message_updated':
           console.log('✏️ Message updated:', data.data);
           // Handle real-time message updates
-          if (data.data?.message && state.selectedChat) {
-            // Update the message in the current chat
-            dispatch({ 
-              type: 'SET_MESSAGES', 
-              payload: state.messages.map(msg => 
-                msg.messageId === data.data.message.messageId ? data.data.message : msg
-              )
-            });
+          if (data.data?.message) {
+            dispatch({ type: 'UPDATE_MESSAGE', payload: data.data.message });
           }
           break;
         default:
-          console.log('� Unknown message type:', data.type);
+          console.log('❓ Unknown message type:', data.type);
       }
     });
 
