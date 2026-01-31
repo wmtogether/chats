@@ -128,8 +128,8 @@ def main():
     
     # Define paths
     script_dir = Path(__file__).parent
-    input_png = script_dir.parent / "Library" / "Shared" / "Icons" / "Content.png"
-    output_icns = script_dir.parent / "Library" / "Shared" / "Icons" / "icon.icns"
+    input_png = script_dir.parent / ".." / "Library" / "Shared" / "Icons" / "Content.png"
+    output_icns = script_dir.parent / ".." / "Library" / "Shared" / "Icons" / "icon.icns"
     temp_dir = script_dir / "temp_iconset"
     
     print_status(f"Input: {input_png}")
@@ -176,7 +176,7 @@ def main():
             print_status("Cleaning up temporary files...")
             shutil.rmtree(temp_dir)
     
-    print_success("✅ Icon conversion complete!")
+    print_success("??? Icon conversion complete!")
 
 if __name__ == "__main__":
     main()
