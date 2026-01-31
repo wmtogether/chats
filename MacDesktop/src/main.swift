@@ -393,8 +393,7 @@ class DownloadManager: NSObject {
 // MARK: - URLSessionDownloadDelegate
 extension DownloadManager: URLSessionDownloadDelegate {
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
-        guard let originalURL = downloadTask.originalRequest?.url,
-              let filename = downloadTasks.first(where: { $0.value == downloadTask })?.key else {
+        guard let filename = downloadTasks.first(where: { $0.value == downloadTask })?.key else {
             print("❌ Could not determine filename for completed download")
             return
         }
@@ -758,13 +757,13 @@ class MainWindowController: NSWindowController {
         let editMenuItem = NSMenuItem(title: "Edit", action: nil, keyEquivalent: "")
         let editMenu = NSMenu(title: "Edit")
         
-        editMenu.addItem(withTitle: "Undo", action: #selector(NSResponder.undo(_:)), keyEquivalent: "z")
-        editMenu.addItem(withTitle: "Redo", action: #selector(NSResponder.redo(_:)), keyEquivalent: "Z")
+        editMenu.addItem(withTitle: "Undo", action: #selector(NSText.undo(_:)), keyEquivalent: "z")
+        editMenu.addItem(withTitle: "Redo", action: #selector(NSText.redo(_:)), keyEquivalent: "Z")
         editMenu.addItem(NSMenuItem.separator())
-        editMenu.addItem(withTitle: "Cut", action: #selector(NSResponder.cut(_:)), keyEquivalent: "x")
-        editMenu.addItem(withTitle: "Copy", action: #selector(NSResponder.copy(_:)), keyEquivalent: "c")
-        editMenu.addItem(withTitle: "Paste", action: #selector(NSResponder.paste(_:)), keyEquivalent: "v")
-        editMenu.addItem(withTitle: "Select All", action: #selector(NSResponder.selectAll(_:)), keyEquivalent: "a")
+        editMenu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         
         editMenuItem.submenu = editMenu
         mainMenu.addItem(editMenuItem)
@@ -911,7 +910,7 @@ extension MainWindowController: WKNavigationDelegate {
         loadEmbeddedHTML()
     }
     
-    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationPolicy) -> Void) {
+    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         guard let url = navigationAction.request.url else {
             decisionHandler(.cancel)
             return
