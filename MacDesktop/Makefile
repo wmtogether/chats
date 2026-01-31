@@ -94,49 +94,47 @@ bundle: release
 	
 	# Create Info.plist
 	@echo "📝 Creating Info.plist..."
-	@cat > $(CONTENTS_DIR)/Info.plist << 'EOF'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-	<key>CFBundleDevelopmentRegion</key>
-	<string>en</string>
-	<key>CFBundleExecutable</key>
-	<string>$(APP_NAME)</string>
-	<key>CFBundleIdentifier</key>
-	<string>com.workspace.desktop</string>
-	<key>CFBundleInfoDictionaryVersion</key>
-	<string>6.0</string>
-	<key>CFBundleName</key>
-	<string>Workspace</string>
-	<key>CFBundlePackageType</key>
-	<string>APPL</string>
-	<key>CFBundleShortVersionString</key>
-	<string>1.0.0</string>
-	<key>CFBundleVersion</key>
-	<string>1</string>
-	<key>LSMinimumSystemVersion</key>
-	<string>11.0</string>
-	<key>NSHighResolutionCapable</key>
-	<true/>
-	<key>NSSupportsAutomaticGraphicsSwitching</key>
-	<true/>
-	<key>NSAppTransportSecurity</key>
-	<dict>
-		<key>NSAllowsArbitraryLoads</key>
-		<true/>
-		<key>NSAllowsLocalNetworking</key>
-		<true/>
-	</dict>
-	<key>NSUserNotificationAlertStyle</key>
-	<string>alert</string>
-	<key>NSAppleEventsUsageDescription</key>
-	<string>This app needs to send Apple Events to interact with other applications.</string>
-	<key>NSDownloadsFolderUsageDescription</key>
-	<string>This app needs access to the Downloads folder to save downloaded files.</string>
-</dict>
-</plist>
-EOF
+	@echo '<?xml version="1.0" encoding="UTF-8"?>' > $(CONTENTS_DIR)/Info.plist
+	@echo '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' >> $(CONTENTS_DIR)/Info.plist
+	@echo '<plist version="1.0">' >> $(CONTENTS_DIR)/Info.plist
+	@echo '<dict>' >> $(CONTENTS_DIR)/Info.plist
+	@echo '	<key>CFBundleDevelopmentRegion</key>' >> $(CONTENTS_DIR)/Info.plist
+	@echo '	<string>en</string>' >> $(CONTENTS_DIR)/Info.plist
+	@echo '	<key>CFBundleExecutable</key>' >> $(CONTENTS_DIR)/Info.plist
+	@echo '	<string>$(APP_NAME)</string>' >> $(CONTENTS_DIR)/Info.plist
+	@echo '	<key>CFBundleIdentifier</key>' >> $(CONTENTS_DIR)/Info.plist
+	@echo '	<string>com.workspace.desktop</string>' >> $(CONTENTS_DIR)/Info.plist
+	@echo '	<key>CFBundleInfoDictionaryVersion</key>' >> $(CONTENTS_DIR)/Info.plist
+	@echo '	<string>6.0</string>' >> $(CONTENTS_DIR)/Info.plist
+	@echo '	<key>CFBundleName</key>' >> $(CONTENTS_DIR)/Info.plist
+	@echo '	<string>Workspace</string>' >> $(CONTENTS_DIR)/Info.plist
+	@echo '	<key>CFBundlePackageType</key>' >> $(CONTENTS_DIR)/Info.plist
+	@echo '	<string>APPL</string>' >> $(CONTENTS_DIR)/Info.plist
+	@echo '	<key>CFBundleShortVersionString</key>' >> $(CONTENTS_DIR)/Info.plist
+	@echo '	<string>1.0.0</string>' >> $(CONTENTS_DIR)/Info.plist
+	@echo '	<key>CFBundleVersion</key>' >> $(CONTENTS_DIR)/Info.plist
+	@echo '	<string>1</string>' >> $(CONTENTS_DIR)/Info.plist
+	@echo '	<key>LSMinimumSystemVersion</key>' >> $(CONTENTS_DIR)/Info.plist
+	@echo '	<string>11.0</string>' >> $(CONTENTS_DIR)/Info.plist
+	@echo '	<key>NSHighResolutionCapable</key>' >> $(CONTENTS_DIR)/Info.plist
+	@echo '	<true/>' >> $(CONTENTS_DIR)/Info.plist
+	@echo '	<key>NSSupportsAutomaticGraphicsSwitching</key>' >> $(CONTENTS_DIR)/Info.plist
+	@echo '	<true/>' >> $(CONTENTS_DIR)/Info.plist
+	@echo '	<key>NSAppTransportSecurity</key>' >> $(CONTENTS_DIR)/Info.plist
+	@echo '	<dict>' >> $(CONTENTS_DIR)/Info.plist
+	@echo '		<key>NSAllowsArbitraryLoads</key>' >> $(CONTENTS_DIR)/Info.plist
+	@echo '		<true/>' >> $(CONTENTS_DIR)/Info.plist
+	@echo '		<key>NSAllowsLocalNetworking</key>' >> $(CONTENTS_DIR)/Info.plist
+	@echo '		<true/>' >> $(CONTENTS_DIR)/Info.plist
+	@echo '	</dict>' >> $(CONTENTS_DIR)/Info.plist
+	@echo '	<key>NSUserNotificationAlertStyle</key>' >> $(CONTENTS_DIR)/Info.plist
+	@echo '	<string>alert</string>' >> $(CONTENTS_DIR)/Info.plist
+	@echo '	<key>NSAppleEventsUsageDescription</key>' >> $(CONTENTS_DIR)/Info.plist
+	@echo '	<string>This app needs to send Apple Events to interact with other applications.</string>' >> $(CONTENTS_DIR)/Info.plist
+	@echo '	<key>NSDownloadsFolderUsageDescription</key>' >> $(CONTENTS_DIR)/Info.plist
+	@echo '	<string>This app needs access to the Downloads folder to save downloaded files.</string>' >> $(CONTENTS_DIR)/Info.plist
+	@echo '</dict>' >> $(CONTENTS_DIR)/Info.plist
+	@echo '</plist>' >> $(CONTENTS_DIR)/Info.plist
 	
 	# Copy icon if it exists
 	@if [ -f "../Library/Shared/Icons/icon.icns" ]; then \
