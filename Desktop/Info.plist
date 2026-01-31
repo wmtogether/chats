@@ -1,0 +1,209 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Basic App Information -->
+    <key>CFBundleName</key>
+    <string>Workspace</string>
+    
+    <key>CFBundleDisplayName</key>
+    <string>Workspace</string>
+    
+    <key>CFBundleIdentifier</key>
+    <string>com.workspace.desktop</string>
+    
+    <key>CFBundleVersion</key>
+    <string>1.0.0</string>
+    
+    <key>CFBundleShortVersionString</key>
+    <string>1.0.0</string>
+    
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    
+    <key>CFBundleExecutable</key>
+    <string>mikochat-mac</string>
+    
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    
+    <!-- App Category -->
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.productivity</string>
+    
+    <!-- Minimum macOS Version -->
+    <key>LSMinimumSystemVersion</key>
+    <string>11.0</string>
+    
+    <!-- High Resolution Support -->
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    
+    <!-- Retina Display Support -->
+    <key>NSSupportsAutomaticGraphicsSwitching</key>
+    <true/>
+    
+    <!-- App Transport Security -->
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsArbitraryLoads</key>
+        <true/>
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+        <key>NSExceptionDomains</key>
+        <dict>
+            <key>localhost</key>
+            <dict>
+                <key>NSExceptionAllowsInsecureHTTPLoads</key>
+                <true/>
+                <key>NSExceptionMinimumTLSVersion</key>
+                <string>TLSv1.0</string>
+            </dict>
+            <key>127.0.0.1</key>
+            <dict>
+                <key>NSExceptionAllowsInsecureHTTPLoads</key>
+                <true/>
+                <key>NSExceptionMinimumTLSVersion</key>
+                <string>TLSv1.0</string>
+            </dict>
+            <key>10.10.60.8</key>
+            <dict>
+                <key>NSExceptionAllowsInsecureHTTPLoads</key>
+                <true/>
+                <key>NSExceptionMinimumTLSVersion</key>
+                <string>TLSv1.0</string>
+            </dict>
+        </dict>
+    </dict>
+    
+    <!-- Permissions and Usage Descriptions -->
+    <key>NSUserNotificationAlertStyle</key>
+    <string>alert</string>
+    
+    <key>NSAppleEventsUsageDescription</key>
+    <string>This app needs to send Apple Events to interact with other applications for file management.</string>
+    
+    <key>NSDownloadsFolderUsageDescription</key>
+    <string>This app needs access to the Downloads folder to save downloaded files.</string>
+    
+    <key>NSDesktopFolderUsageDescription</key>
+    <string>This app may need access to the Desktop folder for file operations.</string>
+    
+    <key>NSDocumentsFolderUsageDescription</key>
+    <string>This app may need access to the Documents folder for file operations.</string>
+    
+    <key>NSNetworkVolumesUsageDescription</key>
+    <string>This app may need access to network volumes for file operations.</string>
+    
+    <key>NSRemovableVolumesUsageDescription</key>
+    <string>This app may need access to removable volumes for file operations.</string>
+    
+    <!-- Camera and Microphone (for web content) -->
+    <key>NSCameraUsageDescription</key>
+    <string>This app may need camera access for web content and video calls.</string>
+    
+    <key>NSMicrophoneUsageDescription</key>
+    <string>This app may need microphone access for web content and voice calls.</string>
+    
+    <!-- Location Services (if needed by web content) -->
+    <key>NSLocationUsageDescription</key>
+    <string>This app may need location access for web content features.</string>
+    
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>This app may need location access when in use for web content features.</string>
+    
+    <!-- File Type Associations -->
+    <key>CFBundleDocumentTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeExtensions</key>
+            <array>
+                <string>workspace</string>
+            </array>
+            <key>CFBundleTypeIconFile</key>
+            <string>AppIcon</string>
+            <key>CFBundleTypeName</key>
+            <string>Workspace File</string>
+            <key>CFBundleTypeRole</key>
+            <string>Editor</string>
+            <key>LSHandlerRank</key>
+            <string>Owner</string>
+        </dict>
+    </array>
+    
+    <!-- URL Schemes -->
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>com.workspace.desktop</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>workspace</string>
+                <string>miko</string>
+            </array>
+        </dict>
+    </array>
+    
+    <!-- App Icon -->
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
+    
+    <key>CFBundleIconName</key>
+    <string>AppIcon</string>
+    
+    <!-- Background Modes -->
+    <key>LSBackgroundOnly</key>
+    <false/>
+    
+    <!-- UI Element (set to true if you want menu bar only app) -->
+    <key>LSUIElement</key>
+    <false/>
+    
+    <!-- Supports Sudden Termination -->
+    <key>NSSupportsSuddenTermination</key>
+    <true/>
+    
+    <!-- Hardware Requirements -->
+    <key>LSRequiresNativeExecution</key>
+    <true/>
+    
+    <!-- Sandboxing (disabled for full system access) -->
+    <key>com.apple.security.app-sandbox</key>
+    <false/>
+    
+    <!-- Hardened Runtime Entitlements -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    
+    <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+    <true/>
+    
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+    
+    <!-- Network Access -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+    
+    <key>com.apple.security.network.server</key>
+    <true/>
+    
+    <!-- File System Access -->
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+    
+    <key>com.apple.security.files.downloads.read-write</key>
+    <true/>
+    
+    <!-- WebKit and JavaScript -->
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsArbitraryLoads</key>
+        <true/>
+    </dict>
+</dict>
+</plist>

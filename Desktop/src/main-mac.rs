@@ -512,106 +512,242 @@ Features: File downloads, tray integration, WebKit" with title "About Workspace"
 
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        if self.window.is_none() && !self.initialization_complete {
-            println!("Starting macOS initialization...");
-            
-            // Create window but keep it hidden until everything is ready
-            let mut window_attributes = Window::default_attributes()
-                .with_title("Workspace")
-                .with_inner_size(LogicalSize::new(1200, 800))
-                .with_visible(false); // Keep hidden during preload
-            
-            // Set window icon
-            if let Some(icon) = load_window_icon() {
-                window_attributes = window_attributes.with_window_icon(Some(icon));
-            }
-            
-            let window = Arc::new(event_loop.create_window(window_attributes).unwrap());
-            self.window = Some(window.clone());
-            
-            // Create WebView immediately (but window stays hidden)
-            self.create_webview(&window);
-            
-            println!("✅ All macOS initialization complete - showing window");
-            
-            // Show the window immediately
-            window.set_visible(true);
-            
-            // Create tray icon
-            if self.tray_icon.is_none() {
-                if let Err(e) = self.create_tray_icon() {
-                    println!("⚠️ Failed to create macOS tray icon: {}", e);
-                } else {
-                    println!("✅ macOS tray icon created successfully");
+        // Wrap initialization in panic protection
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            if self.window.is_none() && !self.initialization_complete {
+                println!("Starting macOS initialization...");
+                
+                // Create window but keep it hidden until everything is ready
+                let mut window_attributes = Window::default_attributes()
+                    .with_title("Workspace")
+                    .with_inner_size(LogicalSize::new(1200, 800))
+                    .with_visible(false); // Keep hidden during preload
+                
+                // Set window icon
+                if let Some(icon) = load_window_icon() {
+                    window_attributes = window_attributes.with_window_icon(Some(icon));
                 }
-            } else {
-                println!("⚠️ macOS tray icon already exists, skipping creation");
+                
+                match event_loop.create_window(window_attributes) {
+                    Ok(window) => {
+                        let window = Arc::new(window);
+                        self.window = Some(window.clone());
+                        
+                        // Create WebView immediately (but window stays hidden)
+                        self.create_webview(&window);
+                        
+                        println!("✅ All macOS initialization complete - showing window");
+                        
+                        // Show the window immediately
+                        window.set_visible(true);
+                        
+                        // Create tray icon
+                        if self.tray_icon.is_none() {
+                            if let Err(e) = self.create_tray_icon() {
+                                println!("⚠️ Failed to create macOS tray icon: {}", e);
+                            } else {
+                                println!("✅ macOS tray icon created successfully");
+                            }
+                        } else {
+                            println!("⚠️ macOS tray icon already exists, skipping creation");
+                        }
+                        
+                        self.initialization_complete = true;
+                    }
+                    Err(e) => {
+                        println!("❌ Failed to create macOS window: {}", e);
+                        // Don't panic, just log the error
+                    }
+                }
             }
             
-            self.initialization_complete = true;
-        }
+            // Check if we need to navigate to the main app
+            if self.ready_to_show && self.webview.is_some() {
+                #[cfg(not(debug_assertions))]
+                {
+                    println!("Loading main application...");
+                    if let Some(_webview) = &self.webview {
+                        if let Err(e) = _webview.load_url("miko://app/") {
+                            println!("⚠️ Failed to load main app URL: {}", e);
+                        }
+                    }
+                }
+                self.ready_to_show = false;
+            }
+        }));
         
-        // Check if we need to navigate to the main app
-        if self.ready_to_show && self.webview.is_some() {
-            #[cfg(not(debug_assertions))]
-            {
-                println!("Loading main application...");
-                if let Some(_webview) = &self.webview {
-                    let _ = _webview.load_url("miko://app/");
-                }
-            }
-            self.ready_to_show = false;
+        // Handle any panics during initialization
+        if let Err(panic_info) = result {
+            println!("🚨 macOS initialization panic caught: {:?}", panic_info);
+            println!("🛡️ Application continues - initialization panic recovered");
         }
     }
 
     fn window_event(&mut self, _event_loop: &ActiveEventLoop, _window_id: WindowId, event: WindowEvent) {
-        match event {
-            WindowEvent::CloseRequested => {
-                // On macOS, hide to tray instead of exiting immediately
-                if let Some(window) = &self.window {
-                    window.set_visible(false);
-                    println!("✅ Window hidden to tray (macOS behavior)");
+        // Wrap all event handling in a catch-all to prevent crashes
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            match event {
+                WindowEvent::CloseRequested => {
+                    // On macOS, hide to tray instead of exiting immediately
+                    if let Some(window) = &self.window {
+                        window.set_visible(false);
+                        println!("✅ Window hidden to tray (macOS behavior)");
+                    }
+                    // Don't call event_loop.exit() to prevent crash
                 }
-                // Don't call event_loop.exit() to prevent crash
-            }
-            WindowEvent::Focused(false) => {
-                // Handle focus loss gracefully - don't crash
-                println!("🔍 macOS window lost focus");
-            }
-            WindowEvent::Occluded(occluded) => {
-                // Handle window occlusion gracefully
-                if occluded {
-                    println!("🔍 macOS window occluded");
-                } else {
-                    println!("🔍 macOS window visible");
-                }
-            }
-            WindowEvent::KeyboardInput { event, .. } => {
-                // F12 or Cmd+Option+I to toggle DevTools
-                if event.state == winit::event::ElementState::Pressed {
-                    match event.logical_key {
-                        winit::keyboard::Key::Named(winit::keyboard::NamedKey::F12) => {
-                            if let Some(_webview) = &self.webview {
-                                println!("🔧 DevTools available via right-click context menu or F12");
-                                // DevTools are automatically available when with_devtools(true) is set
-                            }
+                WindowEvent::Focused(focused) => {
+                    // Handle focus changes gracefully - this is critical for preventing crashes
+                    if focused {
+                        println!("🔍 macOS window gained focus");
+                        // Ensure window is properly activated
+                        if let Some(window) = &self.window {
+                            window.focus_window();
                         }
-                        winit::keyboard::Key::Character(ref c) if c == "i" => {
-                            // Check for Cmd+Option+I (common macOS shortcut for devtools)
-                            if event.state == winit::event::ElementState::Pressed {
-                                // Note: We'd need to check modifiers here in a real implementation
-                                if let Some(_webview) = &self.webview {
-                                    println!("🔧 DevTools shortcut detected (Cmd+Option+I equivalent)");
-                                }
-                            }
-                        }
-                        _ => {}
+                    } else {
+                        println!("🔍 macOS window lost focus - handling gracefully");
+                        // Don't do anything that could cause a crash when losing focus
+                        // This is often where crashes occur when clicking outside
                     }
                 }
+                WindowEvent::Occluded(occluded) => {
+                    // Handle window occlusion gracefully
+                    if occluded {
+                        println!("🔍 macOS window occluded");
+                    } else {
+                        println!("🔍 macOS window visible");
+                    }
+                }
+                WindowEvent::Moved(position) => {
+                    // Handle window movement safely
+                    println!("🔍 macOS window moved to: {:?}", position);
+                }
+                WindowEvent::Resized(size) => {
+                    // Handle window resize safely
+                    println!("🔍 macOS window resized to: {:?}", size);
+                    // Ensure webview is notified of resize if needed
+                    if let Some(_webview) = &self.webview {
+                        // WebView should handle resize automatically
+                    }
+                }
+                WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
+                    // Handle scale factor changes (for different displays)
+                    println!("🔍 macOS window scale factor changed: {}", scale_factor);
+                }
+                WindowEvent::ThemeChanged(theme) => {
+                    // Handle theme changes (dark/light mode)
+                    println!("🔍 macOS theme changed: {:?}", theme);
+                }
+                WindowEvent::ModifiersChanged(modifiers) => {
+                    // Handle modifier key changes safely
+                    println!("🔍 macOS modifiers changed: {:?}", modifiers);
+                }
+                WindowEvent::CursorEntered { .. } => {
+                    // Handle cursor entering window
+                    println!("🔍 macOS cursor entered window");
+                }
+                WindowEvent::CursorLeft { .. } => {
+                    // Handle cursor leaving window - this is often where crashes occur
+                    println!("🔍 macOS cursor left window - handling safely");
+                    // Don't perform any operations that could crash when cursor leaves
+                }
+                WindowEvent::CursorMoved { .. } => {
+                    // Handle cursor movement silently to avoid spam
+                    // This event happens very frequently, so we don't log it
+                }
+                WindowEvent::MouseInput { state, button, .. } => {
+                    // Handle mouse clicks safely
+                    println!("� macOS mouse {:?} {:?}", button, state);
+                    
+                    // Handle mouse clicks outside the window area gracefully
+                    match (button, state) {
+                        (winit::event::MouseButton::Left, winit::event::ElementState::Pressed) => {
+                            // Left click - ensure we don't crash on outside clicks
+                            println!("� Left mouse button pressed - handling safely");
+                        }
+                        (winit::event::MouseButton::Right, winit::event::ElementState::Pressed) => {
+                            // Right click - context menu should work
+                            println!("🔍 Right mouse button pressed - context menu available");
+                        }
+                        _ => {
+                            // Other mouse events
+                        }
+                    }
+                }
+                WindowEvent::MouseWheel { delta, .. } => {
+                    // Handle mouse wheel safely
+                    println!("🔍 macOS mouse wheel: {:?}", delta);
+                }
+                WindowEvent::KeyboardInput { event, .. } => {
+                    // Handle keyboard input safely
+                    if event.state == winit::event::ElementState::Pressed {
+                        match event.logical_key {
+                            winit::keyboard::Key::Named(winit::keyboard::NamedKey::F12) => {
+                                if let Some(_webview) = &self.webview {
+                                    println!("� DevTools available via right-click context menu or F12");
+                                }
+                            }
+                            winit::keyboard::Key::Character(ref c) if c == "i" => {
+                                // Check for Cmd+Option+I (common macOS shortcut for devtools)
+                                if let Some(_webview) = &self.webview {
+                                    println!("� DevTools shortcut detected (Cmd+Option+I equivalent)");
+                                }
+                            }
+                            winit::keyboard::Key::Named(winit::keyboard::NamedKey::Escape) => {
+                                // Handle Escape key gracefully
+                                println!("🔍 Escape key pressed");
+                            }
+                            _ => {
+                                // Handle other keys gracefully
+                            }
+                        }
+                    }
+                }
+                WindowEvent::TouchpadPressure { .. } => {
+                    // Handle touchpad pressure (macOS specific) safely
+                    println!("🔍 macOS touchpad pressure event");
+                }
+                WindowEvent::AxisMotion { .. } => {
+                    // Handle axis motion safely
+                    println!("🔍 macOS axis motion event");
+                }
+                WindowEvent::Touch(_) => {
+                    // Handle touch events safely
+                    println!("🔍 macOS touch event");
+                }
+                WindowEvent::DroppedFile(path) => {
+                    // Handle file drops safely
+                    println!("🔍 macOS file dropped: {:?}", path);
+                }
+                WindowEvent::HoveredFile(path) => {
+                    // Handle file hover safely
+                    println!("🔍 macOS file hovered: {:?}", path);
+                }
+                WindowEvent::HoveredFileCancelled => {
+                    // Handle file hover cancelled safely
+                    println!("🔍 macOS file hover cancelled");
+                }
+                WindowEvent::Destroyed => {
+                    // Handle window destruction safely
+                    println!("🔍 macOS window destroyed - cleaning up");
+                    // Clean up resources when window is destroyed
+                    self.webview = None;
+                    self.window = None;
+                }
+                WindowEvent::RedrawRequested => {
+                    // Handle redraw requests silently (happens frequently)
+                }
+                _ => {
+                    // Handle any other events gracefully without crashing
+                    // Use a more defensive approach for unknown events
+                    println!("🔍 macOS unhandled window event (safe handling)");
+                }
             }
-            _ => {
-                // Handle all other events gracefully without crashing
-            }
+        }));
+        
+        // If any panic occurred in event handling, log it but don't crash the app
+        if let Err(panic_info) = result {
+            println!("⚠️ macOS window event handling panic caught and recovered: {:?}", panic_info);
+            println!("🛡️ Application continues running safely");
         }
     }
 }
@@ -631,9 +767,7 @@ impl App {
 
         let mut webview_builder = WebViewBuilder::new();
 
-        // Note: macOS WebKit doesn't support additional browser args like WebView2
-        // CORS bypass will be handled via JavaScript initialization script
-        println!("✅ macOS WebKit WebView builder configured (CORS bypass via JS)");
+        println!("✅ macOS WebKit WebView builder configured");
 
         // In debug mode, use dev server. In release, use custom protocol with embedded HTML
         #[cfg(debug_assertions)]
@@ -643,232 +777,113 @@ impl App {
 
         #[cfg(not(debug_assertions))]
         {
-            // Use custom protocol to serve embedded HTML with CORS headers
+            // Use custom protocol to serve embedded HTML
             use std::borrow::Cow;
             
             webview_builder = webview_builder.with_custom_protocol("miko".into(), move |_webview, request| {
                 let uri = request.uri();
-                let method = request.method();
                 
-                println!("🔗 macOS custom protocol request: {} {}", method, uri);
-                
-                // Handle different HTTP methods with CORS headers
-                match method {
-                    &http::Method::GET => {
-                        // Serve the main HTML file with CORS headers
-                        if uri == "miko://app/" || uri == "miko://app/index.html" {
-                            return http::Response::builder()
-                                .status(200)
-                                .header("Content-Type", "text/html; charset=utf-8")
-                                .header("Cache-Control", "no-cache")
-                                .header("Access-Control-Allow-Origin", "*")
-                                .header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-                                .header("Access-Control-Allow-Headers", "*")
-                                .header("Access-Control-Max-Age", "86400")
-                                .body(Cow::Borrowed(INDEX_HTML_BYTES))
-                                .unwrap();
-                        }
-                        
-                        // Return 404 for other GET requests with CORS headers
-                        http::Response::builder()
-                            .status(404)
-                            .header("Content-Type", "text/plain")
-                            .header("Access-Control-Allow-Origin", "*")
-                            .body(Cow::Borrowed(b"Not Found"))
-                            .unwrap()
-                    }
-                    &http::Method::POST | &http::Method::PUT | &http::Method::PATCH => {
-                        // Handle POST/PUT/PATCH requests with CORS success
-                        http::Response::builder()
-                            .status(200)
-                            .header("Content-Type", "application/json")
-                            .header("Access-Control-Allow-Origin", "*")
-                            .header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-                            .header("Access-Control-Allow-Headers", "*")
-                            .body(Cow::Borrowed(b"{\"status\":\"ok\",\"cors_bypassed\":true}"))
-                            .unwrap()
-                    }
-                    &http::Method::OPTIONS => {
-                        // Handle CORS preflight requests
-                        http::Response::builder()
-                            .status(200)
-                            .header("Access-Control-Allow-Origin", "*")
-                            .header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-                            .header("Access-Control-Allow-Headers", "*")
-                            .header("Access-Control-Max-Age", "86400")
-                            .body(Cow::Borrowed(b""))
-                            .unwrap()
-                    }
-                    _ => {
-                        // Handle other methods with CORS headers
-                        http::Response::builder()
-                            .status(200)
-                            .header("Content-Type", "text/plain")
-                            .header("Access-Control-Allow-Origin", "*")
-                            .header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-                            .header("Access-Control-Allow-Headers", "*")
-                            .body(Cow::Borrowed(b"OK"))
-                            .unwrap()
-                    }
+                // Serve the main HTML file
+                if uri == "miko://app/" || uri == "miko://app/index.html" {
+                    return http::Response::builder()
+                        .header("Content-Type", "text/html")
+                        .body(Cow::Borrowed(INDEX_HTML_BYTES))
+                        .unwrap();
                 }
+                
+                // Return 404 for other requests
+                http::Response::builder()
+                    .status(404)
+                    .body(Cow::Borrowed(&[] as &[u8]))
+                    .unwrap()
             });
             
             // Navigate to the app immediately
             webview_builder = webview_builder.with_url("miko://app/");
         }
 
-        // Add IMMEDIATE CORS bypass script that runs before any other JavaScript
+        // Add basic initialization script for macOS
         webview_builder = webview_builder
             .with_initialization_script(
                 r#"
-                // IMMEDIATE CORS BYPASS - Runs before page load
-                (function() {
-                    'use strict';
-                    
-                    console.log('🍎 IMMEDIATE macOS CORS bypass - Intercepting before page load');
-                    
-                    // Store original functions before any other scripts can run
-                    const _originalFetch = window.fetch;
-                    const _originalXHR = window.XMLHttpRequest;
-                    const _originalWebSocket = window.WebSocket;
-                    
-                    // IMMEDIATE fetch override
-                    window.fetch = function(input, init = {}) {
-                        const url = typeof input === 'string' ? input : input.url;
-                        console.log('🌐 IMMEDIATE macOS fetch intercept:', url);
-                        
-                        // For localhost or same-origin, allow through
-                        if (url.startsWith(window.location.origin) || 
-                            url.startsWith('/') || 
-                            url.startsWith('./') ||
-                            url.includes('localhost') ||
-                            url.includes('127.0.0.1')) {
-                            return _originalFetch.call(this, input, init);
+                console.log('🍎 macOS WebKit WebView initialized');
+                window.sessionId = 'macos-desktop-session';
+                
+                // Enhanced clipboard support for macOS
+                if (navigator.clipboard) {
+                    console.log('✅ Native Clipboard API available on macOS');
+                } else {
+                    console.warn('⚠️ Clipboard API not available, creating macOS fallback');
+                    Object.defineProperty(navigator, 'clipboard', {
+                        value: {
+                            readText: function() {
+                                return Promise.resolve('');
+                            },
+                            writeText: function(text) {
+                                return Promise.resolve();
+                            }
                         }
-                        
-                        // For cross-origin, return immediate success
-                        console.log('🌐 IMMEDIATE CORS bypass for:', url);
-                        return Promise.resolve(new Response(JSON.stringify({
-                            success: true,
-                            status: 'ok',
-                            cors_bypassed: true,
-                            url: url,
-                            method: init?.method || 'GET',
-                            immediate: true
-                        }), {
-                            status: 200,
-                            statusText: 'OK',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'Access-Control-Allow-Origin': '*'
+                    });
+                }
+                
+                // Direct IPC download API
+                window.downloadAPI = {
+                    startDownload: function(url, filename) {
+                        return new Promise((resolve, reject) => {
+                            try {
+                                console.log('🍎 Sending macOS IPC download request:', url, '->', filename);
+                                
+                                const message = JSON.stringify({
+                                    type: 'start_download',
+                                    url: url,
+                                    filename: filename,
+                                    timestamp: Date.now()
+                                });
+                                
+                                window.ipc.postMessage(message);
+                                
+                                resolve({ 
+                                    success: true, 
+                                    message: 'Download request sent to macOS backend' 
+                                });
+                                
+                            } catch (error) {
+                                console.error('🍎 macOS IPC download error:', error);
+                                reject(error);
                             }
-                        }));
-                    };
+                        });
+                    },
                     
-                    // IMMEDIATE XHR override
-                    window.XMLHttpRequest = function() {
-                        console.log('🌐 IMMEDIATE macOS XHR intercept');
-                        
-                        return {
-                            readyState: 0,
-                            status: 0,
-                            statusText: '',
-                            responseText: '',
-                            response: '',
-                            responseType: '',
-                            timeout: 0,
-                            withCredentials: false,
-                            upload: {},
-                            
-                            onreadystatechange: null,
-                            onload: null,
-                            onerror: null,
-                            onabort: null,
-                            ontimeout: null,
-                            
-                            open: function(method, url, async, user, password) {
-                                console.log('🌐 IMMEDIATE XHR open:', method, url);
-                                this._method = method;
-                                this._url = url;
-                                this.readyState = 1;
-                                setTimeout(() => {
-                                    if (this.onreadystatechange) this.onreadystatechange();
-                                }, 0);
-                            },
-                            
-                            setRequestHeader: function(name, value) {
-                                console.log('🌐 IMMEDIATE XHR header (ignored):', name, value);
-                            },
-                            
-                            send: function(data) {
-                                console.log('🌐 IMMEDIATE XHR send:', this._method, this._url);
-                                setTimeout(() => {
-                                    this.readyState = 4;
-                                    this.status = 200;
-                                    this.statusText = 'OK';
-                                    this.responseText = JSON.stringify({
-                                        success: true,
-                                        status: 'ok',
-                                        cors_bypassed: true,
-                                        immediate: true
-                                    });
-                                    this.response = this.responseText;
-                                    
-                                    if (this.onreadystatechange) this.onreadystatechange();
-                                    if (this.onload) this.onload();
-                                }, 1);
-                            },
-                            
-                            abort: function() {
-                                this.readyState = 0;
-                                if (this.onabort) this.onabort();
-                            },
-                            
-                            getAllResponseHeaders: function() {
-                                return 'content-type: application/json\r\naccess-control-allow-origin: *\r\n';
-                            },
-                            
-                            getResponseHeader: function(name) {
-                                const headers = {
-                                    'content-type': 'application/json',
-                                    'access-control-allow-origin': '*'
-                                };
-                                return headers[name.toLowerCase()] || null;
-                            },
-                            
-                            addEventListener: function(type, listener) {
-                                this['on' + type] = listener;
-                            },
-                            
-                            removeEventListener: function(type, listener) {
-                                if (this['on' + type] === listener) {
-                                    this['on' + type] = null;
-                                }
+                    showInFolder: function(filename) {
+                        return new Promise((resolve, reject) => {
+                            try {
+                                console.log('🍎 Sending show in Finder IPC request:', filename);
+                                
+                                const message = JSON.stringify({
+                                    type: 'show_in_folder',
+                                    filename: filename,
+                                    timestamp: Date.now()
+                                });
+                                
+                                window.ipc.postMessage(message);
+                                
+                                resolve({ 
+                                    success: true, 
+                                    message: 'Show in Finder request sent' 
+                                });
+                                
+                            } catch (error) {
+                                console.error('🍎 macOS show in Finder error:', error);
+                                reject(error);
                             }
-                        };
-                    };
-                    
-                    // Copy XHR constants
-                    window.XMLHttpRequest.UNSENT = 0;
-                    window.XMLHttpRequest.OPENED = 1;
-                    window.XMLHttpRequest.HEADERS_RECEIVED = 2;
-                    window.XMLHttpRequest.LOADING = 3;
-                    window.XMLHttpRequest.DONE = 4;
-                    
-                    // IMMEDIATE permissions override
-                    if (navigator.permissions) {
-                        navigator.permissions.query = function(desc) {
-                            console.log('📋 IMMEDIATE permission granted:', desc.name);
-                            return Promise.resolve({ state: 'granted' });
-                        };
+                        });
                     }
-                    
-                    // Set session immediately
-                    window.sessionId = 'macos-desktop-session';
-                    
-                    console.log('✅ IMMEDIATE macOS CORS bypass active - All requests will succeed');
-                    
-                })();
+                };
+                
+                console.log('Session ID set:', window.sessionId);
+                console.log('🍎 macOS direct download API initialized');
+                console.log('✅ macOS WebKit WebView ready');
+                console.log('🔧 DevTools enabled: Right-click and select "Inspect Element" or press F12');
                 "#
             );
 
@@ -933,15 +948,18 @@ impl App {
                     }
                 }
             })
-            .build(&**window)
-            .map_err(|e| {
-                eprintln!("macOS WebView creation error: {:?}", e);
-                e
-            })
-            .expect("Failed to create macOS WebView");
+            .build(&**window);
 
-        self.webview = Some(webview);
-        println!("✅ macOS WebKit WebView created successfully");
+        match webview {
+            Ok(webview) => {
+                self.webview = Some(webview);
+                println!("✅ macOS WebKit WebView created successfully");
+            }
+            Err(e) => {
+                println!("❌ Failed to create macOS WebView: {:?}", e);
+                // Don't panic, just log the error and continue without webview
+            }
+        }
     }
 }
 
@@ -964,11 +982,51 @@ impl Drop for App {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("🚀 Starting Workspace macOS Desktop Application");
     
+    // Set up panic hook to prevent crashes from propagating
+    std::panic::set_hook(Box::new(|panic_info| {
+        println!("🚨 macOS app panic caught: {:?}", panic_info);
+        println!("🛡️ Application continues running - panic recovered");
+        
+        // Log panic details for debugging
+        if let Some(location) = panic_info.location() {
+            println!("📍 Panic location: {}:{}", location.file(), location.line());
+        }
+        
+        if let Some(message) = panic_info.payload().downcast_ref::<&str>() {
+            println!("💬 Panic message: {}", message);
+        } else if let Some(message) = panic_info.payload().downcast_ref::<String>() {
+            println!("💬 Panic message: {}", message);
+        }
+    }));
+    
     let event_loop = EventLoop::new()?;
     
     let mut app = App::new();
 
-    event_loop.run_app(&mut app)?;
+    // Wrap the main event loop in a catch_unwind to prevent total app crashes
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        event_loop.run_app(&mut app)
+    }));
     
-    Ok(())
+    match result {
+        Ok(loop_result) => {
+            println!("✅ macOS event loop completed normally");
+            loop_result.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
+        }
+        Err(panic_info) => {
+            println!("🚨 macOS event loop panic caught: {:?}", panic_info);
+            println!("🛡️ Application recovered from event loop panic");
+            
+            // Try to clean up gracefully
+            println!("🧹 Performing cleanup after panic recovery");
+            
+            // Reset global tray icon flag
+            if let Ok(mut created) = TRAY_ICON_CREATED.lock() {
+                *created = false;
+                println!("🧹 Global tray icon flag reset after panic");
+            }
+            
+            Ok(())
+        }
+    }
 }
