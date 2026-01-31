@@ -27,6 +27,13 @@ export default function Toast({ id, message, type = 'info', onDismiss, duration 
     warning: 'bg-warning-container',
   }[type];
 
+  const borderColor = {
+      success: 'border-primary',
+      error: 'border-error',
+      info: 'border-surface-container-high',
+      warning: 'border-warning-container',
+    }[type];
+
   const textColor = {
     success: 'text-on-primary',
     error: 'text-on-error',
@@ -51,6 +58,7 @@ export default function Toast({ id, message, type = 'info', onDismiss, duration 
       className={clsx(
         "flex items-center gap-2 px-4 py-2 rounded-full shadow-lg pointer-events-auto max-w-xs",
         backgroundColor,
+        borderColor,
         textColor
       )}
     >

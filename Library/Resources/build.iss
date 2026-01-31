@@ -7,7 +7,7 @@
 #define MyAppPublisher "Miko Technologies"
 #define MyAppURL "https://miko.app"
 #define MyAppExeName "mikochat.exe"
-#define MyAppProxyName "mikoproxy.exe"
+#define MyAppDownloaderName "downloaderservice.exe"
 
 [Setup]
 ; NOTE: The value of AppId uniquely identifies this application. Do not use the same AppId value in installers for other applications.

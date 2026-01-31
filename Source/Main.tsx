@@ -402,9 +402,7 @@ const ChatLayout = ({ state, dispatch, onLogout, wsConnected }: { state: AppStat
       });
       
       if (result.success && result.data) {
-        // Add the new message to the local state
-        dispatch({ type: 'SET_MESSAGES', payload: [...messages, result.data] });
-        
+        // Don't add to local state here - let WebSocket handle it to avoid duplicates
         console.log('Message sent successfully:', result.message);
         
         // Show success toast
@@ -435,14 +433,7 @@ const ChatLayout = ({ state, dispatch, onLogout, wsConnected }: { state: AppStat
       });
       
       if (result.success && result.data) {
-        // Update the message in the local state
-        dispatch({ 
-          type: 'SET_MESSAGES', 
-          payload: messages.map(msg => 
-            msg.messageId === messageId ? result.data! : msg
-          )
-        });
-        
+        // Don't update local state here - let WebSocket handle it to avoid duplicates
         console.log('Message edited successfully:', result.message);
         
         // Show success toast
@@ -505,12 +496,7 @@ const ChatLayout = ({ state, dispatch, onLogout, wsConnected }: { state: AppStat
       const result = await deleteMessage(messageId);
       
       if (result.success) {
-        // Remove the message from the local state
-        dispatch({ 
-          type: 'SET_MESSAGES', 
-          payload: messages.filter(msg => msg.messageId !== messageId)
-        });
-        
+        // Don't update local state here - let WebSocket handle it to avoid duplicates
         console.log('Message deleted successfully:', result.message);
         
         // Show success toast
@@ -803,14 +789,20 @@ export default function Main() {
           
           // Handle real-time chat messages
           if (data.data?.message && data.data?.chatUuid) {
-            console.log('💬 Adding message to chat via WebSocket');
-            dispatch({ 
-              type: 'ADD_MESSAGE', 
-              payload: { 
-                message: data.data.message, 
-                chatUuid: data.data.chatUuid 
-              } 
-            });
+            // Check if message already exists to prevent duplicates
+            const messageExists = state.messages.some(msg => msg.messageId === data.data.message.messageId);
+            if (!messageExists) {
+              console.log('💬 Adding new message to chat via WebSocket');
+              dispatch({ 
+                type: 'ADD_MESSAGE', 
+                payload: { 
+                  message: data.data.message, 
+                  chatUuid: data.data.chatUuid 
+                } 
+              });
+            } else {
+              console.log('💬 Message already exists, skipping duplicate:', data.data.message.messageId);
+            }
           } else {
             console.warn('💬 WebSocket chat_message missing required data:', {
               hasMessage: !!data.data?.message,
