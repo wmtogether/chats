@@ -1,129 +1,166 @@
 #!/bin/bash
+#
+# macOS App Bundle Creation Script (Workspace-safe)
+# Usage:
+#   ./create-macos-bundle.sh [target]
+# Example:
+#   ./create-macos-bundle.sh aarch64-apple-darwin
+#
 
-# macOS App Bundle Creation Script
-# Usage: ./create-macos-bundle.sh [target]
-# Example: ./create-macos-bundle.sh aarch64-apple-darwin
+set -euo pipefail
 
-set -e
+# -------------------------------
+# Resolve paths safely
+# -------------------------------
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-TARGET=${1:-"aarch64-apple-darwin"}
+# -------------------------------
+# Config
+# -------------------------------
+TARGET="${1:-aarch64-apple-darwin}"
+
 APP_NAME="MikoWorkspace"
-BUNDLE_NAME="${APP_NAME}.app"
-BUNDLE_PATH="target/${TARGET}/release/${BUNDLE_NAME}"
+EXECUTABLE_NAME="mikochat"
+SERVICE_NAME="downloaderservice"
 
-echo "🍎 Creating macOS app bundle for target: ${TARGET}"
+TARGET_DIR="${ROOT_DIR}/target/${TARGET}/release"
+BUNDLE_PATH="${TARGET_DIR}/${APP_NAME}.app"
 
-# Clean up any existing bundle
-if [ -d "${BUNDLE_PATH}" ]; then
-    echo "🧹 Removing existing bundle..."
-    rm -rf "${BUNDLE_PATH}"
+INFO_PLIST_SRC="${SCRIPT_DIR}/Info.plist"
+ICON_ICNS="${ROOT_DIR}/Library/Shared/Icons/icon.icns"
+ICON_PNG="${ROOT_DIR}/Library/Shared/Icons/icon.png"
+
+echo "🍎 Creating macOS app bundle"
+echo "   Target       : ${TARGET}"
+echo "   Root dir     : ${ROOT_DIR}"
+echo "   Target dir   : ${TARGET_DIR}"
+echo "   Bundle path  : ${BUNDLE_PATH}"
+echo
+
+# -------------------------------
+# Validate binaries
+# -------------------------------
+MIKO_BIN="${TARGET_DIR}/${EXECUTABLE_NAME}"
+DL_BIN="${TARGET_DIR}/${SERVICE_NAME}"
+
+if [[ ! -f "${MIKO_BIN}" ]]; then
+  echo "❌ mikochat binary not found: ${MIKO_BIN}"
+  exit 1
 fi
 
-# Create bundle directory structure
-echo "📁 Creating bundle structure..."
+if [[ ! -f "${DL_BIN}" ]]; then
+  echo "❌ downloaderservice binary not found: ${DL_BIN}"
+  exit 1
+fi
+
+echo "✅ Binaries found"
+
+# -------------------------------
+# Clean existing bundle
+# -------------------------------
+if [[ -d "${BUNDLE_PATH}" ]]; then
+  echo "🧹 Removing existing bundle"
+  rm -rf "${BUNDLE_PATH}"
+fi
+
+# -------------------------------
+# Create bundle structure
+# -------------------------------
+echo "📁 Creating bundle structure"
 mkdir -p "${BUNDLE_PATH}/Contents/MacOS"
 mkdir -p "${BUNDLE_PATH}/Contents/Resources"
 
+# -------------------------------
 # Copy binaries
-echo "📦 Copying binaries..."
-if [ -f "target/${TARGET}/release/mikochat" ]; then
-    cp "target/${TARGET}/release/mikochat" "${BUNDLE_PATH}/Contents/MacOS/"
-    chmod +x "${BUNDLE_PATH}/Contents/MacOS/mikochat"
-    echo "✅ mikochat binary copied"
-else
-    echo "❌ mikochat binary not found at target/${TARGET}/release/mikochat"
-    exit 1
-fi
+# -------------------------------
+echo "📦 Copying binaries"
+cp "${MIKO_BIN}" "${BUNDLE_PATH}/Contents/MacOS/"
+cp "${DL_BIN}" "${BUNDLE_PATH}/Contents/MacOS/"
 
-if [ -f "target/${TARGET}/release/downloaderservice" ]; then
-    cp "target/${TARGET}/release/downloaderservice" "${BUNDLE_PATH}/Contents/MacOS/"
-    chmod +x "${BUNDLE_PATH}/Contents/MacOS/downloaderservice"
-    echo "✅ downloaderservice binary copied"
-else
-    echo "❌ downloaderservice binary not found at target/${TARGET}/release/downloaderservice"
-    exit 1
-fi
+chmod +x \
+  "${BUNDLE_PATH}/Contents/MacOS/${EXECUTABLE_NAME}" \
+  "${BUNDLE_PATH}/Contents/MacOS/${SERVICE_NAME}"
 
-# Copy Info.plist
-echo "📄 Copying Info.plist..."
-if [ -f "Info.plist" ]; then
-    cp "Info.plist" "${BUNDLE_PATH}/Contents/"
-    echo "✅ Info.plist copied"
+# -------------------------------
+# Info.plist
+# -------------------------------
+echo "📄 Handling Info.plist"
+if [[ -f "${INFO_PLIST_SRC}" ]]; then
+  cp "${INFO_PLIST_SRC}" "${BUNDLE_PATH}/Contents/Info.plist"
+  echo "✅ Info.plist copied"
 else
-    echo "⚠️ Info.plist not found, creating default..."
-    cat > "${BUNDLE_PATH}/Contents/Info.plist" << EOF
+  echo "⚠️ Info.plist not found, generating default"
+  cat > "${BUNDLE_PATH}/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+ "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleDevelopmentRegion</key>
-    <string>en</string>
-    <key>CFBundleDisplayName</key>
-    <string>Miko Workspace</string>
-    <key>CFBundleExecutable</key>
-    <string>mikochat</string>
-    <key>CFBundleIconFile</key>
-    <string>icon</string>
-    <key>CFBundleIdentifier</key>
-    <string>com.miko.workspace</string>
-    <key>CFBundleInfoDictionaryVersion</key>
-    <string>6.0</string>
-    <key>CFBundleName</key>
-    <string>MikoWorkspace</string>
-    <key>CFBundlePackageType</key>
-    <string>APPL</string>
-    <key>CFBundleShortVersionString</key>
-    <string>0.1.0</string>
-    <key>CFBundleVersion</key>
-    <string>1</string>
-    <key>LSMinimumSystemVersion</key>
-    <string>10.15</string>
-    <key>NSHighResolutionCapable</key>
-    <true/>
-    <key>NSSupportsAutomaticGraphicsSwitching</key>
-    <true/>
+  <key>CFBundleName</key>
+  <string>${APP_NAME}</string>
+  <key>CFBundleDisplayName</key>
+  <string>Miko Workspace</string>
+  <key>CFBundleIdentifier</key>
+  <string>com.miko.workspace</string>
+  <key>CFBundleExecutable</key>
+  <string>${EXECUTABLE_NAME}</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleVersion</key>
+  <string>1</string>
+  <key>CFBundleShortVersionString</key>
+  <string>0.1.0</string>
+  <key>LSMinimumSystemVersion</key>
+  <string>10.15</string>
+  <key>NSHighResolutionCapable</key>
+  <true/>
 </dict>
 </plist>
 EOF
-    echo "✅ Default Info.plist created"
 fi
 
-# Copy icon if available
-echo "🎨 Copying icon..."
-if [ -f "../Library/Shared/Icons/icon.icns" ]; then
-    cp "../Library/Shared/Icons/icon.icns" "${BUNDLE_PATH}/Contents/Resources/"
-    echo "✅ Icon copied"
-elif [ -f "../Library/Shared/Icons/icon.png" ]; then
-    # Convert PNG to ICNS if needed (requires iconutil)
-    if command -v iconutil &> /dev/null; then
-        echo "🔄 Converting PNG to ICNS..."
-        mkdir -p "icon.iconset"
-        cp "../Library/Shared/Icons/icon.png" "icon.iconset/icon_512x512.png"
-        iconutil -c icns "icon.iconset" -o "${BUNDLE_PATH}/Contents/Resources/icon.icns"
-        rm -rf "icon.iconset"
-        echo "✅ Icon converted and copied"
-    else
-        echo "⚠️ iconutil not available, copying PNG as fallback"
-        cp "../Library/Shared/Icons/icon.png" "${BUNDLE_PATH}/Contents/Resources/"
-    fi
+# -------------------------------
+# Icon
+# -------------------------------
+echo "🎨 Handling icon"
+if [[ -f "${ICON_ICNS}" ]]; then
+  cp "${ICON_ICNS}" "${BUNDLE_PATH}/Contents/Resources/icon.icns"
+  echo "✅ icon.icns copied"
+elif [[ -f "${ICON_PNG}" ]] && command -v iconutil &>/dev/null; then
+  echo "🔄 Converting PNG → ICNS"
+  TMP_ICONSET="$(mktemp -d)"
+  mkdir -p "${TMP_ICONSET}/icon.iconset"
+  cp "${ICON_PNG}" "${TMP_ICONSET}/icon.iconset/icon_512x512.png"
+  iconutil -c icns "${TMP_ICONSET}/icon.iconset" \
+    -o "${BUNDLE_PATH}/Contents/Resources/icon.icns"
+  rm -rf "${TMP_ICONSET}"
 else
-    echo "⚠️ No icon found, bundle will use default icon"
+  echo "⚠️ No icon available, using default"
 fi
 
-# Set proper permissions
-echo "🔐 Setting permissions..."
+# -------------------------------
+# Permissions
+# -------------------------------
+echo "🔐 Setting permissions"
 chmod -R 755 "${BUNDLE_PATH}"
-chmod +x "${BUNDLE_PATH}/Contents/MacOS/"*
 
-# Verify bundle structure
-echo "🔍 Verifying bundle structure..."
-if [ -d "${BUNDLE_PATH}" ] && [ -f "${BUNDLE_PATH}/Contents/Info.plist" ] && [ -f "${BUNDLE_PATH}/Contents/MacOS/mikochat" ]; then
-    echo "✅ macOS app bundle created successfully at: ${BUNDLE_PATH}"
-    echo "📊 Bundle contents:"
-    find "${BUNDLE_PATH}" -type f | sort
+# -------------------------------
+# Verify bundle
+# -------------------------------
+echo "🔍 Verifying bundle"
+if [[
+  -f "${BUNDLE_PATH}/Contents/Info.plist" &&
+  -f "${BUNDLE_PATH}/Contents/MacOS/${EXECUTABLE_NAME}"
+]]; then
+  echo "✅ macOS app bundle created successfully"
+  echo
+  echo "📦 Bundle contents:"
+  find "${BUNDLE_PATH}" -type f | sed "s|${ROOT_DIR}/||"
 else
-    echo "❌ Bundle creation failed"
-    exit 1
+  echo "❌ Bundle verification failed"
+  exit 1
 fi
 
-echo "🎉 macOS app bundle creation completed!"
+echo
+echo "🎉 Done!"
