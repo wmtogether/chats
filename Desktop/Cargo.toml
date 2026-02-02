@@ -8,13 +8,8 @@ name = "mikochat"
 path = "src/main.rs"
 
 [[bin]]
-name = "mikochat-mac"
-path = "src/main-mac.rs"
-
-[[bin]]
 name = "downloaderservice"
 path = "service/downloader/main.rs"
-
 
 [profile.release]
 opt-level = 3
@@ -25,6 +20,9 @@ strip = true
 
 [profile.dev]
 opt-level = 1
+
+[features]
+default = []
 
 [dependencies]
 wry = "0.53"

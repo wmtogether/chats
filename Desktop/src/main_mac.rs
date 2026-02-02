@@ -979,7 +979,7 @@ impl Drop for App {
     }
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("🚀 Starting Workspace macOS Desktop Application");
     
     // Set up panic hook to prevent crashes from propagating

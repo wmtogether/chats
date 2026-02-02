@@ -1,60 +1,67 @@
-
+use redis::{Client, Connection, Commands};
 use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicBool, Ordering};
+use lazy_static::lazy_static;
 
-// Redis connection URL - matching frontend
-const REDIS_URL: &str = "redis://10.10.60.8:6379";
-
-
-
-
-
-pub struct RedisManager {
-    is_connected: Arc<AtomicBool>,
+lazy_static! {
+    static ref REDIS_CLIENT: Arc<Mutex<Option<Client>>> = Arc::new(Mutex::new(None));
+    static ref REDIS_CONNECTION: Arc<Mutex<Option<Connection>>> = Arc::new(Mutex::new(None));
 }
 
-impl RedisManager {
-    pub fn new() -> Self {
-        Self {
-            is_connected: Arc::new(AtomicBool::new(false)),
-        }
-    }
+pub fn init_redis() -> Result<(), Box<dyn std::error::Error>> {
+    let client = Client::open("redis://127.0.0.1:6379/")?;
+    
+    let mut redis_client = REDIS_CLIENT.lock().unwrap();
+    *redis_client = Some(client);
+    
+    println!("✅ Redis client initialized");
+    Ok(())
+}
 
-    /// Connect to Redis (simplified implementation)
-    pub fn connect(&mut self) -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        println!("🔌 Connecting to Redis at: {}", REDIS_URL);
+pub fn connect_redis() -> Result<(), Box<dyn std::error::Error>> {
+    let redis_client = REDIS_CLIENT.lock().unwrap();
+    
+    if let Some(ref client) = *redis_client {
+        let conn = client.get_connection()?;
         
-        // Simulate connection
-        std::thread::sleep(std::time::Duration::from_millis(100));
+        let mut redis_connection = REDIS_CONNECTION.lock().unwrap();
+        *redis_connection = Some(conn);
         
-        self.is_connected.store(true, Ordering::Relaxed);
-        println!("✅ Redis connected successfully");
+        println!("✅ Connected to Redis server");
         Ok(())
-    }
-
-
-}
-
-// Global Redis manager instance
-static mut REDIS_MANAGER: Option<Arc<Mutex<RedisManager>>> = None;
-
-/// Initialize the global Redis manager
-pub fn init_redis() -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    unsafe {
-        let manager = RedisManager::new();
-        REDIS_MANAGER = Some(Arc::new(Mutex::new(manager)));
-        Ok(())
+    } else {
+        Err("Redis client not initialized".into())
     }
 }
 
-/// Connect to Redis (synchronous version to avoid async issues)
-pub fn connect_redis() -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    unsafe {
-        if let Some(ref manager) = REDIS_MANAGER {
-            let mut manager = manager.lock().unwrap();
-            manager.connect()
-        } else {
-            Err("Redis manager not initialized".into())
-        }
+pub fn redis_set(key: &str, value: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let mut redis_connection = REDIS_CONNECTION.lock().unwrap();
+    
+    if let Some(ref mut conn) = *redis_connection {
+        let _: () = conn.set(key, value)?;
+        Ok(())
+    } else {
+        Err("Redis connection not established".into())
+    }
+}
+
+pub fn redis_get(key: &str) -> Result<String, Box<dyn std::error::Error>> {
+    let mut redis_connection = REDIS_CONNECTION.lock().unwrap();
+    
+    if let Some(ref mut conn) = *redis_connection {
+        let value: String = conn.get(key)?;
+        Ok(value)
+    } else {
+        Err("Redis connection not established".into())
+    }
+}
+
+pub fn redis_publish(channel: &str, message: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let mut redis_connection = REDIS_CONNECTION.lock().unwrap();
+    
+    if let Some(ref mut conn) = *redis_connection {
+        let _: i32 = conn.publish(channel, message)?;
+        Ok(())
+    } else {
+        Err("Redis connection not established".into())
     }
 }

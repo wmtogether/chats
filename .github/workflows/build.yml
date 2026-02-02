@@ -11,8 +11,8 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
-    name: Build Application
+  build-windows:
+    name: Build Windows Application
     runs-on: windows-latest
     
     steps:
@@ -62,8 +62,8 @@ jobs:
           Write-Error "mikochat.exe not found in Distribution\Package" 
           exit 1 
         }
-        if (!(Test-Path "Distribution\Package\mikoproxy.exe")) { 
-          Write-Error "mikoproxy.exe not found in Distribution\Package" 
+        if (!(Test-Path "Distribution\Package\downloaderservice.exe")) { 
+          Write-Error "downloaderservice.exe not found in Distribution\Package" 
           exit 1 
         }
         if (!(Test-Path "Distribution\Package\msedgewebview2.exe")) { 
@@ -76,16 +76,96 @@ jobs:
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: miko-workspace-build
+        name: miko-workspace-windows-build
         path: |
           Distribution/Package/
           !Distribution/Package/**/*.pdb
         retention-days: 30
 
+  build-macos:
+    name: Build macOS Application
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        target: [x86_64-apple-darwin, aarch64-apple-darwin]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
+        targets: ${{ matrix.target }}
+        
+    - name: Cache Rust dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/bin/
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+          target/
+        key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-${{ matrix.target }}-cargo-
+          ${{ runner.os }}-cargo-
+          
+    - name: Setup Bun
+      uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: latest
+        
+    - name: Cache Bun dependencies
+      uses: actions/cache@v4
+      with:
+        path: ~/.bun/install/cache
+        key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-bun-
+          
+    - name: Install Node.js dependencies
+      run: bun install
+      
+    - name: Build Rust components for macOS
+      run: |
+        cd Desktop
+        cargo build --release --target ${{ matrix.target }}
+      
+    - name: Create macOS app bundle
+      run: |
+        cd Desktop
+        chmod +x create-macos-bundle.sh
+        ./create-macos-bundle.sh ${{ matrix.target }}
+      
+    - name: Verify macOS build artifacts
+      run: |
+        if [ ! -f "Desktop/target/${{ matrix.target }}/release/mikochat" ]; then
+          echo "❌ mikochat binary not found"
+          exit 1
+        fi
+        if [ ! -f "Desktop/target/${{ matrix.target }}/release/downloaderservice" ]; then
+          echo "❌ downloaderservice binary not found"
+          exit 1
+        fi
+        echo "✅ All macOS build artifacts verified successfully"
+      
+    - name: Upload macOS build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: miko-workspace-macos-${{ matrix.target }}-build
+        path: |
+          Desktop/target/${{ matrix.target }}/release/mikochat
+          Desktop/target/${{ matrix.target }}/release/downloaderservice
+          Desktop/MikoWorkspace.app/
+        retention-days: 30
+
   build-installer:
-    name: Build Installer
+    name: Build Windows Installer
     runs-on: windows-latest
-    needs: build
+    needs: build-windows
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
     
     steps:
@@ -158,33 +238,138 @@ jobs:
     - name: Upload installer
       uses: actions/upload-artifact@v4
       with:
-        name: miko-workspace-installer
+        name: miko-workspace-windows-installer
         path: Distribution/MikoWorkspaceSetup.exe
+        retention-days: 90
+
+  build-macos-dmg:
+    name: Build macOS DMG
+    runs-on: macos-latest
+    needs: build-macos
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Download macOS ARM64 artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: miko-workspace-macos-aarch64-apple-darwin-build
+        path: ./macos-arm64/
+        
+    - name: Download macOS x64 artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: miko-workspace-macos-x86_64-apple-darwin-build
+        path: ./macos-x64/
+        
+    - name: Create Universal Binary
+      run: |
+        mkdir -p ./universal/
+        
+        # Create universal binary for mikochat
+        lipo -create \
+          ./macos-arm64/mikochat \
+          ./macos-x64/mikochat \
+          -output ./universal/mikochat
+          
+        # Create universal binary for downloaderservice
+        lipo -create \
+          ./macos-arm64/downloaderservice \
+          ./macos-x64/downloaderservice \
+          -output ./universal/downloaderservice
+          
+        # Verify universal binaries
+        lipo -info ./universal/mikochat
+        lipo -info ./universal/downloaderservice
+        
+    - name: Create macOS App Bundle
+      run: |
+        # Create app bundle structure
+        mkdir -p "MikoWorkspace.app/Contents/MacOS"
+        mkdir -p "MikoWorkspace.app/Contents/Resources"
+        
+        # Copy universal binaries
+        cp ./universal/mikochat "MikoWorkspace.app/Contents/MacOS/"
+        cp ./universal/downloaderservice "MikoWorkspace.app/Contents/MacOS/"
+        
+        # Copy Info.plist
+        cp Desktop/Info.plist "MikoWorkspace.app/Contents/"
+        
+        # Copy icon if it exists
+        if [ -f "Library/Shared/Icons/icon.icns" ]; then
+          cp "Library/Shared/Icons/icon.icns" "MikoWorkspace.app/Contents/Resources/"
+        fi
+        
+        # Make binaries executable
+        chmod +x "MikoWorkspace.app/Contents/MacOS/mikochat"
+        chmod +x "MikoWorkspace.app/Contents/MacOS/downloaderservice"
+        
+    - name: Create DMG
+      run: |
+        # Install create-dmg if not available
+        if ! command -v create-dmg &> /dev/null; then
+          brew install create-dmg
+        fi
+        
+        # Create DMG
+        create-dmg \
+          --volname "Miko Workspace" \
+          --volicon "Library/Shared/Icons/icon.icns" \
+          --window-pos 200 120 \
+          --window-size 800 400 \
+          --icon-size 100 \
+          --icon "MikoWorkspace.app" 200 190 \
+          --hide-extension "MikoWorkspace.app" \
+          --app-drop-link 600 185 \
+          "MikoWorkspace.dmg" \
+          "MikoWorkspace.app"
+          
+    - name: Verify DMG
+      run: |
+        if [ ! -f "MikoWorkspace.dmg" ]; then
+          echo "❌ DMG not found"
+          exit 1
+        fi
+        ls -la MikoWorkspace.dmg
+        echo "✅ DMG created successfully"
+        
+    - name: Upload DMG
+      uses: actions/upload-artifact@v4
+      with:
+        name: miko-workspace-macos-dmg
+        path: MikoWorkspace.dmg
         retention-days: 90
 
   release:
     name: Create Release
-    runs-on: windows-latest
-    needs: [build, build-installer]
+    runs-on: ubuntu-latest
+    needs: [build-windows, build-macos, build-installer, build-macos-dmg]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
       
-    - name: Download installer artifact
+    - name: Download Windows installer artifact
       uses: actions/download-artifact@v4
       with:
-        name: miko-workspace-installer
+        name: miko-workspace-windows-installer
+        path: ./release/
+        
+    - name: Download macOS DMG artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: miko-workspace-macos-dmg
         path: ./release/
         
     - name: Get version from Cargo.toml
       id: version
       run: |
-        $version = (Select-String -Path "Desktop\Cargo.toml" -Pattern 'version = "(.+)"').Matches[0].Groups[1].Value
-        echo "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-        echo "tag=v$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-      shell: powershell
+        version=$(grep '^version = ' Desktop/Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+        echo "version=$version" >> $GITHUB_OUTPUT
+        echo "tag=v$version" >> $GITHUB_OUTPUT
       
     - name: Create Release
       uses: softprops/action-gh-release@v2
@@ -195,23 +380,37 @@ jobs:
         prerelease: false
         files: |
           ./release/MikoWorkspaceSetup.exe
+          ./release/MikoWorkspace.dmg
         body: |
           ## Miko Workspace ${{ steps.version.outputs.version }}
           
-          ### 🚀 Features
+          ### � Features
           - Modern desktop chat application
-          - Native Windows integration with Win32 menus
-          - Bundled WebView2 runtime for consistent experience
-          - Authentication proxy for secure API communication
+          - Cross-platform support (Windows, macOS)
+          - Native platform integration
+          - Bundled WebView2 runtime for Windows
+          - WebKit integration for macOS
+          - Download service with native file management
           
           ### 📦 Installation
-          Download and run `MikoWorkspaceSetup.exe` to install Miko Workspace.
           
+          **Windows:**
+          Download and run `MikoWorkspaceSetup.exe` to install Miko Workspace.
           The application will be installed to: `%LOCALAPPDATA%\Miko\Workspace`
           
+          **macOS:**
+          Download `MikoWorkspace.dmg`, open it, and drag the app to your Applications folder.
+          Universal binary supports both Intel and Apple Silicon Macs.
+          
           ### 🔧 System Requirements
+          
+          **Windows:**
           - Windows 10 version 1809 or later
           - x64 architecture
+          
+          **macOS:**
+          - macOS 10.15 (Catalina) or later
+          - Intel or Apple Silicon processor
           
           ### 📝 Changes
           See the commit history for detailed changes in this release.
