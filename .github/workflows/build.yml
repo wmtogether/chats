@@ -128,6 +128,9 @@ jobs:
           
     - name: Install Node.js dependencies
       run: bun install
+
+    - name: Build Web UI
+      run: bun vite build
       
     - name: Build Rust components for macOS
       run: |
@@ -142,11 +145,11 @@ jobs:
       
     - name: Verify macOS build artifacts
       run: |
-        if [ ! -f "Desktop/target/${{ matrix.target }}/release/mikochat" ]; then
+        if [ ! -f "target/${{ matrix.target }}/release/mikochat" ]; then
           echo "❌ mikochat binary not found"
           exit 1
         fi
-        if [ ! -f "Desktop/target/${{ matrix.target }}/release/downloaderservice" ]; then
+        if [ ! -f "target/${{ matrix.target }}/release/downloaderservice" ]; then
           echo "❌ downloaderservice binary not found"
           exit 1
         fi
@@ -157,8 +160,8 @@ jobs:
       with:
         name: miko-workspace-macos-${{ matrix.target }}-build
         path: |
-          Desktop/target/${{ matrix.target }}/release/mikochat
-          Desktop/target/${{ matrix.target }}/release/downloaderservice
+          target/${{ matrix.target }}/release/mikochat
+          target/${{ matrix.target }}/release/downloaderservice
           Desktop/MikoWorkspace.app/
         retention-days: 30
 
@@ -205,7 +208,7 @@ jobs:
           
     - name: Install Node.js dependencies
       run: bun install
-      
+  
     - name: Build application
       run: bun run build
       
@@ -223,7 +226,8 @@ jobs:
       shell: powershell
       
     - name: Build installer
-      run: bun run build-installer
+      run: | 
+        & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "Library\Resources\build.iss"
       
     - name: Verify installer
       run: |
