@@ -54,7 +54,8 @@ jobs:
       run: bun install
       
     - name: Build application
-      run: bun run build
+      run: bun run build; Copy-Item "target\release\downloaderservice.exe" "Distribution\Package\"
+
       
     - name: Verify build artifacts
       run: |
