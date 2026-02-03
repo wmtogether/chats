@@ -2,7 +2,7 @@
 //! 
 //! This file serves as the main entry point for the desktop application,
 //! conditionally compiling platform-specific implementations based on the target OS.
-
+#![windows_subsystem = "windows"]
 // Shared modules
 #[cfg(target_os = "windows")]
 mod context_menu;

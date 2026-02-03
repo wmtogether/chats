@@ -16,7 +16,7 @@ export const getApiUrl = (): string => {
  */
 export const getWebSocketUrl = (): string => {
   const apiUrl = getApiUrl();
-  const wsUrl = apiUrl.replace(/^http/, 'ws');
+  const wsUrl = apiUrl.replace(/^https/, 'wss');
   return `${wsUrl}/ws`;
 };
 
