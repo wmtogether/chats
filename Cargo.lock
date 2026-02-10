@@ -2259,47 +2259,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mikochat"
-version = "0.1.0"
-dependencies = [
- "axum",
- "base64 0.21.7",
- "bincode",
- "chrono",
- "cocoa",
- "core-foundation 0.9.4",
- "core-graphics",
- "crossterm",
- "dirs 5.0.1",
- "futures-util",
- "http",
- "ico",
- "lazy_static",
- "objc",
- "pollster",
- "rand 0.8.5",
- "ratatui",
- "raw-window-handle",
- "redis",
- "reqwest",
- "serde",
- "serde_json",
- "tokio",
- "tokio-util",
- "tower",
- "tower-http",
- "tray-icon",
- "url",
- "uuid",
- "wgpu",
- "windows 0.58.0",
- "winit",
- "winreg",
- "winres",
- "wry",
-]
-
-[[package]]
 name = "mime"
 version = "0.3.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3156,6 +3115,47 @@ name = "presser"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e8cf8e6a8aa66ce33f63993ffc4ea4271eb5b0530a9002db8455ea6050c77bfa"
+
+[[package]]
+name = "printingworkspace"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "base64 0.21.7",
+ "bincode",
+ "chrono",
+ "cocoa",
+ "core-foundation 0.9.4",
+ "core-graphics",
+ "crossterm",
+ "dirs 5.0.1",
+ "futures-util",
+ "http",
+ "ico",
+ "lazy_static",
+ "objc",
+ "pollster",
+ "rand 0.8.5",
+ "ratatui",
+ "raw-window-handle",
+ "redis",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-util",
+ "tower",
+ "tower-http",
+ "tray-icon",
+ "url",
+ "uuid",
+ "wgpu",
+ "windows 0.58.0",
+ "winit",
+ "winreg",
+ "winres",
+ "wry",
+]
 
 [[package]]
 name = "proc-macro-crate"
