@@ -38,6 +38,19 @@ const FileAttachmentCard: React.FC<FileAttachmentCardProps> = ({
 
   // Find active download for this file
   const activeDownload = downloads.find(d => d.url === fullFileUrl);
+  
+  // Debug logging
+  console.log('🔍 FileAttachmentCard render:', {
+    filename,
+    src,
+    fullFileUrl,
+    downloadsCount: downloads.length,
+    downloadsUrls: downloads.map(d => d.url),
+    activeDownload: activeDownload ? {
+      progress: activeDownload.progress,
+      status: activeDownload.status
+    } : 'NOT FOUND'
+  });
 
   const getFileIcon = () => {
     if (!mimeType) {

@@ -799,20 +799,32 @@ impl ApplicationHandler for App {
             while let Ok(progress_json) = receiver.try_recv() {
                 if let Some(webview) = &self.webview {
                     // Send progress to frontend via JavaScript callback
+                    // Escape the JSON string properly for JavaScript
+                    let escaped_json = progress_json.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "\\n");
+                    
                     let script = format!(
                         r#"
-                        if (window.downloadProgressCallback) {{
+                        (function() {{
                             try {{
-                                const progress = {};
-                                window.downloadProgressCallback(progress);
+                                const progressData = JSON.parse("{}");
+                                console.log('📥 Parsed progress data:', progressData);
+                                
+                                if (typeof window.downloadProgressCallback === 'function') {{
+                                    window.downloadProgressCallback(progressData);
+                                    console.log('✅ Called downloadProgressCallback');
+                                }} else {{
+                                    console.warn('⚠️ downloadProgressCallback not defined yet');
+                                    // Dispatch custom event as fallback
+                                    window.dispatchEvent(new CustomEvent('download-progress', {{ detail: progressData }}));
+                                }}
                             }} catch (e) {{
-                                console.error('Error in downloadProgressCallback:', e);
+                                console.error('❌ Error processing download progress:', e);
+                                console.error('Raw JSON:', "{}");
                             }}
-                        }} else {{
-                            console.warn('downloadProgressCallback not defined yet');
-                        }}
+                        }})();
                         "#,
-                        progress_json
+                        escaped_json,
+                        escaped_json
                     );
                     
                     if let Err(e) = webview.evaluate_script(&script) {
