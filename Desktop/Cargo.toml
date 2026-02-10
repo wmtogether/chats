@@ -1,10 +1,10 @@
 [package]
-name = "mikochat"
+name = "printingworkspace"
 version = "0.1.0"
 edition = "2021"
 
 [[bin]]
-name = "mikochat"
+name = "workspace"
 path = "src/main.rs"
 
 [[bin]]
@@ -71,10 +71,12 @@ windows = { version = "0.58", features = [
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_Graphics_Dwm",
     "Win32_UI_Controls",
+    "Win32_UI_Controls_Dialogs",
     "Win32_System_Registry",
     "Win32_UI_Shell",
     "Win32_System_Com",
     "Win32_System_LibraryLoader",
+    "Win32_System_Threading",
 ] }
 winreg = "0.52"
 

@@ -51,6 +51,32 @@ func getChatHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// getChatQueueHandler fetches the queue entry linked to a chat
+func getChatQueueHandler(w http.ResponseWriter, r *http.Request) {
+	chatUUID := chi.URLParam(r, "uuid")
+	if chatUUID == "" {
+		http.Error(w, `{"success": false, "error": "Chat UUID is required"}`, http.StatusBadRequest)
+		return
+	}
+
+	queue, err := GetQueueByChatUUID(chatUUID)
+	if err != nil {
+		log.Printf("Error fetching queue for chat %s: %v", chatUUID, err)
+		if err.Error() == "queue not found for chat" {
+			http.Error(w, `{"success": false, "error": "Queue not found for this chat"}`, http.StatusNotFound)
+			return
+		}
+		http.Error(w, `{"success": false, "error": "Failed to fetch queue"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(APIResponse{
+		Success: true,
+		Data:    queue,
+	})
+}
+
 // getChatMessagesHandler fetches messages for a specific chat channel.
 func getChatMessagesHandler(w http.ResponseWriter, r *http.Request) {
 	chatUUID := chi.URLParam(r, "uuid")

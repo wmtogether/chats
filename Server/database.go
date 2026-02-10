@@ -133,9 +133,34 @@ func GetAllUsers() ([]User, error) {
 	return users, nil
 }
 
+// GenerateNextChatUniqueID generates the next available unique ID in format QT-DDMMYY-{NUM}
+func GenerateNextChatUniqueID() (string, error) {
+	// Get current date in DDMMYY format
+	now := time.Now()
+	dateStr := now.Format("020106") // DDMMYY format
+	
+	// Get the count of chats created today with this date prefix
+	prefix := fmt.Sprintf("QT-%s-", dateStr)
+	
+	var count int
+	err := db.QueryRow(`
+		SELECT COUNT(*) FROM chats 
+		WHERE unique_id LIKE $1
+	`, prefix+"%").Scan(&count)
+	if err != nil {
+		return "", fmt.Errorf("error counting chats for today: %w", err)
+	}
+	
+	// Generate next number (count + 1)
+	nextNum := count + 1
+	uniqueID := fmt.Sprintf("%s%d", prefix, nextNum)
+	
+	return uniqueID, nil
+}
+
 // GetAllChats fetches all chat channels from the database.
 func GetAllChats() ([]Chat, error) {
-	rows, err := db.Query(`SELECT id, uuid, channel_id, channel_name, channel_type, chat_category, description, job_id, queue_id, customer_id, customers, status, metadata, is_archived, created_by_id, created_by_name, created_at, updated_at FROM chats ORDER BY created_at DESC`)
+	rows, err := db.Query(`SELECT id, uuid, unique_id, channel_id, channel_name, channel_type, chat_category, description, job_id, queue_id, customer_id, customers, status, metadata, is_archived, created_by_id, created_by_name, created_at, updated_at FROM chats ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, fmt.Errorf("error querying chats: %w", err)
 	}
@@ -144,13 +169,17 @@ func GetAllChats() ([]Chat, error) {
 	var chats []Chat
 	for rows.Next() {
 		var c Chat
+		var uniqueID sql.NullString
 		err := rows.Scan(
-			&c.ID, &c.UUID, &c.ChannelID, &c.ChannelName, &c.ChannelType, &c.ChatCategory,
+			&c.ID, &c.UUID, &uniqueID, &c.ChannelID, &c.ChannelName, &c.ChannelType, &c.ChatCategory,
 			&c.Description, &c.JobID, &c.QueueID, &c.CustomerID, &c.Customers, &c.Status, &c.Metadata,
 			&c.IsArchived, &c.CreatedByID, &c.CreatedByName, &c.CreatedAt, &c.UpdatedAt,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("error scanning chat row: %w", err)
+		}
+		if uniqueID.Valid {
+			c.UniqueID = uniqueID.String
 		}
 		chats = append(chats, c)
 	}
@@ -159,11 +188,12 @@ func GetAllChats() ([]Chat, error) {
 
 // GetChatByUUID fetches a single chat channel from the database by its UUID.
 func GetChatByUUID(uuid string) (*Chat, error) {
-	row := db.QueryRow(`SELECT id, uuid, channel_id, channel_name, channel_type, chat_category, description, job_id, queue_id, customer_id, customers, status, metadata, is_archived, created_by_id, created_by_name, created_at, updated_at FROM chats WHERE uuid = $1 LIMIT 1`, uuid)
+	row := db.QueryRow(`SELECT id, uuid, unique_id, channel_id, channel_name, channel_type, chat_category, description, job_id, queue_id, customer_id, customers, status, metadata, is_archived, created_by_id, created_by_name, created_at, updated_at FROM chats WHERE uuid = $1 LIMIT 1`, uuid)
 
 	var c Chat
+	var uniqueID sql.NullString
 	err := row.Scan(
-		&c.ID, &c.UUID, &c.ChannelID, &c.ChannelName, &c.ChannelType, &c.ChatCategory,
+		&c.ID, &c.UUID, &uniqueID, &c.ChannelID, &c.ChannelName, &c.ChannelType, &c.ChatCategory,
 		&c.Description, &c.JobID, &c.QueueID, &c.CustomerID, &c.Customers, &c.Status, &c.Metadata,
 		&c.IsArchived, &c.CreatedByID, &c.CreatedByName, &c.CreatedAt, &c.UpdatedAt,
 	)
@@ -172,6 +202,9 @@ func GetChatByUUID(uuid string) (*Chat, error) {
 			return nil, fmt.Errorf("chat not found")
 		}
 		return nil, fmt.Errorf("error scanning chat row: %w", err)
+	}
+	if uniqueID.Valid {
+		c.UniqueID = uniqueID.String
 	}
 	return &c, nil
 }
@@ -467,17 +500,30 @@ func UpdateMessage(messageID string, content string, attachments []string) (*Cha
 	return GetMessageByID(messageID)
 }
 
-// CreateChat creates a new chat channel in the database
+// CreateChat creates a new chat channel in the database and optionally creates a linked queue entry
 func CreateChat(params CreateChatParams) (*Chat, error) {
+	// Start a transaction to ensure both chat and queue are created atomically
+	tx, err := db.Begin()
+	if err != nil {
+		return nil, fmt.Errorf("error starting transaction: %w", err)
+	}
+	defer tx.Rollback() // This will be ignored if tx.Commit() succeeds
+
 	// Generate UUID for the chat
 	chatUUID := fmt.Sprintf("%d_%s_%d", params.CreatedByID, params.Name, time.Now().Unix())
 	
 	// Generate channel ID (similar format to existing chats)
 	channelID := fmt.Sprintf("ch_%d_%d", params.CreatedByID, time.Now().Unix())
 	
-	// Create metadata JSON
+	// Generate unique ID in format QT-DDMMYY-{NUM}
+	uniqueID, err := GenerateNextChatUniqueID()
+	if err != nil {
+		return nil, fmt.Errorf("error generating unique ID: %w", err)
+	}
+	
+	// Create metadata JSON (will be updated with queueId after queue creation)
 	metadata := map[string]interface{}{
-		"queueId":       nil,
+		"queueId":       nil, // Will be updated after queue creation
 		"queueStatus":   "PENDING",
 		"requestType":   params.RequestType,
 		"createdByName": params.CreatedByName,
@@ -502,21 +548,22 @@ func CreateChat(params CreateChatParams) (*Chat, error) {
 	}
 
 	// Insert the chat into the database
-	query := `
+	chatQuery := `
 		INSERT INTO chats (
-			uuid, channel_id, channel_name, channel_type, chat_category,
+			uuid, unique_id, channel_id, channel_name, channel_type, chat_category,
 			description, customer_id, customers, status, metadata, is_archived,
 			created_by_id, created_by_name, created_at, updated_at
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
-		) RETURNING id, uuid, channel_id, channel_name, channel_type, chat_category,
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
+		) RETURNING id, uuid, unique_id, channel_id, channel_name, channel_type, chat_category,
 		description, job_id, queue_id, customer_id, customers, status, metadata,
 		is_archived, created_by_id, created_by_name, created_at, updated_at
 	`
 
 	now := time.Now()
-	row := db.QueryRow(query,
+	row := tx.QueryRow(chatQuery,
 		chatUUID,                    // uuid
+		uniqueID,                    // unique_id
 		channelID,                   // channel_id
 		params.Name,                 // channel_name
 		"job",                       // channel_type (default to job)
@@ -534,14 +581,78 @@ func CreateChat(params CreateChatParams) (*Chat, error) {
 	)
 
 	var chat Chat
+	var uniqueIDResult sql.NullString
 	err = row.Scan(
-		&chat.ID, &chat.UUID, &chat.ChannelID, &chat.ChannelName, &chat.ChannelType, &chat.ChatCategory,
+		&chat.ID, &chat.UUID, &uniqueIDResult, &chat.ChannelID, &chat.ChannelName, &chat.ChannelType, &chat.ChatCategory,
 		&chat.Description, &chat.JobID, &chat.QueueID, &chat.CustomerID, &chat.Customers, &chat.Status, &chat.Metadata,
 		&chat.IsArchived, &chat.CreatedByID, &chat.CreatedByName, &chat.CreatedAt, &chat.UpdatedAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("error creating chat: %w", err)
 	}
+	
+	if uniqueIDResult.Valid {
+		chat.UniqueID = uniqueIDResult.String
+	}
+
+	// Create a corresponding queue entry
+	queueQuery := `
+		INSERT INTO queue (
+			job_name, request_type, priority, status, customer_id, customer_name,
+			chat_uuid, created_by_id, created_by_name, updated_by_id, updated_by_name,
+			created_at, updated_at
+		) VALUES (
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13
+		) RETURNING id
+	`
+
+	var queueID int
+	err = tx.QueryRow(queueQuery,
+		params.Name,                                                    // job_name
+		params.RequestType,                                             // request_type
+		"normal",                                                       // priority (default)
+		"PENDING",                                                      // status
+		customerId,                                                     // customer_id
+		customerName,                                                   // customer_name
+		sql.NullString{String: chatUUID, Valid: true},                // chat_uuid
+		sql.NullInt64{Int64: int64(params.CreatedByID), Valid: true}, // created_by_id
+		sql.NullString{String: params.CreatedByName, Valid: true},    // created_by_name
+		sql.NullInt64{Int64: int64(params.CreatedByID), Valid: true}, // updated_by_id
+		sql.NullString{String: params.CreatedByName, Valid: true},    // updated_by_name
+		now,                                                            // created_at
+		now,                                                            // updated_at
+	).Scan(&queueID)
+	if err != nil {
+		return nil, fmt.Errorf("error creating queue entry: %w", err)
+	}
+
+	// Update the chat's queue_id and metadata with the new queue ID
+	metadata["queueId"] = queueID
+	updatedMetadataJSON, err := json.Marshal(metadata)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling updated metadata: %w", err)
+	}
+
+	_, err = tx.Exec(`
+		UPDATE chats 
+		SET queue_id = $1, metadata = $2 
+		WHERE uuid = $3
+	`, queueID, updatedMetadataJSON, chatUUID)
+	if err != nil {
+		return nil, fmt.Errorf("error updating chat with queue_id: %w", err)
+	}
+
+	// Update the chat object with the queue_id
+	chat.QueueID = sql.NullInt64{Int64: int64(queueID), Valid: true}
+	chat.Metadata = updatedMetadataJSON
+
+	// Commit the transaction
+	err = tx.Commit()
+	if err != nil {
+		return nil, fmt.Errorf("error committing transaction: %w", err)
+	}
+
+	log.Printf("✅ Created chat %s (ID: %d) with linked queue entry (ID: %d)", chat.UniqueID, chat.ID, queueID)
 
 	return &chat, nil
 }
@@ -585,19 +696,72 @@ func UpdateChatRequestType(chatUUID string, requestType string) (*Chat, error) {
 	return GetChatByUUID(chatUUID)
 }
 
-// UpdateChatStatus updates the status of a chat
+// UpdateChatStatus updates the status of a chat and its linked queue entry
 func UpdateChatStatus(chatUUID string, status string) (*Chat, error) {
-	// Update the status in the database
-	query := `UPDATE chats SET status = $1, updated_at = $2 WHERE uuid = $3`
-	
+	// Start a transaction to ensure both chat and queue are updated atomically
+	tx, err := db.Begin()
+	if err != nil {
+		return nil, fmt.Errorf("error starting transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Update the chat's status
 	now := time.Now()
-	_, err := db.Exec(query, status, now, chatUUID)
+	_, err = tx.Exec(`UPDATE chats SET status = $1, updated_at = $2 WHERE uuid = $3`, status, now, chatUUID)
 	if err != nil {
 		return nil, fmt.Errorf("error updating chat status: %w", err)
 	}
 
+	// Also update the linked queue entry if it exists
+	_, err = tx.Exec(`
+		UPDATE queue 
+		SET status = $1, updated_at = $2 
+		WHERE chat_uuid = $3
+	`, status, now, chatUUID)
+	if err != nil {
+		// Log the error but don't fail the transaction if queue update fails
+		log.Printf("⚠️ Warning: Failed to update queue status for chat %s: %v", chatUUID, err)
+	}
+
+	// Commit the transaction
+	err = tx.Commit()
+	if err != nil {
+		return nil, fmt.Errorf("error committing transaction: %w", err)
+	}
+
 	// Return the updated chat
 	return GetChatByUUID(chatUUID)
+}
+
+// GetQueueByChatUUID fetches the queue entry linked to a chat
+func GetQueueByChatUUID(chatUUID string) (*Queue, error) {
+	row := db.QueryRow(`
+		SELECT id, queue_no, job_name, request_type, dimension_width, dimension_height, 
+		dimension_depth, dimensions, layout, sample_t, sample_i, notes, priority, status, 
+		assigned_to_id, assigned_to_name, customer_id, customer_name, chat_uuid, sort_order, 
+		created_by_id, created_by_name, updated_by_id, updated_by_name, created_at, updated_at 
+		FROM queue 
+		WHERE chat_uuid = $1 
+		LIMIT 1
+	`, chatUUID)
+
+	var q Queue
+	err := row.Scan(
+		&q.ID, &q.QueueNo, &q.JobName, &q.RequestType,
+		&q.DimensionWidth, &q.DimensionHeight, &q.DimensionDepth, &q.Dimensions,
+		&q.Layout, &q.SampleT, &q.SampleI, &q.Notes,
+		&q.Priority, &q.Status, &q.AssignedToID, &q.AssignedToName,
+		&q.CustomerID, &q.CustomerName, &q.ChatUUID, &q.SortOrder,
+		&q.CreatedByID, &q.CreatedByName, &q.UpdatedByID, &q.UpdatedByName,
+		&q.CreatedAt, &q.UpdatedAt,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("queue not found for chat")
+		}
+		return nil, fmt.Errorf("error scanning queue row: %w", err)
+	}
+	return &q, nil
 }
 
 // Customer database functions

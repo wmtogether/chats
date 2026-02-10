@@ -2,11 +2,11 @@
 ; This script creates an installer for the Miko Workspace desktop application
 ; Target installation directory: %LOCALAPPDATA%\Miko\Workspace
 
-#define MyAppName "Miko Workspace"
+#define MyAppName "Printing Workspace"
 #define MyAppVersion "1.0.0"
-#define MyAppPublisher "Miko Technologies"
-#define MyAppURL "https://miko.app"
-#define MyAppExeName "mikochat.exe"
+#define MyAppPublisher "Mikofure"
+#define MyAppURL "https://workspace.wmt.in.th"
+#define MyAppExeName "workspace.exe"
 #define MyAppDownloaderName "downloaderservice.exe"
 
 [Setup]

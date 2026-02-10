@@ -101,6 +101,7 @@ func main() {
 		
 
 							r.Get("/{uuid}", getChatHandler)
+							r.Get("/{uuid}/queue", getChatQueueHandler)
 							r.Patch("/{uuid}", updateChatHandler)
 							r.Patch("/{uuid}/status", updateChatStatusHandler)
 

@@ -14,17 +14,14 @@ use std::process::{Command, Stdio};
 use std::io::{BufRead, BufReader};
 use serde_json;
 use tray_icon::{TrayIcon, TrayIconBuilder, menu::{Menu, MenuItem, MenuEvent, PredefinedMenuItem}};
-use std::sync::{Mutex};
+use std::sync::Mutex;
 use lazy_static::lazy_static;
-
-#[cfg(windows)]
-use winreg::enums::*;
-#[cfg(windows)]
-use winreg::RegKey;
+use std::sync::mpsc::{channel, Sender, Receiver};
 
 // Global flag to ensure only one tray icon is created system-wide
 lazy_static! {
     static ref TRAY_ICON_CREATED: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
+    static ref PROGRESS_SENDER: Arc<Mutex<Option<Sender<String>>>> = Arc::new(Mutex::new(None));
 }
 
 use crate::{context_menu, menubar, hooks};
@@ -283,6 +280,7 @@ fn show_file_in_explorer(filename: &str) {
 
 fn start_download_process(url: String, filename: String) {
     println!("Starting download: {} -> {}", url, filename);
+    println!("📊 Real-time progress will be sent to frontend via callback");
     
     // Get the path to the downloader executable
     let exe_path = std::env::current_exe()
@@ -334,25 +332,35 @@ fn start_download_process(url: String, filename: String) {
                 for line in reader.lines() {
                     match line {
                         Ok(json_line) => {
-                            println!("Download progress: {}", json_line);
+                            // Real progress from subprocess - output to console
+                            println!("📥 DOWNLOAD_PROGRESS: {}", json_line);
                             
-                            // Parse JSON and emit progress events
+                            // Send progress to frontend via global channel
+                            if let Ok(sender_lock) = PROGRESS_SENDER.lock() {
+                                if let Some(sender) = sender_lock.as_ref() {
+                                    if let Err(e) = sender.send(json_line.clone()) {
+                                        println!("⚠️ Failed to send progress to frontend: {}", e);
+                                    }
+                                }
+                            }
+                            
+                            // Parse JSON to check status
                             if let Ok(progress) = serde_json::from_str::<serde_json::Value>(&json_line) {
                                 let status = progress["status"].as_str().unwrap_or("unknown");
+                                let percent = progress["progress_percent"].as_f64().unwrap_or(0.0);
+                                let speed = progress["download_speed_human"].as_str().unwrap_or("N/A");
                                 
                                 match status {
                                     "downloading" => {
-                                        // Emit progress event to webview
-                                        // Note: In a real implementation, you'd need to store the webview reference
-                                        // and emit events to it. For now, we just log.
-                                        println!("Progress: {}%", progress["progress_percent"].as_f64().unwrap_or(0.0));
+                                        println!("  ├─ Progress: {:.1}% @ {}", percent, speed);
                                     }
                                     "completed" => {
-                                        println!("Download completed: {}", filename);
+                                        println!("  └─ ✅ Download completed: {}", filename);
                                         break;
                                     }
                                     "error" => {
-                                        println!("Download error: {}", progress["error"].as_str().unwrap_or("Unknown error"));
+                                        let error_msg = progress["error"].as_str().unwrap_or("Unknown error");
+                                        println!("  └─ ❌ Download error: {}", error_msg);
                                         break;
                                     }
                                     _ => {}
@@ -371,9 +379,9 @@ fn start_download_process(url: String, filename: String) {
             match child.wait() {
                 Ok(status) => {
                     if status.success() {
-                        println!("Download completed successfully");
+                        println!("Download process completed successfully");
                     } else {
-                        println!("Download failed with exit code: {:?}", status.code());
+                        println!("Download process failed with exit code: {:?}", status.code());
                     }
                 }
                 Err(e) => {
@@ -394,10 +402,20 @@ struct App {
     ready_to_show: bool,
     native_menubar: Option<MenuBar>,
     tray_icon: Option<TrayIcon>,
+    progress_receiver: Option<Receiver<String>>,
 }
 
 impl App {
     fn new() -> Self {
+        // Create channel for download progress
+        let (sender, receiver) = channel();
+        
+        // Store sender globally
+        {
+            let mut global_sender = PROGRESS_SENDER.lock().unwrap();
+            *global_sender = Some(sender);
+        }
+        
         Self {
             window: None,
             webview: None,
@@ -405,6 +423,29 @@ impl App {
             ready_to_show: false,
             native_menubar: None,
             tray_icon: None,
+            progress_receiver: Some(receiver),
+        }
+    }
+    
+    fn handle_menu_command(&mut self, command_id: u16) {
+        if let Some(ref menubar) = self.native_menubar {
+            if let Some(ref window) = self.window {
+                #[cfg(windows)]
+                {
+                    use windows::Win32::Foundation::HWND;
+                    use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+                    
+                    match window.window_handle().unwrap().as_raw() {
+                        RawWindowHandle::Win32(handle) => {
+                            let hwnd = HWND(handle.hwnd.get() as *mut std::ffi::c_void);
+                            if let Err(e) = menubar.handle_menu_command(command_id, hwnd) {
+                                println!("❌ Error handling menu command: {}", e);
+                            }
+                        }
+                        _ => println!("⚠️ Non-Win32 window handle"),
+                    }
+                }
+            }
         }
     }
     
@@ -752,6 +793,81 @@ impl ApplicationHandler for App {
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _window_id: WindowId, event: WindowEvent) {
+        // Poll for download progress updates
+        if let Some(receiver) = &self.progress_receiver {
+            // Try to receive all pending progress updates (non-blocking)
+            while let Ok(progress_json) = receiver.try_recv() {
+                if let Some(webview) = &self.webview {
+                    // Send progress to frontend via JavaScript callback
+                    let script = format!(
+                        r#"
+                        if (window.downloadProgressCallback) {{
+                            try {{
+                                const progress = {};
+                                window.downloadProgressCallback(progress);
+                            }} catch (e) {{
+                                console.error('Error in downloadProgressCallback:', e);
+                            }}
+                        }} else {{
+                            console.warn('downloadProgressCallback not defined yet');
+                        }}
+                        "#,
+                        progress_json
+                    );
+                    
+                    if let Err(e) = webview.evaluate_script(&script) {
+                        println!("⚠️ Failed to send progress to frontend: {}", e);
+                    }
+                }
+            }
+        }
+        
+        // Check for pending menu commands
+        if let Some(command_id) = menubar::get_and_clear_pending_menu_command() {
+            println!("🎯 Processing pending menu command: {}", command_id);
+            
+            if let Some(action) = menubar::get_menu_action(command_id) {
+                println!("📋 Menu action: {}", action);
+                
+                // Get HWND from window
+                #[cfg(windows)]
+                {
+                    use windows::Win32::Foundation::HWND;
+                    use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+                    
+                    if let Some(window) = &self.window {
+                        match window.window_handle().unwrap().as_raw() {
+                            RawWindowHandle::Win32(handle) => {
+                                let hwnd = HWND(handle.hwnd.get() as *mut std::ffi::c_void);
+                                
+                                match action.as_str() {
+                                    "check_updates" => {
+                                        println!("✅ Check for Updates triggered!");
+                                        if let Err(e) = menubar::show_check_updates_dialog(hwnd) {
+                                            println!("❌ Error showing update dialog: {}", e);
+                                        }
+                                    }
+                                    "about" => {
+                                        println!("✅ About Workspace triggered!");
+                                        if let Err(e) = menubar::show_about_dialog(hwnd) {
+                                            println!("❌ Error showing about dialog: {}", e);
+                                        }
+                                    }
+                                    "exit" => {
+                                        println!("✅ Exit triggered!");
+                                        event_loop.exit();
+                                    }
+                                    _ => {
+                                        println!("⚠️ Unhandled menu action: {}", action);
+                                    }
+                                }
+                            }
+                            _ => println!("⚠️ Non-Win32 window handle"),
+                        }
+                    }
+                }
+            }
+        }
         
         match event {
             WindowEvent::CloseRequested => {
@@ -1148,11 +1264,16 @@ impl App {
                         }
                     }
                     
+                    // Store menu for command handling
                     self.native_menubar = Some(menu);
+                    
+                    // Start menu command polling thread
+                    start_menu_command_handler(window_handle);
                 }
             }
             Err(e) => {
                 println!("Warning: Failed to create native menubar: {:?}", e);
+                println!("💡 Note: Menu actions can be triggered via keyboard shortcuts");
             }
         }
 
@@ -1232,6 +1353,7 @@ impl App {
 
         self.webview = Some(webview);
         println!("WebView2 created with Win32 context menu support");
+        println!("📊 Download progress from subprocess will be logged to console");
     }
 }
 
@@ -1249,6 +1371,67 @@ impl Drop for App {
             println!("🧹 Tray icon dropped");
         }
     }
+}
+
+#[cfg(windows)]
+fn start_menu_command_handler(hwnd: windows::Win32::Foundation::HWND) {
+    use windows::Win32::{
+        Foundation::{HWND, WPARAM, LPARAM, LRESULT, HINSTANCE},
+        UI::WindowsAndMessaging::*,
+        System::Threading::GetCurrentThreadId,
+    };
+    
+    println!("🎯 Installing Windows message hook for menu commands");
+    
+    unsafe {
+        // Install a WH_CALLWNDPROC hook to intercept messages
+        let hook_result = SetWindowsHookExW(
+            WH_CALLWNDPROC,
+            Some(menu_hook_proc),
+            HINSTANCE::default(),
+            GetCurrentThreadId(),
+        );
+        
+        match hook_result {
+            Ok(hook) => {
+                println!("✅ Windows message hook installed successfully: {:?}", hook);
+            }
+            Err(e) => {
+                println!("❌ Failed to install Windows hook: {:?}", e);
+            }
+        }
+    }
+}
+
+#[cfg(windows)]
+unsafe extern "system" fn menu_hook_proc(
+    code: i32,
+    wparam: windows::Win32::Foundation::WPARAM,
+    lparam: windows::Win32::Foundation::LPARAM,
+) -> windows::Win32::Foundation::LRESULT {
+    use windows::Win32::{
+        UI::WindowsAndMessaging::*,
+    };
+    
+    if code >= 0 {
+        let msg = *(lparam.0 as *const CWPSTRUCT);
+        
+        if msg.message == WM_COMMAND {
+            let command_id = (msg.wParam.0 & 0xFFFF) as u16;
+            println!("🎯 WM_COMMAND intercepted! Command ID: {}", command_id);
+            
+            // Store the command for processing in the main event loop
+            menubar::set_pending_menu_command(command_id);
+        }
+    }
+    
+    CallNextHookEx(HHOOK::default(), code, wparam, lparam)
+}
+
+#[cfg(windows)]
+fn handle_menu_command_by_id(command_id: u16, hwnd: windows::Win32::Foundation::HWND) -> Result<(), Box<dyn std::error::Error>> {
+    // This function is no longer needed as we handle commands in the hook
+    Ok(())
 }
 
 pub fn main() -> Result<(), Box<dyn std::error::Error>> {

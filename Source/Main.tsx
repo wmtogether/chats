@@ -781,6 +781,19 @@ export default function Main() {
             dispatch({ type: 'UPDATE_CHAT', payload: processedChat });
           }
           break;
+        case 'chat_status_updated':
+          console.log('💬 Chat status updated:', data.data);
+          // Handle real-time chat status updates
+          if (data.data?.chat) {
+            const processedChat = preprocessChat(data.data.chat);
+            dispatch({ type: 'UPDATE_CHAT', payload: processedChat });
+            
+            // If this is the currently selected chat, update it immediately
+            if (state.selectedChat?.uuid === data.data.chat.uuid) {
+              dispatch({ type: 'SELECT_CHAT', payload: processedChat });
+            }
+          }
+          break;
         case 'chat_message':
           console.log('💬 Chat message received via WebSocket:', data.data);
           console.log('💬 Message object:', data.data?.message);

@@ -22,7 +22,7 @@ lazy_static! {
 }
 
 // Include the icon at compile time
-const ICON_BYTES: &[u8] = include_bytes!("../../Library/Shared/Icons/icon.ico");
+const ICON_BYTES: &[u8] = include_bytes!("../../Library/Shared/Icons/icon.icns");
 
 #[cfg(debug_assertions)]
 const DEV_SERVER_URL: &str = "http://localhost:5173";

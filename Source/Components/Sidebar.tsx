@@ -144,6 +144,7 @@ export default function Sidebar({
     const query = searchQuery.toLowerCase();
     return baseChats.filter(chat =>
       chat.channelName.toLowerCase().includes(query) ||
+      chat.uniqueId?.toLowerCase().includes(query) ||
       chat.createdByName.toLowerCase().includes(query) ||
       getNullStringValue(chat.customers)?.toLowerCase().includes(query) ||
       getNullStringValue(chat.customerId)?.toLowerCase().includes(query) ||
@@ -468,8 +469,13 @@ export default function Sidebar({
                       )}
 
                       {/* Customer Info Row */}
-                      {(getNullStringValue(chat.customers) || getNullStringValue(chat.customerId)) && (
+                      {(getNullStringValue(chat.customers) || getNullStringValue(chat.customerId) || chat.uniqueId) && (
                         <div className="flex items-center gap-2 flex-wrap">
+                          {chat.uniqueId && (
+                            <span className="body-small text-primary font-semibold bg-primary/10 px-2 py-1 rounded-md border border-primary/20">
+                              {searchQuery ? highlightMatch(chat.uniqueId, searchQuery) : chat.uniqueId}
+                            </span>
+                          )}
                           {getNullStringValue(chat.customers) && (
                             <span className="body-small text-on-surface font-medium">
                               {searchQuery ? highlightMatch(getNullStringValue(chat.customers)!, searchQuery) : getNullStringValue(chat.customers)}

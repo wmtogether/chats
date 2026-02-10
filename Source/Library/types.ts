@@ -25,6 +25,7 @@ export interface ChatMetadata {
 export interface ChatType {
   id: number;
   uuid: string;
+  uniqueId?: string; // Format: QT-DDMMYY-{NUM}
   channelId: string;
   channelName: string;
   channelType: string;

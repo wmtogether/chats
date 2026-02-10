@@ -1,4 +1,21 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
+
+// Subprocess progress format from Rust backend
+interface SubprocessProgress {
+  url: string;
+  filename: string;
+  total_size: number;
+  downloaded: number;
+  progress_percent: number;
+  download_speed_bps: number;
+  download_speed_mbps: number;
+  download_speed_human: string;
+  connections: number;
+  eta_seconds: number;
+  eta_human: string;
+  status: 'downloading' | 'completed' | 'error';
+  error: string | null;
+}
 
 export interface DownloadProgress {
   url: string;
@@ -12,6 +29,46 @@ export interface DownloadProgress {
 
 export function useDownload() {
   const [downloads, setDownloads] = useState<Map<string, DownloadProgress>>(new Map());
+
+  // Listen for real-time download progress from subprocess
+  useEffect(() => {
+    // Set up callback for download progress updates
+    window.downloadProgressCallback = (progress: SubprocessProgress) => {
+      console.log('📥 Download progress received:', progress);
+      
+      const downloadId = `${progress.url}_${progress.filename}`;
+      
+      // Map subprocess status to frontend status
+      const status: 'idle' | 'downloading' | 'completed' | 'error' = 
+        progress.status === 'downloading' ? 'downloading' :
+        progress.status === 'completed' ? 'completed' :
+        progress.status === 'error' ? 'error' : 'idle';
+      
+      setDownloads(prev => new Map(prev.set(downloadId, {
+        url: progress.url,
+        filename: progress.filename,
+        progress: Math.round(progress.progress_percent),
+        status: status,
+        error: progress.error || undefined,
+        downloadSpeed: progress.download_speed_human,
+        eta: progress.eta_human
+      })));
+    };
+
+    // Listen for custom download-progress events
+    const handleProgressEvent = (event: CustomEvent<SubprocessProgress>) => {
+      if (window.downloadProgressCallback) {
+        window.downloadProgressCallback(event.detail);
+      }
+    };
+
+    window.addEventListener('download-progress', handleProgressEvent as EventListener);
+
+    return () => {
+      window.removeEventListener('download-progress', handleProgressEvent as EventListener);
+      delete window.downloadProgressCallback;
+    };
+  }, []);
 
   const startDownload = useCallback(async (url: string, filename?: string) => {
     // Extract filename from URL if not provided
@@ -36,10 +93,8 @@ export function useDownload() {
         
         if (result.success) {
           console.log('Download IPC message sent successfully:', result.message);
-          
-          // For now, simulate progress since we don't have real-time updates yet
-          // In a full implementation, you'd listen to progress events from the desktop app
-          simulateProgress(downloadId);
+          console.log('📊 Real-time progress will be received via downloadProgressCallback');
+          // Progress updates will come via downloadProgressCallback
         } else {
           throw new Error(result.error || 'Failed to start download');
         }
@@ -76,41 +131,6 @@ export function useDownload() {
     }
 
     return downloadId;
-  }, []);
-
-  // Simulate progress for desktop downloads (temporary until real-time events are implemented)
-  const simulateProgress = useCallback((downloadId: string) => {
-    let progress = 0;
-    const interval = setInterval(() => {
-      progress += Math.random() * 10;
-      
-      if (progress >= 100) {
-        progress = 100;
-        setDownloads(prev => {
-          const current = prev.get(downloadId);
-          if (current) {
-            return new Map(prev.set(downloadId, {
-              ...current,
-              progress: 100,
-              status: 'completed'
-            }));
-          }
-          return prev;
-        });
-        clearInterval(interval);
-      } else {
-        setDownloads(prev => {
-          const current = prev.get(downloadId);
-          if (current && current.status === 'downloading') {
-            return new Map(prev.set(downloadId, {
-              ...current,
-              progress: Math.round(progress)
-            }));
-          }
-          return prev;
-        });
-      }
-    }, 500);
   }, []);
 
   const getDownload = useCallback((downloadId: string) => {
@@ -153,5 +173,6 @@ declare global {
         error?: string;
       }>;
     };
+    downloadProgressCallback?: (progress: SubprocessProgress) => void;
   }
 }

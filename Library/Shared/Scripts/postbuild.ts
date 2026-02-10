@@ -293,9 +293,9 @@ async function main(): Promise<void> {
     console.log('\n📋 Copying executables...');
     
     // Copy mikochat.exe
-    const mikochatSrc = join(TARGET_RELEASE_DIR, 'mikochat.exe');
-    const mikochatDest = join(DISTRIBUTION_PACKAGE_DIR, 'mikochat.exe');
-    const mikochatCopied = copyFile(mikochatSrc, mikochatDest, 'mikochat.exe');
+    const mikochatSrc = join(TARGET_RELEASE_DIR, 'workspace.exe');
+    const mikochatDest = join(DISTRIBUTION_PACKAGE_DIR, 'workspace.exe');
+    const mikochatCopied = copyFile(mikochatSrc, mikochatDest, 'workspace.exe');
 
 
 

@@ -3,10 +3,10 @@
   <assemblyIdentity
     version="1.0.0.0"
     processorArchitecture="*"
-    name="MikoChat"
+    name="PrintingWorkspace"
     type="win32"
   />
-  <description>Miko Chat Desktop Application</description>
+  <description>Priting Workspace</description>
   
   <!-- Application compatibility -->
   <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">

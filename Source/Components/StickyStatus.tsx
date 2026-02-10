@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { getChat, updateChatStatus, sendMessage } from '../Library/utils/api'
 import { useToast } from '../Library/hooks/useToast'
 import { cn } from '../Library/utils'
+import { getWebSocketManager } from '../Library/utils/websocket'
 
 type Chat = any;
 
@@ -89,6 +90,41 @@ export default function StickyStatus({
       fetchChatData();
     }
   }, [selectedChat]);
+
+  // Listen for real-time status updates via WebSocket
+  useEffect(() => {
+    const wsManager = getWebSocketManager();
+    if (!wsManager || !selectedChat?.uuid) return;
+
+    const handleWebSocketMessage = (data: any) => {
+      // Handle chat_status_updated messages
+      if (data.type === 'chat_status_updated' && data.data?.chat) {
+        const updatedChat = data.data.chat;
+        
+        // Only update if this is the currently selected chat
+        if (updatedChat.uuid === selectedChat.uuid) {
+          console.log('📊 StickyStatus: Received real-time status update:', updatedChat);
+          setQueueData(updatedChat);
+        }
+      }
+      
+      // Also handle general chat_updated messages
+      if (data.type === 'chat_updated' && data.data?.chat) {
+        const updatedChat = data.data.chat;
+        
+        if (updatedChat.uuid === selectedChat.uuid) {
+          console.log('📊 StickyStatus: Received real-time chat update:', updatedChat);
+          setQueueData(updatedChat);
+        }
+      }
+    };
+
+    wsManager.on('message', handleWebSocketMessage);
+
+    return () => {
+      wsManager.off('message', handleWebSocketMessage);
+    };
+  }, [selectedChat?.uuid]);
 
   // Handle click outside to close dropdown
   useEffect(() => {
@@ -174,7 +210,7 @@ export default function StickyStatus({
   const currentStatusConfig = getStatusConfig(status);
   const StatusIcon = currentStatusConfig.icon;
 
-  const displayId = isQueueChat ? `Queue #${queueData?.id || queueData.metadata?.queueId}` : queueData.channelName;
+  const displayId = queueData?.uniqueId || (isQueueChat ? `Queue #${queueData?.id || queueData.metadata?.queueId}` : queueData.channelName);
   const subTitle = isQueueChat
     ? (queueData?.requestType || 'Request')
     : `Created by ${queueData.createdByName}`;

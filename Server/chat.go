@@ -26,6 +26,7 @@ const (
 type Chat struct {
 	ID            int               `json:"id"`
 	UUID          string            `json:"uuid"`
+	UniqueID      string            `json:"uniqueId"`      // Format: QT-DDMMYY-{NUM}
 	ChannelID     string            `json:"channelId"`
 	ChannelName   string            `json:"channelName"`
 	ChannelType   ChatType          `json:"channelType"`

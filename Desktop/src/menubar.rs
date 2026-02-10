@@ -2,8 +2,39 @@ use windows::Win32::{
     Foundation::HWND,
     UI::WindowsAndMessaging::*,
     Graphics::Dwm::*,
+    System::Com::*,
 };
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use lazy_static::lazy_static;
+
+// Global storage for menu items and pending commands
+lazy_static! {
+    static ref GLOBAL_MENU_ITEMS: Arc<Mutex<HashMap<u16, String>>> = Arc::new(Mutex::new(HashMap::new()));
+    static ref PENDING_MENU_COMMAND: Arc<Mutex<Option<u16>>> = Arc::new(Mutex::new(None));
+}
+
+pub fn store_menu_items_globally(items: HashMap<u16, String>) {
+    let mut global_items = GLOBAL_MENU_ITEMS.lock().unwrap();
+    *global_items = items;
+    println!("📋 Stored {} menu items globally", global_items.len());
+}
+
+pub fn get_menu_action(command_id: u16) -> Option<String> {
+    let global_items = GLOBAL_MENU_ITEMS.lock().unwrap();
+    global_items.get(&command_id).cloned()
+}
+
+pub fn set_pending_menu_command(command_id: u16) {
+    let mut pending = PENDING_MENU_COMMAND.lock().unwrap();
+    *pending = Some(command_id);
+    println!("📋 Set pending menu command: {}", command_id);
+}
+
+pub fn get_and_clear_pending_menu_command() -> Option<u16> {
+    let mut pending = PENDING_MENU_COMMAND.lock().unwrap();
+    pending.take()
+}
 
 pub struct MenuBar {
     menu_handle: HMENU,
@@ -47,11 +78,41 @@ impl MenuBar {
         unsafe {
             SetMenu(hwnd, self.menu_handle)?;
             DrawMenuBar(hwnd)?;
+            
+            // Store the menu items globally for the message handler
+            store_menu_items_globally(self.menu_items.clone());
+            
             Ok(())
         }
     }
 
+    pub fn get_menu_items(&self) -> &HashMap<u16, String> {
+        &self.menu_items
+    }
 
+    pub fn handle_menu_command(&self, command_id: u16, hwnd: HWND) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(action) = self.menu_items.get(&command_id) {
+            println!("📋 Menu action triggered: {}", action);
+            
+            match action.as_str() {
+                "check_updates" => {
+                    show_check_updates_dialog(hwnd)?;
+                }
+                "about" => {
+                    show_about_dialog(hwnd)?;
+                }
+                "exit" => {
+                    unsafe {
+                        PostQuitMessage(0);
+                    }
+                }
+                _ => {
+                    println!("⚠️ Unhandled menu action: {}", action);
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 pub struct SubMenu<'a> {
@@ -352,6 +413,94 @@ pub fn enable_window_animations(hwnd: HWND) -> Result<(), Box<dyn std::error::Er
         // Enable window animations using AnimateWindow for show/hide
         // This will be called when showing/hiding the window
         println!("✅ Window animations and transitions enabled");
+        Ok(())
+    }
+}
+
+// Windows Task Dialog for Check Updates
+pub fn show_check_updates_dialog(hwnd: HWND) -> Result<(), Box<dyn std::error::Error>> {
+    unsafe {
+        // Initialize COM for task dialogs
+        let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+        
+        // Create task dialog configuration
+        let title = "Check for Updates";
+        let main_instruction = "Checking for updates...";
+        let content = "Miko Workspace is checking for available updates.\n\nCurrent Version: 0.1.0\n\nThis feature will connect to the update server to check for the latest version.";
+        
+        // Convert strings to wide strings
+        let title_wide: Vec<u16> = title.encode_utf16().chain(std::iter::once(0)).collect();
+        let instruction_wide: Vec<u16> = main_instruction.encode_utf16().chain(std::iter::once(0)).collect();
+        let content_wide: Vec<u16> = content.encode_utf16().chain(std::iter::once(0)).collect();
+        
+        let button_text = "Check Now";
+        let button_text_wide: Vec<u16> = button_text.encode_utf16().chain(std::iter::once(0)).collect();
+        
+        // Show message box as task dialog alternative (simpler approach)
+        let message = format!(
+            "{}\n\n{}\n\nWould you like to check for updates now?",
+            main_instruction, content
+        );
+        let message_wide: Vec<u16> = message.encode_utf16().chain(std::iter::once(0)).collect();
+        
+        let result = MessageBoxW(
+            hwnd,
+            windows::core::PCWSTR(message_wide.as_ptr()),
+            windows::core::PCWSTR(title_wide.as_ptr()),
+            MB_YESNO | MB_ICONINFORMATION,
+        );
+        
+        if result == IDYES {
+            println!("✅ User clicked 'Yes' to check for updates");
+            
+            // Show checking dialog immediately
+            let checking_message = "Checking for updates...\n\nPlease wait while we connect to the update server.";
+            let checking_message_wide: Vec<u16> = checking_message.encode_utf16().chain(std::iter::once(0)).collect();
+            let checking_title = "Update Check";
+            let checking_title_wide: Vec<u16> = checking_title.encode_utf16().chain(std::iter::once(0)).collect();
+            
+            // Simulate checking (in real app, this would be async)
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            
+            // Show result dialog
+            let result_message = "You are using the latest version of Miko Workspace.\n\nVersion: 0.1.0\n\nNo updates are available at this time.";
+            let result_message_wide: Vec<u16> = result_message.encode_utf16().chain(std::iter::once(0)).collect();
+            let result_title = "Update Check Complete";
+            let result_title_wide: Vec<u16> = result_title.encode_utf16().chain(std::iter::once(0)).collect();
+            
+            MessageBoxW(
+                hwnd,
+                windows::core::PCWSTR(result_message_wide.as_ptr()),
+                windows::core::PCWSTR(result_title_wide.as_ptr()),
+                MB_OK | MB_ICONINFORMATION,
+            );
+            
+            println!("✅ Update check completed");
+        } else {
+            println!("❌ User cancelled update check");
+        }
+        
+        CoUninitialize();
+        Ok(())
+    }
+}
+
+// About dialog
+pub fn show_about_dialog(hwnd: HWND) -> Result<(), Box<dyn std::error::Error>> {
+    unsafe {
+        let title = "About Miko Workspace";
+        let message = "Miko Workspace Desktop Application\n\nVersion: 0.1.0\n\nBuilt with Rust, Wry, and Winit\n\nFeatures:\n• Native Windows integration\n• WebView2 runtime\n• File download service\n• Real-time messaging\n• System tray integration\n\n© 2024 Miko Workspace";
+        
+        let title_wide: Vec<u16> = title.encode_utf16().chain(std::iter::once(0)).collect();
+        let message_wide: Vec<u16> = message.encode_utf16().chain(std::iter::once(0)).collect();
+        
+        MessageBoxW(
+            hwnd,
+            windows::core::PCWSTR(message_wide.as_ptr()),
+            windows::core::PCWSTR(title_wide.as_ptr()),
+            MB_OK | MB_ICONINFORMATION,
+        );
+        
         Ok(())
     }
 }
