@@ -15,6 +15,7 @@ import { spawn } from 'child_process';
 
 const PROJECT_ROOT = join(import.meta.dir, '../../..');
 const TARGET_RELEASE_DIR = join(PROJECT_ROOT, 'target/release');
+const LAUNCHERPATH = join(PROJECT_ROOT, 'Launcher/dist');
 const RUNTIME_DIR = join(PROJECT_ROOT, 'Runtime');
 const DISTRIBUTION_PACKAGE_DIR = join(PROJECT_ROOT, 'Distribution/Package');
 
@@ -292,12 +293,20 @@ async function main(): Promise<void> {
 
     console.log('\n📋 Copying executables...');
     
-    // Copy mikochat.exe
-    const mikochatSrc = join(TARGET_RELEASE_DIR, 'workspace.exe');
-    const mikochatDest = join(DISTRIBUTION_PACKAGE_DIR, 'workspace.exe');
-    const mikochatCopied = copyFile(mikochatSrc, mikochatDest, 'workspace.exe');
+    // Copy workspace.exe
+    const workspaceSrc = join(TARGET_RELEASE_DIR, 'workspace.exe');
+    const workspaceDest = join(DISTRIBUTION_PACKAGE_DIR, 'workspace.exe');
+    const workspaceCopied = copyFile(workspaceSrc, workspaceDest, 'workspace.exe');
 
+    // Copy downloaderservice.exe
+    const downloaderSrc = join(TARGET_RELEASE_DIR, 'downloaderservice.exe');
+    const downloaderDest = join(DISTRIBUTION_PACKAGE_DIR, 'downloaderservice.exe');
+    const downloaderCopied = copyFile(downloaderSrc, downloaderDest, 'downloaderservice.exe');
 
+    // Copy launcher.exe (Rust version)
+    const launcherSrc = join(LAUNCHERPATH, 'launcher.exe');
+    const launcherDest = join(DISTRIBUTION_PACKAGE_DIR, 'launcher.exe');
+    const launcherCopied = copyFile(launcherSrc, launcherDest, 'launcher.exe');
 
     console.log('\n🌐 Copying WebView2 runtime...');
     
@@ -345,7 +354,9 @@ async function main(): Promise<void> {
     }
 
     console.log('\n📊 Post-build summary:');
-    console.log(`   mikochat.exe: ${mikochatCopied ? '✅' : '❌'}`);
+    console.log(`   workspace.exe: ${workspaceCopied ? '✅' : '❌'}`);
+    console.log(`   downloaderservice.exe: ${downloaderCopied ? '✅' : '❌'}`);
+    console.log(`   launcher.exe (Rust): ${launcherCopied ? '✅' : '❌'}`);
     console.log(`   WebView2 runtime: ${existsSync(RUNTIME_DIR) ? '✅' : '❌'}`);
 
     // List contents of Distribution/Package

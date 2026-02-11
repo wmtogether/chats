@@ -22,7 +22,7 @@ const STATUS_CONFIG: Record<string, { label: string; icon: any; color: string; b
     bgColor: 'bg-blue-100 dark:bg-blue-900/30'
   },
   WAIT_DIMENSION: { 
-    label: 'รอวัดขนาด', 
+    label: 'รอขึ้น Dimention', 
     icon: Clock, 
     color: 'text-orange-700 dark:text-orange-300',
     bgColor: 'bg-orange-100 dark:bg-orange-900/30'
@@ -34,7 +34,7 @@ const STATUS_CONFIG: Record<string, { label: string; icon: any; color: string; b
     bgColor: 'bg-purple-100 dark:bg-purple-900/30'
   },
   WAIT_QA: { 
-    label: 'รอตรวจสอบ', 
+    label: 'รอ QA', 
     icon: AlertCircle, 
     color: 'text-indigo-700 dark:text-indigo-300',
     bgColor: 'bg-indigo-100 dark:bg-indigo-900/30'
