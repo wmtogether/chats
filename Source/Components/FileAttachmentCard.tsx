@@ -44,7 +44,8 @@ const FileAttachmentCard: React.FC<FileAttachmentCardProps> = ({
   let actualSrc = '';
   if (filePath) {
     // filePath now contains the download token
-    actualSrc = `${getApiUrl()}/api/files/d/${filePath}`;
+    const authToken = localStorage.getItem('authToken');
+    actualSrc = `${getApiUrl()}/api/files/d/${filePath}?token=${authToken}`;
   } else if (src) {
     actualSrc = src;
   }
@@ -168,10 +169,14 @@ const FileAttachmentCard: React.FC<FileAttachmentCardProps> = ({
       setIsDownloading(true);
       console.log('Starting file download:', fullFileUrl, '->', actualFileName);
       
+      // Get auth token for header
+      const authToken = localStorage.getItem('authToken');
+      const headers = authToken ? { 'Authorization': `Bearer ${authToken}` } : undefined;
+      
       // Try subprocess download first if available
       if (window.downloadAPI) {
-        console.log('Using subprocess downloader');
-        await startDownload(fullFileUrl, actualFileName);
+        console.log('Using subprocess downloader with headers');
+        await startDownload(fullFileUrl, actualFileName, headers);
       } else {
         // Fallback to browser download
         console.log('downloadAPI not available, using browser download');

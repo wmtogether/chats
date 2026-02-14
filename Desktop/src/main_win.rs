@@ -278,7 +278,7 @@ fn show_file_in_explorer(filename: &str) {
     }
 }
 
-fn start_download_process(url: String, filename: String) {
+fn start_download_process(url: String, filename: String, headers: Vec<(String, String)>) {
     println!("Starting download: {} -> {}", url, filename);
     println!("📊 Real-time progress will be sent to frontend via callback");
     
@@ -309,7 +309,14 @@ fn start_download_process(url: String, filename: String) {
     let mut command = Command::new(&exe_path);
     command
         .arg(&url)
-        .arg(&output_path)
+        .arg(&output_path);
+    
+    // Add headers if provided
+    for (key, value) in headers {
+        command.arg("-H").arg(format!("{}: {}", key, value));
+    }
+    
+    command
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     
@@ -1165,7 +1172,7 @@ impl App {
                 
                 // Direct IPC download API - bypasses all web requests
                 window.downloadAPI = {
-                    startDownload: function(url, filename) {
+                    startDownload: function(url, filename, headers) {
                         return new Promise((resolve, reject) => {
                             try {
                                 console.log('Sending direct IPC download request:', url, '->', filename);
@@ -1175,6 +1182,7 @@ impl App {
                                     type: 'start_download',
                                     url: url,
                                     filename: filename,
+                                    headers: headers || {},
                                     timestamp: Date.now()
                                 });
                                 
@@ -1307,13 +1315,23 @@ impl App {
                                     ) {
                                         println!("🚀 Starting direct download (no web requests): {} -> {}", url, filename);
                                         
+                                        // Parse headers if provided
+                                        let mut headers: Vec<(String, String)> = Vec::new();
+                                        if let Some(headers_obj) = message["headers"].as_object() {
+                                            for (key, value) in headers_obj {
+                                                if let Some(val_str) = value.as_str() {
+                                                    headers.push((key.clone(), val_str.to_string()));
+                                                }
+                                            }
+                                        }
+                                        
                                         // Start download process in background thread
                                         let url = url.to_string();
                                         let filename = filename.to_string();
                                         
                                         std::thread::spawn(move || {
                                             println!("📥 Download thread started for: {}", filename);
-                                            start_download_process(url, filename);
+                                            start_download_process(url, filename, headers);
                                         });
                                         
                                         println!("✅ Download IPC message processed successfully");

@@ -139,11 +139,15 @@ export default function FileManager({ uniqueId, onPostFile }: FileManagerProps) 
     if (!resolvedPath) return;
     
     try {
-      const filePath = `${resolvedPath}/${fileName}`;
+      // Look up the file token from the backend
       const token = localStorage.getItem('authToken');
+      const filePath = `${resolvedPath}/${fileName}`;
+      
+      // For now, use the legacy path-based download
+      // TODO: Implement token lookup endpoint for existing files
       const fullFileUrl = `${API_BASE_URL}/api/files/download?path=${encodeURIComponent(filePath)}&token=${token}`;
       
-      console.log('Starting direct file download (no web requests):', fullFileUrl, '->', fileName);
+      console.log('Starting direct file download:', fullFileUrl, '->', fileName);
       
       await startDownload(fullFileUrl, fileName);
       addToast({ message: `Download started: ${fileName}`, type: 'info' });
@@ -403,7 +407,8 @@ export default function FileManager({ uniqueId, onPostFile }: FileManagerProps) 
           // Auto-post files to chat if callback is provided and not in global tab
           if (onPostFile && activeTab === 'works') {
             uploadedFiles.forEach(file => {
-              onPostFile(file.fileName, file.filePath);
+              // Use token instead of filePath for secure downloads
+              onPostFile(file.fileName, file.token || file.filePath);
             });
           }
         }}

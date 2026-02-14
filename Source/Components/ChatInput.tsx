@@ -949,7 +949,7 @@ export default function ChatInput({ onSendMessage, replyingTo, onCancelReply, cu
               const fileMetadata = JSON.stringify({
                 type: 'file_attachment',
                 fileName: file.fileName,
-                filePath: file.filePath,
+                filePath: file.token || file.filePath, // Use token if available, fallback to path
               });
               onSendMessage(fileMessage, [fileMetadata]);
             });

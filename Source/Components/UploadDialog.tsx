@@ -9,7 +9,7 @@ interface UploadDialogProps {
   isOpen: boolean;
   onClose: () => void;
   currentPath?: string; // Current filestorage path
-  onUploadComplete?: (uploadedFiles: Array<{ fileName: string; filePath: string }>) => void;
+  onUploadComplete?: (uploadedFiles: Array<{ fileName: string; filePath: string; token?: string }>) => void;
 }
 
 type UploadLocation = 'global' | 'filestorage';
@@ -91,8 +91,12 @@ export default function UploadDialog({ isOpen, onClose, currentPath, onUploadCom
       // Get the resolved path from the response or use the upload path
       const resolvedPath = result.data?.path || uploadPath;
       
-      // Prepare uploaded files info for callback
-      const uploadedFilesInfo = Array.from(selectedFiles).map(file => ({
+      // Parse uploaded files with tokens from response
+      const uploadedFilesInfo = result.data?.files?.map((file: any) => ({
+        fileName: file.filename,
+        filePath: `${resolvedPath}/${file.filename}`,
+        token: file.token, // Token for secure downloads
+      })) || Array.from(selectedFiles).map(file => ({
         fileName: file.name,
         filePath: `${resolvedPath}/${file.name}`,
       }));

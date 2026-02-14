@@ -87,7 +87,7 @@ fn format_duration(seconds: u64) -> String {
     }
 }
 
-async fn download_file_multiconnection(url: &str, output_path: &str) -> Result<(), Box<dyn std::error::Error>> {
+async fn download_file_multiconnection(url: &str, output_path: &str, headers: Vec<(String, String)>) -> Result<(), Box<dyn std::error::Error>> {
     // Determine the actual output file path
     let final_output_path = if output_path.ends_with('/') || output_path.ends_with('\\') || output_path == "." || output_path == "./" {
         let url_filename = url.split('/').last().unwrap_or("downloaded_file");
@@ -110,8 +110,12 @@ async fn download_file_multiconnection(url: &str, output_path: &str) -> Result<(
     // Use GET request directly and check headers from the response
     let client = reqwest::Client::new();
     
-    // Make a GET request to get file info
-    let response = client.get(url).send().await?;
+    // Make a GET request to get file info with custom headers
+    let mut request = client.get(url);
+    for (key, value) in &headers {
+        request = request.header(key, value);
+    }
+    let response = request.send().await?;
     
     if !response.status().is_success() {
         return Err(format!("HTTP error: {}", response.status()).into());
@@ -141,7 +145,7 @@ async fn download_file_multiconnection(url: &str, output_path: &str) -> Result<(
     progress.broadcast();
 
     // Always use single connection to avoid range request complications
-    download_file_single_with_response(url, &final_output_path, progress, response).await
+    download_file_single_with_response(url, &final_output_path, progress, response, headers).await
 }
 
 async fn download_range(
@@ -222,7 +226,8 @@ async fn download_file_single_with_response(
     url: &str, 
     output_path: &str, 
     mut progress: DownloadProgress,
-    response: reqwest::Response
+    response: reqwest::Response,
+    _headers: Vec<(String, String)>
 ) -> Result<(), Box<dyn std::error::Error>> {
     progress.status = "connecting".to_string();
     progress.broadcast();
@@ -355,13 +360,57 @@ async fn download_file_single(url: &str, output_path: &str, mut progress: Downlo
 async fn main() {
     let args: Vec<String> = env::args().collect();
 
-    if args.len() != 3 {
+    // Parse arguments: URL OUTPUT_PATH [-H "Header: Value"]...
+    if args.len() < 3 {
         print_usage();
         std::process::exit(1);
     }
 
-    let url = &args[1];
-    let output_path = &args[2];
+    let mut url: Option<String> = None;
+    let mut output_path: Option<String> = None;
+    let mut headers: Vec<(String, String)> = Vec::new();
+    
+    let mut i = 1;
+    while i < args.len() {
+        if args[i] == "-H" || args[i] == "--header" {
+            if i + 1 < args.len() {
+                let header_str = &args[i + 1];
+                if let Some(colon_pos) = header_str.find(':') {
+                    let key = header_str[..colon_pos].trim().to_string();
+                    let value = header_str[colon_pos + 1..].trim().to_string();
+                    headers.push((key, value));
+                }
+                i += 2;
+            } else {
+                print_error("Missing header value after -H flag");
+                std::process::exit(1);
+            }
+        } else if url.is_none() {
+            url = Some(args[i].clone());
+            i += 1;
+        } else if output_path.is_none() {
+            output_path = Some(args[i].clone());
+            i += 1;
+        } else {
+            i += 1;
+        }
+    }
+    
+    let url = match url {
+        Some(u) => u,
+        None => {
+            print_usage();
+            std::process::exit(1);
+        }
+    };
+    
+    let output_path = match output_path {
+        Some(p) => p,
+        None => {
+            print_usage();
+            std::process::exit(1);
+        }
+    };
 
     if !url.starts_with("http://") && !url.starts_with("https://") {
         print_error("URL must start with http:// or https://");
@@ -388,7 +437,7 @@ async fn main() {
         }
     }
 
-    match download_file_multiconnection(url, output_path).await {
+    match download_file_multiconnection(&url, &output_path, headers).await {
         Ok(()) => {
             let success = json!({
                 "status": "success",
@@ -408,8 +457,8 @@ async fn main() {
 fn print_usage() {
     let usage = json!({
         "status": "error",
-        "error": "Usage: downloaderservice.exe <URL> <OUTPUT_PATH>",
-        "example": "downloaderservice.exe https://example.com/file.zip ./downloads/file.zip"
+        "error": "Usage: downloaderservice.exe <URL> <OUTPUT_PATH> [-H \"Header: Value\"]",
+        "example": "downloaderservice.exe https://example.com/file.zip ./downloads/file.zip -H \"Authorization: Bearer token123\""
     });
     println!("{}", usage);
 }

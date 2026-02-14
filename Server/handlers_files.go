@@ -222,20 +222,23 @@ func uploadFilesHandler(w http.ResponseWriter, r *http.Request) {
 
 	// If uniqueId is provided, look up the path from filestorage table
 	if uniqueID != "" && path == "" {
+		log.Printf("Looking up storage path for uniqueId: %s", uniqueID)
 		storagePath, err := GetFileStoragePathByChatUniqueID(uniqueID)
 		if err != nil {
-			log.Printf("Error getting storage path for uniqueId %s: %v", uniqueID, err)
-			http.Error(w, `{"success": false, "error": "Failed to get storage path"}`, http.StatusInternalServerError)
+			log.Printf("❌ Error getting storage path for uniqueId %s: %v", uniqueID, err)
+			http.Error(w, fmt.Sprintf(`{"success": false, "error": "Failed to get storage path: %v"}`, err), http.StatusInternalServerError)
 			return
 		}
 		
-		// If no storage path found, cannot upload (proof not created yet)
+		// If no storage path found
 		if storagePath == "" {
-			http.Error(w, `{"success": false, "error": "Storage path not found. Please create proof data first."}`, http.StatusNotFound)
+			log.Printf("❌ No storage path found for uniqueId %s (chat may not exist)", uniqueID)
+			http.Error(w, `{"success": false, "error": "Chat not found or storage path unavailable"}`, http.StatusNotFound)
 			return
 		}
 		
 		path = storagePath
+		log.Printf("✅ Resolved storage path: %s", path)
 	}
 
 	if path == "" {
@@ -271,7 +274,7 @@ func uploadFilesHandler(w http.ResponseWriter, r *http.Request) {
 		// Open uploaded file
 		file, err := fileHeader.Open()
 		if err != nil {
-			log.Printf("Error opening uploaded file %s: %v", fileHeader.Filename, err)
+			log.Printf("❌ Error opening uploaded file %s: %v", fileHeader.Filename, err)
 			continue
 		}
 		defer file.Close()
@@ -280,7 +283,7 @@ func uploadFilesHandler(w http.ResponseWriter, r *http.Request) {
 		destPath := filepath.Join(path, fileHeader.Filename)
 		destFile, err := os.Create(destPath)
 		if err != nil {
-			log.Printf("Error creating file %s: %v", destPath, err)
+			log.Printf("❌ Error creating file %s: %v", destPath, err)
 			continue
 		}
 		defer destFile.Close()
@@ -288,16 +291,20 @@ func uploadFilesHandler(w http.ResponseWriter, r *http.Request) {
 		// Copy file contents
 		_, err = io.Copy(destFile, file)
 		if err != nil {
-			log.Printf("Error saving file %s: %v", destPath, err)
+			log.Printf("❌ Error saving file %s: %v", destPath, err)
 			continue
 		}
+
+		log.Printf("✅ File saved to disk: %s", destPath)
 
 		// Generate download token
 		token, err := GenerateDownloadToken()
 		if err != nil {
-			log.Printf("Error generating download token: %v", err)
+			log.Printf("❌ Error generating download token: %v", err)
 			continue
 		}
+
+		log.Printf("🔑 Generated token: %s", token)
 
 		// Store token in database
 		_, err = db.Exec(`
@@ -306,8 +313,10 @@ func uploadFilesHandler(w http.ResponseWriter, r *http.Request) {
 		`, token, destPath, fileHeader.Filename, time.Now())
 		
 		if err != nil {
-			log.Printf("Error storing download token: %v", err)
+			log.Printf("❌ Error storing download token in database: %v", err)
 			// Continue anyway, file is uploaded
+		} else {
+			log.Printf("✅ Token stored in database")
 		}
 		
 		uploadedFiles = append(uploadedFiles, map[string]string{
@@ -315,7 +324,7 @@ func uploadFilesHandler(w http.ResponseWriter, r *http.Request) {
 			"token":    token,
 		})
 		
-		log.Printf("📤 User %s uploaded file: %s (token: %s)", user.Name, destPath, token)
+		log.Printf("✅ User %s uploaded file: %s (token: %s)", user.Name, destPath, token)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -392,24 +401,26 @@ func deleteFileHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// downloadByTokenHandler handles GET /api/files/d/{token}
-// Downloads a file using a secure token instead of exposing the full path
-// Requires Authorization header for authentication
+// downloadByTokenHandler handles GET /api/files/d/{token}?token={auth_token}
+// Downloads a file using a secure file token
+// Requires authentication via Authorization header OR token query parameter
 // Automatically uses the original filename from the database
 func downloadByTokenHandler(w http.ResponseWriter, r *http.Request) {
-	// Get user from context (set by authMiddleware)
+	// Get user from context (set by flexibleAuthMiddleware)
 	user, ok := r.Context().Value(userContextKey).(*User)
 	if !ok || user == nil {
 		http.Error(w, `{"success": false, "error": "Unauthorized"}`, http.StatusUnauthorized)
 		return
 	}
 
-	// Get token from URL parameter
-	token := chi.URLParam(r, "token")
-	if token == "" {
+	// Get file token from URL parameter
+	fileToken := chi.URLParam(r, "token")
+	if fileToken == "" {
 		http.Error(w, `{"success": false, "error": "Token parameter is required"}`, http.StatusBadRequest)
 		return
 	}
+
+	log.Printf("📥 Download request from user %s with file token: %s", user.Name, fileToken)
 
 	// Look up file by token in file_downloads table
 	var filePath, filename string
@@ -418,26 +429,30 @@ func downloadByTokenHandler(w http.ResponseWriter, r *http.Request) {
 		FROM file_downloads 
 		WHERE token = $1
 		LIMIT 1
-	`, token).Scan(&filePath, &filename)
+	`, fileToken).Scan(&filePath, &filename)
 	
 	if err != nil {
 		if err == sql.ErrNoRows {
+			log.Printf("❌ File token not found: %s", fileToken)
 			http.Error(w, `{"success": false, "error": "Invalid or expired token"}`, http.StatusNotFound)
 			return
 		}
-		log.Printf("Error looking up file token: %v", err)
+		log.Printf("❌ Error looking up file token: %v", err)
 		http.Error(w, `{"success": false, "error": "Failed to lookup file"}`, http.StatusInternalServerError)
 		return
 	}
+
+	log.Printf("✅ Token found - file: %s, path: %s", filename, filePath)
 
 	// Check if file exists
 	info, err := os.Stat(filePath)
 	if err != nil {
 		if os.IsNotExist(err) {
+			log.Printf("❌ File not found: %s", filePath)
 			http.Error(w, `{"success": false, "error": "File not found"}`, http.StatusNotFound)
 			return
 		}
-		log.Printf("Error checking file %s: %v", filePath, err)
+		log.Printf("❌ Error checking file %s: %v", filePath, err)
 		http.Error(w, `{"success": false, "error": "Failed to access file"}`, http.StatusInternalServerError)
 		return
 	}
@@ -450,7 +465,7 @@ func downloadByTokenHandler(w http.ResponseWriter, r *http.Request) {
 	// Open file
 	file, err := os.Open(filePath)
 	if err != nil {
-		log.Printf("Error opening file %s: %v", filePath, err)
+		log.Printf("❌ Error opening file %s: %v", filePath, err)
 		http.Error(w, `{"success": false, "error": "Failed to open file"}`, http.StatusInternalServerError)
 		return
 	}
@@ -464,8 +479,8 @@ func downloadByTokenHandler(w http.ResponseWriter, r *http.Request) {
 	// Stream file to response
 	_, err = io.Copy(w, file)
 	if err != nil {
-		log.Printf("Error streaming file %s: %v", filePath, err)
+		log.Printf("❌ Error streaming file %s: %v", filePath, err)
 	}
 
-	log.Printf("📥 User %s downloaded file via token: %s", user.Name, filename)
+	log.Printf("✅ User %s downloaded file via token: %s", user.Name, filename)
 }

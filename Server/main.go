@@ -46,6 +46,10 @@ func main() {
 
 	// Public routes
 	r.Post("/api/login", loginHandler)
+	
+	// Download routes with flexible auth (supports header OR query param)
+	r.With(flexibleAuthMiddleware).Get("/api/files/download", downloadFileHandler)
+	r.With(flexibleAuthMiddleware).Get("/api/files/d/{token}", downloadByTokenHandler)
 
 	// Protected routes
 	r.Group(func(r chi.Router) {
@@ -91,11 +95,9 @@ func main() {
 			r.Delete("/{id}", deleteProofDataHandler)
 		})
 
-		// File management routes
+		// File management routes (upload, list, delete)
 		r.Route("/api/files", func(r chi.Router) {
 			r.Get("/list", listFilesHandler)
-			r.With(flexibleAuthMiddleware).Get("/download", downloadFileHandler) // Legacy: download by path
-			r.Get("/d/{token}", downloadByTokenHandler) // New: download by token (requires auth header)
 			r.Post("/upload", uploadFilesHandler)
 			r.Delete("/delete", deleteFileHandler)
 		})

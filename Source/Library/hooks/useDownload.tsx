@@ -94,10 +94,10 @@ export function useDownload() {
     };
   }, []);
 
-  const startDownload = useCallback(async (url: string, filename?: string) => {
+  const startDownload = useCallback(async (url: string, filename?: string, headers?: Record<string, string>) => {
     const finalFilename = filename || url.split('/').pop() || 'download';
 
-    console.log('🚀 Starting download:', { url, filename: finalFilename });
+    console.log('🚀 Starting download:', { url, filename: finalFilename, headers });
 
     // Initialize download state
     updateDownload(url, {
@@ -111,7 +111,7 @@ export function useDownload() {
       if (window.downloadAPI) {
         console.log('📤 Sending IPC download request:', url);
         
-        const result = await window.downloadAPI.startDownload(url, finalFilename);
+        const result = await window.downloadAPI.startDownload(url, finalFilename, headers);
         
         if (result.success) {
           console.log('✅ Download IPC sent:', result.message);
@@ -180,7 +180,7 @@ export function useDownload() {
 declare global {
   interface Window {
     downloadAPI?: {
-      startDownload: (url: string, filename: string) => Promise<{
+      startDownload: (url: string, filename: string, headers?: Record<string, string>) => Promise<{
         success: boolean;
         message?: string;
         error?: string;
