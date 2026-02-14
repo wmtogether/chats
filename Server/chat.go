@@ -26,7 +26,7 @@ const (
 type Chat struct {
 	ID            int               `json:"id"`
 	UUID          string            `json:"uuid"`
-	UniqueID      string            `json:"uniqueId"`      // Format: QT-DDMMYY-{NUM}
+	UniqueID      string            `json:"uniqueId"`      // Format: CN-DDMMYY-{NUM}
 	ChannelID     string            `json:"channelId"`
 	ChannelName   string            `json:"channelName"`
 	ChannelType   ChatType          `json:"channelType"`
@@ -62,4 +62,49 @@ type ChatMessage struct {
 	Customers   sql.NullString      `json:"customers"`
 	EditedAt    sql.NullTime        `json:"editedAt"`
 	CreatedAt   time.Time           `json:"createdAt"`
+}
+
+// GetChatByID retrieves a chat by its ID
+func GetChatByID(chatID int) (*Chat, error) {
+	query := `
+		SELECT 
+			id, uuid, unique_id, channel_id, channel_name, channel_type, 
+			chat_category, description, job_id, queue_id, customer_id, 
+			customers, status, metadata, is_archived, created_by_id, 
+			created_by_name, created_at, updated_at
+		FROM chats
+		WHERE id = $1
+	`
+
+	var chat Chat
+	err := db.QueryRow(query, chatID).Scan(
+		&chat.ID,
+		&chat.UUID,
+		&chat.UniqueID,
+		&chat.ChannelID,
+		&chat.ChannelName,
+		&chat.ChannelType,
+		&chat.ChatCategory,
+		&chat.Description,
+		&chat.JobID,
+		&chat.QueueID,
+		&chat.CustomerID,
+		&chat.Customers,
+		&chat.Status,
+		&chat.Metadata,
+		&chat.IsArchived,
+		&chat.CreatedByID,
+		&chat.CreatedByName,
+		&chat.CreatedAt,
+		&chat.UpdatedAt,
+	)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, err
+		}
+		return nil, err
+	}
+
+	return &chat, nil
 }

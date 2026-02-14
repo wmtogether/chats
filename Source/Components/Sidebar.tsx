@@ -1,13 +1,16 @@
-import { Plus, ChevronDown, LogOut, MoreHorizontal, Edit, Trash2, Archive, MessageSquare, Search, X } from 'lucide-react'
+import { Plus, ChevronDown, LogOut, MoreHorizontal, Edit, Trash2, Archive, MessageSquare, Search, X, UserPlus, UserMinus } from 'lucide-react'
 import { useState, useEffect, useMemo, useRef } from 'react'
 import NewChatDialog from './NewChatDialog'
 import EditChatDialog from './EditChatDialog'
+import JoinChatDialog from './JoinChatDialog'
 import { useAuth } from '../Library/Authentication/AuthContext'
 import ConfirmDialog from './ui/ConfirmDialog';
 import { useToast } from '../Library/hooks/useToast.tsx';
 import type { ChatType } from '../Library/types'; // Import ChatType
 import { getNullStringValue } from '../Library/utils/api.ts'; // Import getNullStringValue
 import { Palette, Ruler, FileCheck, Eye, Package, Briefcase, Settings } from 'lucide-react'
+import { getStatusConfig } from '../Library/constants/status'; // Import status config
+import { joinChat, leaveChat, getUserJoinedChats } from '../Library/Shared/chatMemberApi'; // Import API functions
 type Page = 'chat' | 'users' | 'allChats';
 type SidebarTab = 'channels' | 'me';
 
@@ -100,7 +103,10 @@ interface SidebarProps {
     customerName?: string;
     description?: string;
   }) => void;
-  onDeleteChat: (chatId: string | number) => Promise<void>; // Updated to return Promise
+  onDeleteChat: (chatId: string | number) => Promise<void>;
+  joinedChats?: Set<number>; // Add joined chats state
+  onJoinChat?: (chatId: number) => Promise<void>; // Add join handler
+  onLeaveChat?: (chatId: number) => Promise<void>; // Add leave handler
 }
 
 export default function Sidebar({
@@ -111,7 +117,10 @@ export default function Sidebar({
   onLogout,
   isLoadingAllChats = false,
   onCreateChat,
-  onDeleteChat, // Destructure new prop
+  onDeleteChat,
+  joinedChats: externalJoinedChats,
+  onJoinChat: externalOnJoinChat,
+  onLeaveChat: externalOnLeaveChat,
 }: SidebarProps) {
   const { user } = useAuth();
   const [showNewChatDialog, setShowNewChatDialog] = useState(false);
@@ -121,8 +130,34 @@ export default function Sidebar({
   const chatMenuRefs = useRef<{ [key: number]: HTMLDivElement | null }>({});
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false); // New state
   const [chatToDelete, setChatToDelete] = useState<ChatType | null>(null); // New state
+  const [showJoinDialog, setShowJoinDialog] = useState(false); // Join dialog state
+  const [chatToJoin, setChatToJoin] = useState<ChatType | null>(null); // Chat for join/leave action
+  
+  // Use external state if provided, otherwise use local state
+  const [localJoinedChats, setLocalJoinedChats] = useState<Set<number>>(new Set());
+  const joinedChats = externalJoinedChats || localJoinedChats;
+  
+  const [isLoadingMembership, setIsLoadingMembership] = useState(false); // Loading state for join/leave
   const { addToast } = useToast(); // Initialize useToast
   const [activeTab, setActiveTab] = useState<SidebarTab>('channels'); // New state for tab management
+
+  // Load user's joined chats on mount (only if not using external state)
+  useEffect(() => {
+    if (externalJoinedChats) return; // Skip if using external state
+    
+    const loadJoinedChats = async () => {
+      try {
+        const chatIds = await getUserJoinedChats();
+        setLocalJoinedChats(new Set(chatIds));
+      } catch (error) {
+        console.error('Failed to load joined chats:', error);
+      }
+    };
+
+    if (user) {
+      loadJoinedChats();
+    }
+  }, [user, externalJoinedChats]);
 
   // Search functionality
   const [searchQuery, setSearchQuery] = useState('');
@@ -135,7 +170,10 @@ export default function Sidebar({
     
     // Filter by tab first
     if (activeTab === 'me' && user) {
-      baseChats = chats.filter(chat => chat.createdById === user.id);
+      // Show chats created by user OR chats user has joined
+      baseChats = chats.filter(chat => 
+        chat.createdById === user.id || joinedChats.has(chat.id)
+      );
     }
     
     // Then filter by search query
@@ -151,7 +189,7 @@ export default function Sidebar({
       chat.parsedMetadata?.requestType?.toLowerCase().includes(query) ||
       chat.description?.String?.toLowerCase().includes(query)
     );
-  }, [chats, searchQuery, activeTab, user]);
+  }, [chats, searchQuery, activeTab, user, joinedChats]);
 
   const chatGroups = useMemo(() => {
     return filteredChats.reduce((acc, chat) => {
@@ -259,6 +297,70 @@ export default function Sidebar({
 
   const handleArchiveChat = (chat: ChatType) => console.log('Archiving chat:', chat.id);
 
+  const handleJoinLeaveClick = (chat: ChatType) => {
+    closeChatMenu(chat.id);
+    setChatToJoin(chat);
+    setShowJoinDialog(true);
+  };
+
+  const handleConfirmJoinLeave = async () => {
+    if (!chatToJoin || isLoadingMembership) return;
+
+    const isJoined = joinedChats.has(chatToJoin.id);
+    setIsLoadingMembership(true);
+    
+    try {
+      if (isJoined) {
+        // Leave chat
+        if (externalOnLeaveChat) {
+          await externalOnLeaveChat(chatToJoin.id);
+        } else {
+          await leaveChat(chatToJoin.id);
+          setLocalJoinedChats(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(chatToJoin.id);
+            return newSet;
+          });
+        }
+        addToast({ 
+          message: `You left "${chatToJoin.channelName}"`, 
+          type: 'success' 
+        });
+      } else {
+        // Join chat
+        if (externalOnJoinChat) {
+          await externalOnJoinChat(chatToJoin.id);
+        } else {
+          await joinChat(chatToJoin.id);
+          setLocalJoinedChats(prev => new Set(prev).add(chatToJoin.id));
+        }
+        addToast({ 
+          message: `You joined "${chatToJoin.channelName}"`, 
+          type: 'success' 
+        });
+      }
+    } catch (error) {
+      console.error('Failed to join/leave chat:', error);
+      addToast({ 
+        message: error instanceof Error ? error.message : 'Failed to update membership', 
+        type: 'error' 
+      });
+    } finally {
+      setIsLoadingMembership(false);
+      setChatToJoin(null);
+      setShowJoinDialog(false);
+    }
+  };
+
+  // Check if user is a member of the chat
+  const isChatMember = (chat: ChatType): boolean => {
+    // User is always a member of chats they created
+    if (chat.createdById === user?.id) return true;
+    
+    // Check if user has explicitly joined
+    return joinedChats.has(chat.id);
+  };
+
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -278,7 +380,7 @@ export default function Sidebar({
   }, [chatMenus]);
 
   return (
-    <aside className="w-[350px] bg-surface flex flex-col border-r border-outline shrink-0 z-10 select-none">
+    <aside className="w-[350px] bg-surface flex flex-col border-r border-outline shrink-0 z-10 select-none relative">
       {/* Navigation Switcher */}
       <div className="px-4 py-3 shrink-0 flex space-x-2 w-full">
         <div className="flex items-center p-1 bg-surface rounded-lg border border-outline space-x-1 w-full">
@@ -425,128 +527,159 @@ export default function Sidebar({
                 </div>
               )}
               <div className="flex flex-col gap-2">
-                {groupChats.slice(0, 5).map((chat: ChatType) => (
-                  <div
-                    key={chat.id}
-                    className={`flex items-start gap-3 p-3 rounded-xl cursor-pointer transition-all hover:bg-surface-variant group relative ${selectedChat?.id === chat.id ? 'bg-primary/10 border border-primary/20' : 'border border-transparent'}`}
-                  >
+                {groupChats.slice(0, 5).map((chat: ChatType) => {
+                  const statusConfig = chat.status ? getStatusConfig(chat.status) : null;
+                  const StatusIcon = statusConfig?.icon;
+                  
+                  return (
                     <div
-                      className="flex-1 flex flex-col gap-2 min-w-0"
-                      onClick={() => onChatSelect(chat)}
+                      key={chat.id}
+                      className={`relative rounded-2xl cursor-pointer transition-all hover:bg-surface-variant/50 group border ${
+                        selectedChat?.id === chat.id 
+                          ? 'bg-surface-variant border-outline' 
+                          : 'bg-surface border-outline/30 hover:border-outline/50'
+                      }`}
                     >
-                      {/* Header Row: Chat Name + Time */}
-                      <div className="flex items-center justify-between">
-                        <h3 className="title-small font-medium truncate pr-2 text-on-surface">
-                          {searchQuery ? highlightMatch(chat.channelName, searchQuery) : chat.channelName}
-                        </h3>
-                        <span className="body-small text-on-surface-variant flex-shrink-0">
-                          {(() => {
-                            try {
-                              const date = new Date(chat.updatedAt);
-                              if (isNaN(date.getTime())) {
+                      <div
+                        className="flex flex-col gap-2 p-4 pr-12"
+                        onClick={() => onChatSelect(chat)}
+                      >
+                        {/* Header Row: Chat Name + Time */}
+                        <div className="flex items-center justify-between gap-2">
+                          <h3 className="title-large font-semibold text-on-surface truncate">
+                            {searchQuery ? highlightMatch(chat.channelName, searchQuery) : chat.channelName}
+                          </h3>
+                          <span className="body-medium text-on-surface-variant flex-shrink-0">
+                            {(() => {
+                              try {
+                                const date = new Date(chat.updatedAt);
+                                if (isNaN(date.getTime())) {
+                                  return '--:--';
+                                }
+                                return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                              } catch {
                                 return '--:--';
                               }
-                              return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                            } catch {
-                              return '--:--';
-                            }
-                          })()}
-                        </span>
-                      </div>
+                            })()}
+                          </span>
+                        </div>
 
-                      {/* Creator Row - Only show in channels tab */}
-                      {activeTab === 'channels' && (
-                        <div className="flex items-center gap-2">
-                          <span className="body-small text-on-surface-variant">
+                        {/* Creator Row with Unique ID */}
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="body-medium text-on-surface-variant">
                             by {searchQuery ? highlightMatch(chat.createdByName, searchQuery) : chat.createdByName}
                           </span>
                           {chat.createdById === user?.id && (
-                            <span className="px-2 py-0.5 bg-primary/12 text-primary rounded-full text-xs font-medium">
+                            <span className="px-2 py-0.5 bg-primary text-on-primary rounded-full label-small font-medium">
                               You
                             </span>
                           )}
-                        </div>
-                      )}
-
-                      {/* Customer Info Row */}
-                      {(getNullStringValue(chat.customers) || getNullStringValue(chat.customerId) || chat.uniqueId) && (
-                        <div className="flex items-center gap-2 flex-wrap">
+                          {chat.createdById !== user?.id && isChatMember(chat) && (
+                            <span className="px-2 py-0.5 bg-tertiary text-on-tertiary rounded-full label-small font-medium flex items-center gap-1">
+                              <UserPlus size={12} />
+                              Joined
+                            </span>
+                          )}
                           {chat.uniqueId && (
-                            <span className="body-small text-primary font-semibold bg-primary/10 px-2 py-1 rounded-md border border-primary/20">
-                              {searchQuery ? highlightMatch(chat.uniqueId, searchQuery) : chat.uniqueId}
-                            </span>
-                          )}
-                          {getNullStringValue(chat.customers) && (
-                            <span className="body-small text-on-surface font-medium">
-                              {searchQuery ? highlightMatch(getNullStringValue(chat.customers)!, searchQuery) : getNullStringValue(chat.customers)}
-                            </span>
-                          )}
-                          {getNullStringValue(chat.customerId) && (
-                            <span className="body-small text-on-surface-variant bg-surface-variant px-2 py-1 rounded-md">
-                              #{searchQuery ? highlightMatch(getNullStringValue(chat.customerId)!, searchQuery) : getNullStringValue(chat.customerId)}
-                            </span>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Tags Row: Request Type + Channel Type */}
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {chat.parsedMetadata?.requestType && (
-                          (() => {
-                            const reqType = REQUEST_TYPES.find(rt => rt.id === chat.parsedMetadata?.requestType);
-                            if (reqType) {
-                              const IconComponent = reqType.icon;
-                              return (
-                                <div className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-medium ${reqType.color} border`}>
-                                  <IconComponent size={12} />
-                                  <span>{reqType.label}</span>
-                                </div>
-                              );
-                            }
-                            return null;
-                          })()
-                        )}
-                        {chat.channelType && (
-                          <span className="body-small text-on-surface-variant bg-outline/8 px-2 py-1 rounded-md capitalize">
-                            {chat.channelType}
-                          </span>
-                        )}
-                        {chat.status && chat.status !== 'PENDING' && (
-                          <span className={`body-small px-2 py-1 rounded-md font-medium ${
-                            chat.status === 'COMPLETED' ? 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400' :
-                            chat.status === 'HOLD' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400' :
-                            chat.status === 'CANCEL' ? 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400' :
-                            'bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400'
-                          }`}>
-                            {chat.status}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    {/* Menu Button */}
-                    <div className="relative flex-shrink-0" ref={el => { chatMenuRefs.current[chat.id] = el; }}>
-                      <button
-                        onClick={(e) => toggleChatMenu(chat.id, e)}
-                        className="p-2 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-surface-container transition-all"
-                        title="Chat options"
-                      >
-                        <MoreHorizontal size={16} className="text-on-surface-variant" />
-                      </button>
-                      {chatMenus[chat.id] && (
-                        <div className="absolute right-0 top-full mt-1 bg-surface-container border border-outline-variant rounded-2xl shadow-lg py-2 z-50 min-w-[160px]">
-                          <button onClick={() => handleEditChat(chat)} className="w-full px-4 py-2 text-left hover:bg-surface-variant flex items-center gap-3 text-on-surface"><Edit size={16} /> <span className="text-xs">Edit name</span></button>
-                          <button onClick={() => handleArchiveChat(chat)} className="w-full px-4 py-2 text-left hover:bg-surface-variant flex items-center gap-3 text-on-surface"><Archive size={16} /> <span className="text-xs">Archive</span></button>
-                          {canDeleteChat(chat) && (
                             <>
-                              <div className="border-t border-outline-variant my-1" />
-                              <button onClick={() => handleDeleteChatClick(chat)} className="w-full px-4 py-2 text-left hover:bg-error-container flex items-center gap-3 text-error"><Trash2 size={16} /> <span className="text-xs">Delete</span></button>
+                              <span className="text-on-surface-variant/40">•</span>
+                              <span className="body-small text-on-surface-variant font-mono">
+                                {searchQuery ? highlightMatch(chat.uniqueId, searchQuery) : chat.uniqueId}
+                              </span>
                             </>
                           )}
                         </div>
-                      )}
+
+                        {/* Info Row: Customer + Request Type + Status */}
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {/* Customer Badge */}
+                          {getNullStringValue(chat.customers) && (
+                            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-surface-container rounded-lg border border-outline/50">
+                              <Briefcase size={14} className="text-on-surface-variant" />
+                              <span className="label-medium text-on-surface">
+                                {searchQuery ? highlightMatch(getNullStringValue(chat.customers)!, searchQuery) : getNullStringValue(chat.customers)}
+                              </span>
+                            </div>
+                          )}
+
+                          {/* Request Type Badge */}
+                          {chat.parsedMetadata?.requestType && (
+                            (() => {
+                              const reqType = REQUEST_TYPES.find(rt => rt.id === chat.parsedMetadata?.requestType);
+                              if (reqType) {
+                                const IconComponent = reqType.icon;
+                                return (
+                                  <div className="flex items-center gap-1.5 px-3 py-1.5 bg-surface-container rounded-lg border border-outline/50">
+                                    <IconComponent size={14} className="text-on-surface-variant" />
+                                    <span className="label-medium text-on-surface">Job</span>
+                                  </div>
+                                );
+                              }
+                              return null;
+                            })()
+                          )}
+
+                          {/* Status Badge */}
+                          {statusConfig && (
+                            <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg ${statusConfig.bgColor}`}>
+                              {StatusIcon && <StatusIcon size={14} className={statusConfig.color} />}
+                              <span className={`label-medium font-medium ${statusConfig.textColor}`}>
+                                {statusConfig.labelTh}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Menu Button - Positioned absolutely with proper z-index */}
+                      <div className="absolute top-3 right-3 z-10" ref={el => { chatMenuRefs.current[chat.id] = el; }}>
+                        <button
+                          onClick={(e) => toggleChatMenu(chat.id, e)}
+                          className="p-2 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-surface-container transition-all"
+                          title="Chat options"
+                        >
+                          <MoreHorizontal size={16} className="text-on-surface-variant" />
+                        </button>
+                        {chatMenus[chat.id] && (
+                          <div className="absolute right-0 top-full mt-1 bg-surface border border-outline-variant rounded-2xl shadow-2xl py-2 z-[100] min-w-[160px]">
+                            {/* Join/Leave option - only show if not creator */}
+                            {chat.createdById !== user?.id && (
+                              <>
+                                <button 
+                                  onClick={() => handleJoinLeaveClick(chat)} 
+                                  className={`w-full px-4 py-2 text-left hover:bg-surface-variant flex items-center gap-3 ${
+                                    isChatMember(chat) ? 'text-error' : 'text-primary'
+                                  }`}
+                                >
+                                  {isChatMember(chat) ? (
+                                    <>
+                                      <UserMinus size={16} />
+                                      <span className="text-xs">Leave</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <UserPlus size={16} />
+                                      <span className="text-xs">Join</span>
+                                    </>
+                                  )}
+                                </button>
+                                <div className="border-t border-outline-variant my-1" />
+                              </>
+                            )}
+                            <button onClick={() => handleEditChat(chat)} className="w-full px-4 py-2 text-left hover:bg-surface-variant flex items-center gap-3 text-on-surface"><Edit size={16} /> <span className="text-xs">Edit name</span></button>
+                            <button onClick={() => handleArchiveChat(chat)} className="w-full px-4 py-2 text-left hover:bg-surface-variant flex items-center gap-3 text-on-surface"><Archive size={16} /> <span className="text-xs">Archive</span></button>
+                            {canDeleteChat(chat) && (
+                              <>
+                                <div className="border-t border-outline-variant my-1" />
+                                <button onClick={() => handleDeleteChatClick(chat)} className="w-full px-4 py-2 text-left hover:bg-error-container flex items-center gap-3 text-error"><Trash2 size={16} /> <span className="text-xs">Delete</span></button>
+                              </>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
                 {groupChats.length > 5 && (
                   <button
                     onClick={() => onNavigate('allChats')}
@@ -583,6 +716,16 @@ export default function Sidebar({
         cancelText="Cancel"
         onConfirm={handleConfirmDeleteChat}
         onCancel={() => setChatToDelete(null)}
+      />
+      <JoinChatDialog
+        isOpen={showJoinDialog}
+        onClose={() => {
+          setShowJoinDialog(false);
+          setChatToJoin(null);
+        }}
+        chatName={chatToJoin?.channelName || ''}
+        isJoined={chatToJoin ? isChatMember(chatToJoin) : false}
+        onConfirm={handleConfirmJoinLeave}
       />
     </aside>
   )

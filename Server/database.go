@@ -133,14 +133,14 @@ func GetAllUsers() ([]User, error) {
 	return users, nil
 }
 
-// GenerateNextChatUniqueID generates the next available unique ID in format QT-DDMMYY-{NUM}
+// GenerateNextChatUniqueID generates the next available unique ID in format CN-DDMMYY-{NUM}
 func GenerateNextChatUniqueID() (string, error) {
 	// Get current date in DDMMYY format
 	now := time.Now()
 	dateStr := now.Format("020106") // DDMMYY format
 	
 	// Get the count of chats created today with this date prefix
-	prefix := fmt.Sprintf("QT-%s-", dateStr)
+	prefix := fmt.Sprintf("CN-%s-", dateStr)
 	
 	var count int
 	err := db.QueryRow(`
@@ -515,7 +515,7 @@ func CreateChat(params CreateChatParams) (*Chat, error) {
 	// Generate channel ID (similar format to existing chats)
 	channelID := fmt.Sprintf("ch_%d_%d", params.CreatedByID, time.Now().Unix())
 	
-	// Generate unique ID in format QT-DDMMYY-{NUM}
+	// Generate unique ID in format CN-DDMMYY-{NUM}
 	uniqueID, err := GenerateNextChatUniqueID()
 	if err != nil {
 		return nil, fmt.Errorf("error generating unique ID: %w", err)
@@ -762,6 +762,22 @@ func GetQueueByChatUUID(chatUUID string) (*Queue, error) {
 		return nil, fmt.Errorf("error scanning queue row: %w", err)
 	}
 	return &q, nil
+}
+
+// DeleteQueueByChatUUID deletes all queue entries linked to a chat UUID
+func DeleteQueueByChatUUID(chatUUID string) error {
+	result, err := db.Exec(`DELETE FROM queue WHERE chat_uuid = $1`, chatUUID)
+	if err != nil {
+		return fmt.Errorf("error deleting queue for chat: %w", err)
+	}
+	
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("error getting rows affected: %w", err)
+	}
+	
+	log.Printf("Deleted %d queue entries for chat UUID: %s", rowsAffected, chatUUID)
+	return nil
 }
 
 // Customer database functions

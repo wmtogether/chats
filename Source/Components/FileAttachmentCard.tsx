@@ -16,8 +16,10 @@ import { useDownload } from '../Library/hooks/useDownload';
 import { getApiUrl } from '../Library/utils/env';
 
 interface FileAttachmentCardProps {
-  src: string;
-  filename: string;
+  src?: string; // Legacy support
+  filename?: string; // Legacy support
+  fileName?: string; // New prop
+  filePath?: string; // New prop
   fileSize?: string;
   mimeType?: string;
   onClick?: () => void;
@@ -26,6 +28,8 @@ interface FileAttachmentCardProps {
 const FileAttachmentCard: React.FC<FileAttachmentCardProps> = ({ 
   src, 
   filename, 
+  fileName,
+  filePath,
   fileSize, 
   mimeType,
   onClick 
@@ -33,16 +37,28 @@ const FileAttachmentCard: React.FC<FileAttachmentCardProps> = ({
   const { startDownload, downloads } = useDownload();
   const [isDownloading, setIsDownloading] = useState(false);
 
+  // Support both old and new prop names
+  const actualFileName = fileName || filename || 'unknown';
+  
+  // Build the download URL with token
+  let actualSrc = '';
+  if (filePath) {
+    // filePath now contains the download token
+    actualSrc = `${getApiUrl()}/api/files/d/${filePath}`;
+  } else if (src) {
+    actualSrc = src;
+  }
+
   // Convert relative URL to absolute URL using the API server
-  const fullFileUrl = src.startsWith('http') ? src : `${getApiUrl()}${src}`;
+  const fullFileUrl = actualSrc?.startsWith('http') ? actualSrc : `${getApiUrl()}${actualSrc}`;
 
   // Find active download for this file
   const activeDownload = downloads.find(d => d.url === fullFileUrl);
   
   // Debug logging
   console.log('🔍 FileAttachmentCard render:', {
-    filename,
-    src,
+    actualFileName,
+    actualSrc,
     fullFileUrl,
     downloadsCount: downloads.length,
     downloadsUrls: downloads.map(d => d.url),
@@ -54,7 +70,7 @@ const FileAttachmentCard: React.FC<FileAttachmentCardProps> = ({
 
   const getFileIcon = () => {
     if (!mimeType) {
-      const ext = filename.split('.').pop()?.toLowerCase();
+      const ext = actualFileName.split('.').pop()?.toLowerCase();
       switch (ext) {
         case 'zip':
         case 'rar':
@@ -150,12 +166,39 @@ const FileAttachmentCard: React.FC<FileAttachmentCardProps> = ({
     
     try {
       setIsDownloading(true);
-      console.log('Starting direct file download (no web requests):', fullFileUrl, '->', filename);
+      console.log('Starting file download:', fullFileUrl, '->', actualFileName);
       
-      await startDownload(fullFileUrl, filename);
-      console.log('Direct file download initiated successfully');
+      // Try subprocess download first if available
+      if (window.downloadAPI) {
+        console.log('Using subprocess downloader');
+        await startDownload(fullFileUrl, actualFileName);
+      } else {
+        // Fallback to browser download
+        console.log('downloadAPI not available, using browser download');
+        const link = document.createElement('a');
+        link.href = fullFileUrl;
+        link.download = actualFileName;
+        link.target = '_blank';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
     } catch (error) {
-      console.error('Failed to start direct download:', error);
+      console.error('Download error:', error);
+      
+      // Fallback to browser download on error
+      console.log('Using browser fallback due to error');
+      try {
+        const link = document.createElement('a');
+        link.href = fullFileUrl;
+        link.download = actualFileName;
+        link.target = '_blank';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      } catch (fallbackError) {
+        console.error('Browser fallback also failed:', fallbackError);
+      }
     } finally {
       setIsDownloading(false);
     }
@@ -195,7 +238,7 @@ const FileAttachmentCard: React.FC<FileAttachmentCardProps> = ({
           <div className="flex items-start justify-between gap-2">
             <div className="flex-1 min-w-0">
               <h4 className="title-medium font-medium text-on-surface truncate">
-                {filename}
+                {actualFileName}
               </h4>
               <p className="body-small text-on-surface-variant mt-1">
                 {getStatusText()}
@@ -258,8 +301,8 @@ const FileAttachmentCard: React.FC<FileAttachmentCardProps> = ({
                   e.stopPropagation();
                   try {
                     if (window.downloadAPI?.showInFolder) {
-                      console.log('Opening file in Explorer:', filename);
-                      await window.downloadAPI.showInFolder(filename);
+                      console.log('Opening file in Explorer:', actualFileName);
+                      await window.downloadAPI.showInFolder(actualFileName);
                     } else {
                       console.log('showInFolder API not available');
                     }

@@ -5,17 +5,20 @@ import { updateChatRequestType, updateChatStatus, sendMessage } from '../Library
 import { useToast } from '../Library/hooks/useToast'
 import type { ChatType } from '../Library/types'
 import { cn } from '../Library/utils' // Assuming cn utility is available
+import SearchMessagesDialog from './SearchMessagesDialog'
 
 interface ChatHeaderProps {
   selectedChat: ChatType | null;
   chatCount: number;
   wsConnected?: boolean;
   onChatUpdate?: (updatedChat: ChatType) => void;
+  onMessageSelect?: (messageId: string) => void; // Callback to scroll to message
 }
 
-export default function ChatHeader({ selectedChat, chatCount, wsConnected = false, onChatUpdate }: ChatHeaderProps) {
+export default function ChatHeader({ selectedChat, chatCount, wsConnected = false, onChatUpdate, onMessageSelect }: ChatHeaderProps) {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showRequestTypeMenu, setShowRequestTypeMenu] = useState(false);
+  const [showSearchDialog, setShowSearchDialog] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const requestTypeMenuRef = useRef<HTMLDivElement>(null);
@@ -245,10 +248,21 @@ export default function ChatHeader({ selectedChat, chatCount, wsConnected = fals
           </span>
         </div>
         
-        <button className="flex items-center justify-center size-9 rounded-full hover:bg-surface-variant transition-colors">
+        <button className="flex items-center justify-center size-9 rounded-full hover:bg-surface-variant transition-colors" onClick={() => setShowSearchDialog(true)} disabled={!selectedChat} title="Search messages">
           <Search className="text-on-surface-variant" />
         </button>
       </div>
+
+      {/* Search Messages Dialog */}
+      {selectedChat && (
+        <SearchMessagesDialog
+          isOpen={showSearchDialog}
+          onClose={() => setShowSearchDialog(false)}
+          chatUuid={selectedChat.uuid}
+          chatName={selectedChat.channelName}
+          onMessageSelect={onMessageSelect}
+        />
+      )}
     </header>
   )
 }

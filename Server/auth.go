@@ -132,6 +132,44 @@ func authMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// flexibleAuthMiddleware allows authentication via header OR query parameter
+// This is useful for download endpoints that need to work with subprocess downloaders
+func flexibleAuthMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("FlexibleAuthMiddleware hit for %s %s", r.Method, r.URL.Path)
+
+		var tokenString string
+		
+		// Try to get token from Authorization header first
+		authHeader := r.Header.Get("Authorization")
+		if authHeader != "" {
+			tokenString = strings.TrimPrefix(authHeader, "Bearer ")
+			if tokenString == authHeader { // No "Bearer " prefix
+				http.Error(w, `{"success": false, "error": "Invalid token format"}`, http.StatusUnauthorized)
+				return
+			}
+		} else {
+			// Fall back to query parameter
+			tokenString = r.URL.Query().Get("token")
+			if tokenString == "" {
+				http.Error(w, `{"success": false, "error": "Authorization required (header or token parameter)"}`, http.StatusUnauthorized)
+				return
+			}
+		}
+
+		// Validate token
+		user, err := ValidateToken(tokenString)
+		if err != nil {
+			http.Error(w, `{"success": false, "error": "Invalid or expired token"}`, http.StatusUnauthorized)
+			return
+		}
+
+		// Store user in context
+		ctx := context.WithValue(r.Context(), userContextKey, user)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
 // InitAuth initializes the JWT key from environment variables.
 func InitAuth() {
 	secret := os.Getenv("JWT_SECRET")

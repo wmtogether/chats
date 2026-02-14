@@ -8,9 +8,9 @@ import { showInputDialog } from '../Library/Native/dialog' // Keep showInputDial
 import ConfirmDialog from './ui/ConfirmDialog'
 import { useToast } from '../Library/hooks/useToast.tsx'
 import { useDownload } from '../Library/hooks/useDownload'
-import FileAttachmentCard from './FileAttachmentCard'
 import { getApiUrl } from '../Library/utils/env'
 import type { MessageBubbleData } from '../Library/types' // Import shared types
+import { ProofMetaCard, FileAttachmentCard } from './MetaCards'
 
 interface MessageBubbleProps {
   data: MessageBubbleData // Use imported MessageBubbleData
@@ -209,10 +209,52 @@ export default function MessageBubble({ data, searchQuery, isNewMessage = false,
           searchQuery={searchQuery}
         />
 
-        {/* Image Attachments */}
+        {/* Image Attachments and Proof MetaCards */}
         {data.attachments && data.attachments.length > 0 && (
           <div className="mt-2 space-y-2 max-w-md">
             {data.attachments.map((attachment, index) => {
+              // Check if this is proof metadata (JSON string starting with {"type":"proof")
+              if (attachment.startsWith('{"type":"proof"')) {
+                try {
+                  const proofData = JSON.parse(attachment);
+                  console.log('Rendering ProofMetaCard with data:', proofData);
+                  return (
+                    <ProofMetaCard
+                      key={index}
+                      proofId={proofData.proofId}
+                      runnerId={proofData.runnerId}
+                      jobName={proofData.jobName}
+                      customerName={proofData.customerName}
+                      salesName={proofData.salesName}
+                      proofStatus={proofData.proofStatus}
+                      createdByName={proofData.createdByName}
+                      createdAt={proofData.createdAt}
+                    />
+                  );
+                } catch (error) {
+                  console.error('Failed to parse proof metadata:', error);
+                  return null;
+                }
+              }
+
+              // Check if this is file attachment metadata (JSON string starting with {"type":"file_attachment")
+              if (attachment.startsWith('{"type":"file_attachment"')) {
+                try {
+                  const fileData = JSON.parse(attachment);
+                  console.log('Rendering FileAttachmentCard with data:', fileData);
+                  return (
+                    <FileAttachmentCard
+                      key={index}
+                      fileName={fileData.fileName}
+                      filePath={fileData.filePath}
+                    />
+                  );
+                } catch (error) {
+                  console.error('Failed to parse file attachment metadata:', error);
+                  return null;
+                }
+              }
+
               // Convert relative paths to full URLs
               const imageUrl = attachment.startsWith('/uploads/') 
                 ? `${getApiUrl()}${attachment}`

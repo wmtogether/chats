@@ -1,63 +1,13 @@
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader } from '../ui/card';
 import { Badge } from '../ui/badge';
-import { Loader2, ListTodo, Clock, CheckCircle, XCircle, AlertCircle, User } from 'lucide-react';
+import { Loader2, ListTodo, XCircle } from 'lucide-react';
 import { cn } from '../../Library/utils';
+import { getStatusConfig } from '../../Library/constants/status';
 
 interface QueuePreviewCardProps {
   queueId: string;
 }
-
-const STATUS_CONFIG: Record<string, { label: string; icon: any; color: string; bgColor: string }> = {
-  PENDING: { 
-    label: 'รอดำเนินการ', 
-    icon: Clock, 
-    color: 'text-yellow-700 dark:text-yellow-300',
-    bgColor: 'bg-yellow-100 dark:bg-yellow-900/30'
-  },
-  ACCEPTED: { 
-    label: 'รับงานแล้ว', 
-    icon: CheckCircle, 
-    color: 'text-blue-700 dark:text-blue-300',
-    bgColor: 'bg-blue-100 dark:bg-blue-900/30'
-  },
-  WAIT_DIMENSION: { 
-    label: 'รอขึ้น Dimention', 
-    icon: Clock, 
-    color: 'text-orange-700 dark:text-orange-300',
-    bgColor: 'bg-orange-100 dark:bg-orange-900/30'
-  },
-  WAIT_FEEDBACK: { 
-    label: 'รอ Feedback', 
-    icon: AlertCircle, 
-    color: 'text-purple-700 dark:text-purple-300',
-    bgColor: 'bg-purple-100 dark:bg-purple-900/30'
-  },
-  WAIT_QA: { 
-    label: 'รอ QA', 
-    icon: AlertCircle, 
-    color: 'text-indigo-700 dark:text-indigo-300',
-    bgColor: 'bg-indigo-100 dark:bg-indigo-900/30'
-  },
-  HOLD: { 
-    label: 'พักงาน', 
-    icon: AlertCircle, 
-    color: 'text-gray-700 dark:text-gray-300',
-    bgColor: 'bg-gray-100 dark:bg-gray-800/30'
-  },
-  COMPLETED: { 
-    label: 'เสร็จสิ้น', 
-    icon: CheckCircle, 
-    color: 'text-green-700 dark:text-green-300',
-    bgColor: 'bg-green-100 dark:bg-green-900/30'
-  },
-  CANCEL: { 
-    label: 'ยกเลิก', 
-    icon: XCircle, 
-    color: 'text-red-700 dark:text-red-300',
-    bgColor: 'bg-red-100 dark:bg-red-900/30'
-  },
-};
 
 export function QueuePreviewCard({ queueId }: QueuePreviewCardProps) {
   const [queue, setQueue] = useState<any | null>(null);
@@ -92,7 +42,7 @@ export function QueuePreviewCard({ queueId }: QueuePreviewCardProps) {
     );
   }
 
-  const statusConfig = STATUS_CONFIG[queue.status] || STATUS_CONFIG.PENDING;
+  const statusConfig = getStatusConfig(queue.status);
   const StatusIcon = statusConfig.icon;
 
   return (

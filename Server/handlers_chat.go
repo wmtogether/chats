@@ -165,6 +165,13 @@ func deleteChatHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Delete associated queue entries (without confirmation)
+	err = DeleteQueueByChatUUID(chatUUID)
+	if err != nil {
+		// Log the error but don't fail the chat deletion
+		log.Printf("Warning: Error deleting queue for chat %s: %v", chatUUID, err)
+	}
+
 	log.Printf("Chat %s deleted by user %s (ID: %d)", chatUUID, user.Name, user.ID)
 
 	// Broadcast chat deletion via WebSocket

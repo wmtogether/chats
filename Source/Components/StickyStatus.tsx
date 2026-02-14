@@ -1,39 +1,26 @@
 import { useState, useEffect, useRef } from 'react'
 import {
   MessageCircle, User, Briefcase, ChevronDown, ChevronUp,
-  Check, Clock, TrendingUp, Ruler, MessageSquare, CheckCircle,
-  Pause, XCircle, HelpCircle, ChevronLeft, ChevronRight
+  Check, HelpCircle, ChevronLeft, ChevronRight
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { getChat, updateChatStatus, sendMessage } from '../Library/utils/api'
 import { useToast } from '../Library/hooks/useToast'
 import { cn } from '../Library/utils'
 import { getWebSocketManager } from '../Library/utils/websocket'
+import { STATUS_CONFIG, getStatusConfig } from '../Library/constants/status'
 
 type Chat = any;
 
-// Status configuration with colors and labels
-const STATUS_OPTIONS = [
-  { value: 'PENDING', label: 'รอดำเนินการ', icon: Clock, color: 'text-yellow-700 dark:text-yellow-300', bgColor: 'bg-yellow-100 dark:bg-yellow-900/30', description: 'งานใหม่ รอแอดมินรับเรื่อง' },
-  { value: 'ACCEPTED', label: 'รับงานแล้ว', icon: TrendingUp, color: 'text-blue-700 dark:text-blue-300', bgColor: 'bg-blue-100 dark:bg-blue-900/30', description: 'แอดมินรับงานแล้ว กำลังดำเนินการ' },
-  { value: 'WAIT_DIMENSION', label: 'รอขึ้น Dimention', icon: Ruler, color: 'text-orange-700 dark:text-orange-300', bgColor: 'bg-orange-100 dark:bg-orange-900/30', description: 'รอลูกค้าหรือช่างวัดขนาดหน้างาน' },
-  { value: 'WAIT_FEEDBACK', label: 'รอ Feedback', icon: MessageSquare, color: 'text-purple-700 dark:text-purple-300', bgColor: 'bg-purple-100 dark:bg-purple-900/30', description: 'รอการตอบกลับหรือตัดสินใจจากลูกค้า' },
-  { value: 'WAIT_QA', label: 'รอ QA', icon: CheckCircle, color: 'text-indigo-700 dark:text-indigo-300', bgColor: 'bg-indigo-100 dark:bg-indigo-900/30', description: 'งานเสร็จแล้ว รอตรวจสอบความเรียบร้อย' },
-  { value: 'HOLD', label: 'พักงาน', icon: Pause, color: 'text-gray-700 dark:text-gray-300', bgColor: 'bg-gray-100 dark:bg-gray-800/30', description: 'ระงับการดำเนินการชั่วคราว' },
-  { value: 'COMPLETED', label: 'เสร็จสิ้น', icon: CheckCircle, color: 'text-green-700 dark:text-green-300', bgColor: 'bg-green-100 dark:bg-green-900/30', description: 'ปิดงานเรียบร้อยแล้ว' },
-  { value: 'CANCEL', label: 'ยกเลิก', icon: XCircle, color: 'text-red-700 dark:text-red-300', bgColor: 'bg-red-100 dark:bg-red-900/30', description: 'ยกเลิกงานนี้แล้ว' },
-];
-
-const getStatusConfig = (status: string) => {
-  return STATUS_OPTIONS.find(option => option.value === status) || {
-    value: status,
-    label: status,
-    icon: HelpCircle,
-    color: 'text-gray-700 dark:text-gray-300',
-    bgColor: 'bg-gray-100 dark:bg-gray-800/30',
-    description: 'Unknown status'
-  };
-};
+// Convert STATUS_CONFIG to STATUS_OPTIONS format for the dropdown
+const STATUS_OPTIONS = Object.entries(STATUS_CONFIG).map(([value, config]) => ({
+  value,
+  label: config.labelTh,
+  icon: config.icon,
+  color: config.color,
+  bgColor: config.bgColor,
+  description: config.label // Use English label as description
+}));
 
 interface StickyStatusProps {
   selectedChat: Chat | null;
@@ -262,7 +249,7 @@ export default function StickyStatus({
           >
             <div className="text-right">
               <div className={cn("label-medium", currentStatusConfig.color)}>
-                {currentStatusConfig.label}
+                {currentStatusConfig.labelTh}
               </div>
             </div>
             <div className={cn("p-1 rounded-md", isUpdating ? 'bg-transparent' : currentStatusConfig.bgColor)}>

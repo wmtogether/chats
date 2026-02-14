@@ -5,7 +5,8 @@ import {
   QueuePreviewCard,
   FileCheckCard, 
   ReqTypeChangeCard,
-  Hyperlink 
+  Hyperlink,
+  ProofMetaCard
 } from './MetaCards';
 
 interface MessageContentProps {
@@ -65,6 +66,17 @@ export function MessageContent({
         customerName={customerName}
       />
     );
+  }
+
+  // Detect proof data format: 📋 New Proof Data Created: {jobName}
+  // The proof metadata is passed as an attachment (JSON string)
+  const proofRegex = /^📋 New Proof Data Created: (.+)$/;
+  const proofMatch = content.match(proofRegex);
+
+  if (proofMatch) {
+    // This is just the text indicator - the actual card will be rendered from attachments
+    // Return null to hide the text since the card will show all the info
+    return null;
   }
 
   // Detect queue request type change format: [QUEUE_REQTYPE_CHANGE|queueId|oldType|newType|customerName]QueueName

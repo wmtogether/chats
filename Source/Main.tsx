@@ -1,5 +1,5 @@
 import { useReducer, useEffect, useState } from 'react';
-import { MessageCircle } from 'lucide-react'
+import { MessageCircle, UserPlus } from 'lucide-react'
 import Sidebar from './Components/Sidebar'
 import ChatHeader from './Components/ChatHeader'
 import ChatInput from './Components/ChatInput'
@@ -7,6 +7,7 @@ import StickyStatus from './Components/StickyStatus'
 import LoginPage from './Pages/Login';
 import AllChats from './Pages/AllChats';
 import UsersPage from './Pages/Users';
+import FileManager from './Components/FileManager';
 import { useAuth, apiClient } from './Library/Authentication/AuthContext';
 import MessageBubble from './Components/MessageBubble';
 import { ToastProvider, useToast } from './Library/hooks/useToast.tsx';
@@ -15,6 +16,8 @@ import { preprocessChat, deleteChat, createChat, sendMessage, deleteMessage, edi
 import { createWebSocketManager, getWebSocketManager } from './Library/utils/websocket.ts';
 import { localStorageManager, shouldRestoreState, findChatByUuid } from './Library/utils/localStorage.ts';
 import { getWebSocketUrl } from './Library/utils/env.ts';
+import { getNullStringValue } from './Library/utils/api.ts';
+import { getUserJoinedChats, joinChat, leaveChat } from './Library/Shared/chatMemberApi';
 
 type Page = 'chat' | 'users' | 'allChats';
 
@@ -162,10 +165,39 @@ function appReducer(state: AppState, action: AppAction): AppState {
 }
 
 // Main component for the authenticated chat experience
-const ChatLayout = ({ state, dispatch, onLogout, wsConnected }: { state: AppState, dispatch: React.Dispatch<AppAction>, onLogout: () => void, wsConnected: boolean }) => {
+const ChatLayout = ({ 
+  state, 
+  dispatch, 
+  onLogout, 
+  wsConnected,
+  joinedChats,
+  isLoadingMembership,
+  onJoinChat,
+  onLeaveChat
+}: { 
+  state: AppState, 
+  dispatch: React.Dispatch<AppAction>, 
+  onLogout: () => void, 
+  wsConnected: boolean,
+  joinedChats: Set<number>,
+  isLoadingMembership: boolean,
+  onJoinChat: (chatId: number) => Promise<void>,
+  onLeaveChat: (chatId: number) => Promise<void>
+}) => {
   const { selectedChat, replyingTo, chats, messages, isLoadingChats, isLoadingMessages } = state;
   const { user } = useAuth();
   const { addToast } = useToast();
+
+  // Check if user is a member of the selected chat
+  const isChatMember = (chat: ChatType | null): boolean => {
+    if (!chat || !user) return false;
+    
+    // User is always a member of chats they created
+    if (chat.createdById === user.id) return true;
+    
+    // Check if user has explicitly joined
+    return joinedChats.has(chat.id);
+  };
 
   // Fetch all chats when the user is authenticated
   useEffect(() => {
@@ -530,7 +562,10 @@ const ChatLayout = ({ state, dispatch, onLogout, wsConnected }: { state: AppStat
         isLoadingAllChats={isLoadingChats}
         onCreateChat={handleCreateChat}
         //@ts-expect-error
-        onDeleteChat={handleDeleteChat} // Pass the new prop
+        onDeleteChat={handleDeleteChat}
+        joinedChats={joinedChats}
+        onJoinChat={onJoinChat}
+        onLeaveChat={onLeaveChat}
       />
 
       {state.currentPage === 'allChats' ? (
@@ -542,117 +577,157 @@ const ChatLayout = ({ state, dispatch, onLogout, wsConnected }: { state: AppStat
           isLoading={isLoadingChats}
         />
       ) : (
-        <main className="flex-1 flex flex-col min-w-0 bg-surface relative">
-          <ChatHeader 
-            selectedChat={selectedChat} 
-            chatCount={chats.length} 
-            wsConnected={wsConnected} 
-            onChatUpdate={handleChatUpdate}
-          />
-
-          <div className="flex-1 overflow-y-auto flex flex-col relative" id="message-container">
-            <StickyStatus
-              selectedChat={selectedChat}
-              onStatusUpdate={(newStatus) => console.log('Queue status updated to:', newStatus)}
+        <>
+          <main className="flex-1 flex flex-col min-w-0 bg-surface relative">
+            <ChatHeader 
+              selectedChat={selectedChat} 
+              chatCount={chats.length} 
+              wsConnected={wsConnected} 
+              onChatUpdate={handleChatUpdate}
             />
 
-            <div className="flex flex-col gap-1 pb-4 px-6 -mt-2 h-full">
-              {selectedChat ? (
-                <>
-                  <div className="relative py-6 flex items-center justify-center">
-                    <div className="absolute left-0 right-0 h-px bg-surface-variant" />
-                    <div className="relative bg-surface px-3 rounded-full border border-outline text-xs font-medium text-on-surface-variant">
-                      {new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+            <div className="flex-1 overflow-y-auto flex flex-col relative" id="message-container">
+              <StickyStatus
+                selectedChat={selectedChat}
+                onStatusUpdate={(newStatus) => console.log('Queue status updated to:', newStatus)}
+              />
+
+              <div className="flex flex-col gap-1 pb-4 px-6 -mt-2 h-full">
+                {selectedChat ? (
+                  <>
+                    <div className="relative py-6 flex items-center justify-center">
+                      <div className="absolute left-0 right-0 h-px bg-surface-variant" />
+                      <div className="relative bg-surface px-3 rounded-full border border-outline text-xs font-medium text-on-surface-variant">
+                        {new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                      </div>
                     </div>
-                  </div>
-                  {messages.length > 0 ? (
-                    messages.map((msg: MessageType) => { // Explicitly type msg as MessageType
-                      //@ts-expect-error
-                      const messageData: MessageBubbleData = { // Explicitly type messageData as MessageBubbleData
-                        id: msg.messageId,
-                        user: {
-                          id: msg.userId,
-                          name: msg.userName,
-                        },
-                        time: new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                        content: msg.content,
-                        attachments: msg.attachments,
-                        editedAt: msg.editedAt,
-                      };
-                      return (
-                        <MessageBubble 
-                          key={msg.messageId} 
-                          data={messageData}
-                          isNewMessage={state.newMessageIds.has(msg.messageId)}
-                          onReply={(messageId, userName, content) => 
-                            dispatch({ type: 'SET_REPLYING_TO', payload: { messageId, userName, content } })
-                          }
-                          onReaction={handleReaction}
-                          onEdit={handleEditMessage}
-                          onDelete={handleDeleteMessage}
-                        />
-                      );
-                    })
-                  ) : isLoadingMessages ? (
-                    <div className="flex flex-col gap-4 py-6">
-                      {Array.from({ length: 4 }).map((_, index) => (
-                        <div key={index} className="flex gap-4 p-3 animate-pulse">
-                          <div className="size-10 rounded-full bg-surface-variant flex-shrink-0"></div>
-                          <div className="flex-1 space-y-2">
-                            <div className="flex items-center gap-2">
-                              <div className="h-4 bg-surface-variant rounded w-20"></div>
-                              <div className="h-3 bg-surface-variant rounded w-12"></div>
-                            </div>
-                            <div className="space-y-1">
-                              <div className="h-4 bg-surface-variant rounded w-3/4"></div>
-                              <div className="h-4 bg-surface-variant rounded w-1/2"></div>
+                    {messages.length > 0 ? (
+                      messages.map((msg: MessageType) => { // Explicitly type msg as MessageType
+                        //@ts-expect-error
+                        const messageData: MessageBubbleData = { // Explicitly type messageData as MessageBubbleData
+                          id: msg.messageId,
+                          user: {
+                            id: msg.userId,
+                            name: msg.userName,
+                          },
+                          time: new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                          content: msg.content,
+                          attachments: msg.attachments,
+                          editedAt: msg.editedAt,
+                        };
+                        return (
+                          <MessageBubble 
+                            key={msg.messageId} 
+                            data={messageData}
+                            isNewMessage={state.newMessageIds.has(msg.messageId)}
+                            onReply={(messageId, userName, content) => 
+                              dispatch({ type: 'SET_REPLYING_TO', payload: { messageId, userName, content } })
+                            }
+                            onReaction={handleReaction}
+                            onEdit={handleEditMessage}
+                            onDelete={handleDeleteMessage}
+                          />
+                        );
+                      })
+                    ) : isLoadingMessages ? (
+                      <div className="flex flex-col gap-4 py-6">
+                        {Array.from({ length: 4 }).map((_, index) => (
+                          <div key={index} className="flex gap-4 p-3 animate-pulse">
+                            <div className="size-10 rounded-full bg-surface-variant flex-shrink-0"></div>
+                            <div className="flex-1 space-y-2">
+                              <div className="flex items-center gap-2">
+                                <div className="h-4 bg-surface-variant rounded w-20"></div>
+                                <div className="h-3 bg-surface-variant rounded w-12"></div>
+                              </div>
+                              <div className="space-y-1">
+                                <div className="h-4 bg-surface-variant rounded w-3/4"></div>
+                                <div className="h-4 bg-surface-variant rounded w-1/2"></div>
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="flex flex-col items-center justify-center py-12 text-center">
-                      <div className="size-16 rounded-full bg-surface-variant/50 flex items-center justify-center mb-4">
-                        <MessageCircle className="text-on-surface-variant" size={32} />
+                        ))}
                       </div>
-                      <h3 className="title-medium text-on-surface mb-2">No Messages Yet</h3>
-                      <p className="body-medium text-on-surface-variant max-w-md">
-                        Start the conversation in "{selectedChat.channelName}".
-                      </p>
-                    </div>
-                  )}
-                </>
-              ) : (
-                <div className="flex flex-col items-center justify-center h-full text-center">
-                  <h3 className="title-large text-on-surface mb-2">Select a chat</h3>
-                  <p className="body-large text-on-surface-variant">Choose a conversation from the sidebar to get started.</p>
-                </div>
-              )}
-              <div className="h-2" />
+                    ) : (
+                      <div className="flex flex-col items-center justify-center py-12 text-center">
+                        <div className="size-16 rounded-full bg-surface-variant/50 flex items-center justify-center mb-4">
+                          <MessageCircle className="text-on-surface-variant" size={32} />
+                        </div>
+                        <h3 className="title-medium text-on-surface mb-2">No Messages Yet</h3>
+                        <p className="body-medium text-on-surface-variant max-w-md">
+                          Start the conversation in "{selectedChat.channelName}".
+                        </p>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="flex flex-col items-center justify-center h-full text-center">
+                    <h3 className="title-large text-on-surface mb-2">Select a chat</h3>
+                    <p className="body-large text-on-surface-variant">Choose a conversation from the sidebar to get started.</p>
+                  </div>
+                )}
+                <div className="h-2" />
+              </div>
             </div>
-          </div>
 
-          {selectedChat && (
-            <ChatInput
-              onSendMessage={handleSendMessage}
-              replyingTo={replyingTo}
-              onCancelReply={() => dispatch({ type: 'SET_REPLYING_TO', payload: null })}
-            />
-          )}
-        </main>
+            {selectedChat && (
+              isChatMember(selectedChat) ? (
+                <ChatInput
+                  onSendMessage={handleSendMessage}
+                  replyingTo={replyingTo}
+                  onCancelReply={() => dispatch({ type: 'SET_REPLYING_TO', payload: null })}
+                  currentChat={selectedChat}
+                />
+              ) : (
+                <div className="p-6 bg-surface border-t border-outline shrink-0">
+                  <div className="bg-surface-container border border-outline-variant rounded-3xl p-6 flex flex-col items-center text-center">
+                    <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mb-4">
+                      <UserPlus className="h-8 w-8 text-primary" />
+                    </div>
+                    <h3 className="title-medium text-on-surface mb-2">
+                      Join to Participate
+                    </h3>
+                    <p className="body-medium text-on-surface-variant mb-4 max-w-md">
+                      You need to join this chat to send messages and participate in the conversation.
+                    </p>
+                    <button
+                      onClick={async () => {
+                        try {
+                          await onJoinChat(selectedChat.id);
+                          addToast({ message: `You joined "${selectedChat.channelName}"`, type: 'success' });
+                        } catch (error) {
+                          console.error('Failed to join chat:', error);
+                          addToast({ message: 'Failed to join chat', type: 'error' });
+                        }
+                      }}
+                      disabled={isLoadingMembership}
+                      className="flex items-center gap-2 px-6 py-3 bg-primary text-on-primary rounded-full hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed label-large"
+                    >
+                      <UserPlus size={20} />
+                      Join Chat
+                    </button>
+                  </div>
+                </div>
+              )
+            )}
+          </main>
+
+          {/* File Manager - Right Sidebar */}
+          <FileManager 
+            uniqueId={selectedChat?.uniqueId}
+            onPostFile={(fileName, filePath) => {
+              // Post file as a message attachment
+              if (selectedChat) {
+                const fileMetadata = JSON.stringify({
+                  type: 'file_attachment',
+                  fileName: fileName,
+                  filePath: filePath,
+                });
+                handleSendMessage(`📎 ${fileName}`, [fileMetadata]);
+              }
+            }}
+          />
+        </>
       )}
-
-      {/* Debug Panel - only in development
-      {import.meta.env.DEV && (
-        <DebugPanel 
-          currentState={{
-            selectedChat,
-            currentPage: state.currentPage,
-            chatsCount: chats.length
-          }}
-        />
-      )} */}
     </div>
   )
 }
@@ -663,6 +738,66 @@ export default function Main() {
 
   // WebSocket state for real-time communication
   const [wsConnected, setWsConnected] = useState(false);
+  
+  // Track joined chats
+  const [joinedChats, setJoinedChats] = useState<Set<number>>(new Set());
+  const [isLoadingMembership, setIsLoadingMembership] = useState(true);
+
+  // Load user's joined chats on mount
+  useEffect(() => {
+    const loadJoinedChats = async () => {
+      if (!user) return;
+      
+      setIsLoadingMembership(true);
+      try {
+        const chatIds = await getUserJoinedChats();
+        setJoinedChats(new Set(chatIds));
+      } catch (error) {
+        console.error('Failed to load joined chats:', error);
+      } finally {
+        setIsLoadingMembership(false);
+      }
+    };
+
+    loadJoinedChats();
+  }, [user]);
+
+  // Check if user is a member of the selected chat
+  const isChatMember = (chat: ChatType | null): boolean => {
+    if (!chat || !user) return false;
+    
+    // User is always a member of chats they created
+    if (chat.createdById === user.id) return true;
+    
+    // Check if user has explicitly joined
+    return joinedChats.has(chat.id);
+  };
+
+  // Handle joining a chat
+  const handleJoinChat = async (chatId: number) => {
+    try {
+      await joinChat(chatId);
+      setJoinedChats(prev => new Set(prev).add(chatId));
+    } catch (error) {
+      console.error('Failed to join chat:', error);
+      throw error;
+    }
+  };
+
+  // Handle leaving a chat
+  const handleLeaveChat = async (chatId: number) => {
+    try {
+      await leaveChat(chatId);
+      setJoinedChats(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(chatId);
+        return newSet;
+      });
+    } catch (error) {
+      console.error('Failed to leave chat:', error);
+      throw error;
+    }
+  };
 
   // Save state when app is about to unload (user closes tab/refreshes)
   useEffect(() => {
@@ -762,8 +897,14 @@ export default function Main() {
           // Handle real-time chat creation
           if (data.data?.chat) {
             const processedChat = preprocessChat(data.data.chat);
-            // Add the new chat to the chats list
-            dispatch({ type: 'ADD_CHAT', payload: processedChat });
+            // Check if chat already exists to prevent duplicates
+            const chatExists = state.chats.some(chat => chat.uuid === processedChat.uuid);
+            if (!chatExists) {
+              console.log('💬 Adding new chat via WebSocket');
+              dispatch({ type: 'ADD_CHAT', payload: processedChat });
+            } else {
+              console.log('💬 Chat already exists, skipping duplicate:', processedChat.channelName);
+            }
           }
           break;
         case 'chat_deleted':
@@ -899,7 +1040,16 @@ export default function Main() {
       case 'chat':
       case 'allChats':
       default:
-        return <ChatLayout state={state} dispatch={dispatch} onLogout={handleLogout} wsConnected={wsConnected} />;
+        return <ChatLayout 
+          state={state} 
+          dispatch={dispatch} 
+          onLogout={handleLogout} 
+          wsConnected={wsConnected}
+          joinedChats={joinedChats}
+          isLoadingMembership={isLoadingMembership}
+          onJoinChat={handleJoinChat}
+          onLeaveChat={handleLeaveChat}
+        />;
     }
   };
 

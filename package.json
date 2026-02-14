@@ -11,7 +11,8 @@
     "build-all": "bun run build && bun run build-installer",
     "typecheck": "tsc --noEmit",
     "test": "bun run typecheck && cargo test --manifest-path Desktop/Cargo.toml",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "preview:client": "vite build && cargo run --release --bin workspace"
   },
   "devDependencies": {
     "@types/bun": "^1.3.5",

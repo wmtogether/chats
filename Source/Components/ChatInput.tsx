@@ -1,9 +1,11 @@
 import { useState, useRef, useEffect, type KeyboardEvent } from 'react';
-import { Send, Bold, Italic, Code, Smile, PlusCircle, File, Image, FileImage, X, Upload, Reply, Clipboard } from 'lucide-react'
+import { Send, Bold, Italic, Code, Smile, PlusCircle, File, Image, FileImage, X, Upload, Reply, Clipboard, FolderUp } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import CustomEmojiPicker from './EmojiPicker';
 import { fileUploader, type UploadProgress, type UploadResult } from '../Library/utils/fileUpload';
 import { cn } from '../Library/utils';
+import NewProofDialog from './NewProofDialog';
+import UploadDialog from './UploadDialog';
 
 interface Attachment {
   id: string;
@@ -27,15 +29,18 @@ interface ChatInputProps {
   onSendMessage?: (content: string, attachments?: string[], replyTo?: ReplyingTo) => void;
   replyingTo?: ReplyingTo | null;
   onCancelReply?: () => void;
+  currentChat?: any; // Current chat context for auto-filling customer data
 }
 
-export default function ChatInput({ onSendMessage, replyingTo, onCancelReply }: ChatInputProps) {
+export default function ChatInput({ onSendMessage, replyingTo, onCancelReply, currentChat }: ChatInputProps) {
   const [message, setMessage] = useState('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [showAttachmentDropdown, setShowAttachmentDropdown] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [isPasting, setIsPasting] = useState(false);
+  const [showProofDialog, setShowProofDialog] = useState(false);
+  const [showUploadDialog, setShowUploadDialog] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const gifInputRef = useRef<HTMLInputElement>(null);
@@ -772,6 +777,27 @@ export default function ChatInput({ onSendMessage, replyingTo, onCancelReply }: 
                     <FileImage size={18} />
                     <span className="font-medium text-xs">GIF</span>
                   </button>
+                  <div className="border-t border-outline-variant my-1" />
+                  <button
+                    onClick={() => {
+                      setShowProofDialog(true);
+                      setShowAttachmentDropdown(false);
+                    }}
+                    className="w-full px-2 space-x-2 py-3 text-left hover:bg-surface-variant flex items-center text-on-surface transition-colors rounded-xl "
+                  >
+                    <PlusCircle size={18} />
+                    <span className="font-medium text-xs">New Proof Data</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowUploadDialog(true);
+                      setShowAttachmentDropdown(false);
+                    }}
+                    className="w-full px-2 space-x-2 py-3 text-left hover:bg-surface-variant flex items-center text-on-surface transition-colors rounded-xl "
+                  >
+                    <FolderUp size={18} />
+                    <span className="font-medium text-xs">Upload Files</span>
+                  </button>
                   <div className="px-2 py-2 text-xs text-on-surface-variant border-t border-outline-variant mt-2">
                     Max 3GB per file • Drag & drop or Ctrl+V supported<br/>
                     Files over 100MB use fast chunked upload ⚡
@@ -882,6 +908,54 @@ export default function ChatInput({ onSendMessage, replyingTo, onCancelReply }: 
           )}
         </span>
       </div>
+
+      {/* New Proof Dialog */}
+      <NewProofDialog
+        isOpen={showProofDialog}
+        onClose={() => setShowProofDialog(false)}
+        currentChat={currentChat}
+        onSuccess={(proofData) => {
+          // Send proof data as a special message with metadata
+          if (onSendMessage) {
+            const proofMessage = `📋 New Proof Data Created: ${proofData.jobName}`;
+            const proofMetadata = JSON.stringify({
+              type: 'proof',
+              proofId: proofData.id,
+              runnerId: proofData.runnerId,
+              jobName: proofData.jobName,
+              customerName: proofData.customerName,
+              salesName: proofData.salesName,
+              proofStatus: proofData.proofStatus,
+              createdByName: proofData.createdByName,
+              createdAt: proofData.createdAt,
+            });
+            onSendMessage(proofMessage, [proofMetadata], replyingTo || undefined);
+          }
+        }}
+      />
+
+      {/* Upload Files Dialog */}
+      <UploadDialog
+        isOpen={showUploadDialog}
+        onClose={() => setShowUploadDialog(false)}
+        currentPath={currentChat?.uniqueId}
+        onUploadComplete={(uploadedFiles) => {
+          console.log('Files uploaded successfully:', uploadedFiles);
+          
+          // Auto-post each uploaded file to chat
+          if (onSendMessage) {
+            uploadedFiles.forEach(file => {
+              const fileMessage = `📎 ${file.fileName}`;
+              const fileMetadata = JSON.stringify({
+                type: 'file_attachment',
+                fileName: file.fileName,
+                filePath: file.filePath,
+              });
+              onSendMessage(fileMessage, [fileMetadata]);
+            });
+          }
+        }}
+      />
     </div>
   )
 }

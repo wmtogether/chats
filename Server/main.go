@@ -67,6 +67,7 @@ func main() {
 		// User routes
 		r.Route("/api/users", func(r chi.Router) {
 			r.Get("/", getUsersHandler)
+			r.Get("/me/joined-chats", getUserJoinedChatsHandler) // Must be before /{id}
 			r.Get("/{id}", getUserHandler)
 		})
 
@@ -78,6 +79,25 @@ func main() {
 			r.Put("/{id}", updateCustomerHandler)
 			r.Delete("/{id}", deleteCustomerHandler)
 			r.Get("/cusId/{cusId}", getCustomerByCusIdHandler)
+		})
+
+		// Proof routes
+		r.Route("/api/proof", func(r chi.Router) {
+			r.Get("/", getProofDataHandler)
+			r.Post("/", createProofDataHandler)
+			r.Get("/next-runner-id", getNextRunnerIDHandler)
+			r.Get("/{id}", getProofDataByIDHandler)
+			r.Put("/{id}", updateProofDataHandler)
+			r.Delete("/{id}", deleteProofDataHandler)
+		})
+
+		// File management routes
+		r.Route("/api/files", func(r chi.Router) {
+			r.Get("/list", listFilesHandler)
+			r.With(flexibleAuthMiddleware).Get("/download", downloadFileHandler) // Legacy: download by path
+			r.Get("/d/{token}", downloadByTokenHandler) // New: download by token (requires auth header)
+			r.Post("/upload", uploadFilesHandler)
+			r.Delete("/delete", deleteFileHandler)
 		})
 
 				// Auth routes
@@ -109,8 +129,15 @@ func main() {
 
 							r.Get("/{uuid}/messages", getChatMessagesHandler)
 							r.Post("/{uuid}/messages", sendMessageHandler)
+							r.Get("/{uuid}/messages/search", searchMessagesHandler)
 
 							r.Delete("/{uuid}", deleteChatHandler)
+
+							// Chat member routes (using ID instead of UUID for simplicity)
+							r.Post("/{id}/join", joinChatHandler)
+							r.Post("/{id}/leave", leaveChatHandler)
+							r.Get("/{id}/members", getChatMembersHandler)
+							r.Get("/{id}/is-member", checkMembershipHandler)
 
 		
 

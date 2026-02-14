@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -290,5 +291,98 @@ func addReactionHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(APIResponse{
 		Success: true,
 		Message: "Reaction feature coming soon!",
+	})
+}
+
+
+// searchMessagesHandler handles GET /api/chats/{uuid}/messages/search?q={query}
+func searchMessagesHandler(w http.ResponseWriter, r *http.Request) {
+	// Get user from context
+	user, ok := r.Context().Value(userContextKey).(*User)
+	if !ok || user == nil {
+		http.Error(w, `{"success": false, "error": "Unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+
+	// Get chat UUID from URL
+	chatUUID := chi.URLParam(r, "uuid")
+	if chatUUID == "" {
+		http.Error(w, `{"success": false, "error": "Chat UUID is required"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Get search query from URL parameters
+	searchQuery := r.URL.Query().Get("q")
+	if searchQuery == "" {
+		http.Error(w, `{"success": false, "error": "Search query is required"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Get chat to verify it exists and get channel_id
+	var channelID string
+	err := db.QueryRow(`SELECT channel_id FROM chats WHERE uuid = $1`, chatUUID).Scan(&channelID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			http.Error(w, `{"success": false, "error": "Chat not found"}`, http.StatusNotFound)
+			return
+		}
+		log.Printf("Error getting chat: %v", err)
+		http.Error(w, `{"success": false, "error": "Failed to get chat"}`, http.StatusInternalServerError)
+		return
+	}
+
+	// Search messages using full-text search
+	query := `
+		SELECT 
+			id, message_id, channel_id, content, user_id, user_name, 
+			user_role, attachments, created_at
+		FROM chats_history
+		WHERE channel_id = $1 
+		AND content ILIKE $2
+		ORDER BY created_at DESC
+		LIMIT 100
+	`
+
+	rows, err := db.Query(query, channelID, "%"+searchQuery+"%")
+	if err != nil {
+		log.Printf("Error searching messages: %v", err)
+		http.Error(w, `{"success": false, "error": "Failed to search messages"}`, http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	var messages []ChatMessage
+	for rows.Next() {
+		var msg ChatMessage
+		err := rows.Scan(
+			&msg.ID,
+			&msg.MessageID,
+			&msg.ChannelID,
+			&msg.Content,
+			&msg.UserID,
+			&msg.UserName,
+			&msg.UserRole,
+			&msg.Attachments,
+			&msg.CreatedAt,
+		)
+		if err != nil {
+			log.Printf("Error scanning message: %v", err)
+			continue
+		}
+		messages = append(messages, msg)
+	}
+
+	if messages == nil {
+		messages = []ChatMessage{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(APIResponse{
+		Success: true,
+		Data: map[string]interface{}{
+			"messages": messages,
+			"count":    len(messages),
+			"query":    searchQuery,
+		},
 	})
 }
