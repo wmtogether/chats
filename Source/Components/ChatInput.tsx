@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, type KeyboardEvent } from 'react';
-import { Send, Bold, Italic, Code, Smile, PlusCircle, File, Image, FileImage, X, Upload, Reply, Clipboard, FolderUp } from 'lucide-react'
+import { Send, Bold, Italic, Code, Smile, PlusCircle, File, Image, FileImage, X, Upload, Reply, Clipboard, FolderUp, Flag } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import CustomEmojiPicker from './EmojiPicker';
 import { fileUploader, type UploadProgress, type UploadResult } from '../Library/utils/fileUpload';
@@ -193,6 +193,15 @@ export default function ChatInput({ onSendMessage, replyingTo, onCancelReply, cu
         .map(att => att.uploadedUrl!);
 
       onSendMessage(messageToSend, uploadedUrls, replyingTo || undefined);
+      setMessage('');
+      setAttachments([]);
+      if (onCancelReply) onCancelReply();
+    }
+  };
+
+  const handleCheckpoint = () => {
+    if (onSendMessage) {
+      onSendMessage('---CHECKPOINT---', [], replyingTo || undefined);
       setMessage('');
       setAttachments([]);
       if (onCancelReply) onCancelReply();
@@ -831,6 +840,15 @@ export default function ChatInput({ onSendMessage, replyingTo, onCancelReply, cu
                 onClose={() => setShowEmojiPicker(false)}
               />
             </div>
+
+            {/* Checkpoint Button */}
+            <button
+              onClick={handleCheckpoint}
+              className="flex items-center justify-center w-12 h-12 rounded-full bg-surface-container hover:bg-surface-variant text-on-surface shadow-sm transition-all border border-outline-variant"
+              title="Add checkpoint"
+            >
+              <Flag size={20} />
+            </button>
 
             {/* Send Button */}
             <button
