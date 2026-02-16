@@ -78,8 +78,8 @@ type Design struct {
 	ParentDesignID sql.NullString     `json:"parentDesignId,omitempty"`
 	ChildNumber    sql.NullInt64      `json:"childNumber,omitempty"`
 	JobName        string             `json:"jobName"`
-	CustomerName   sql.NullString     `json:"customerName,omitempty"`
-	CustomerID     sql.NullString     `json:"customerId,omitempty"`
+	CustomerName   sql.NullString     `json:"-"` // Don't serialize directly
+	CustomerID     sql.NullString     `json:"-"` // Don't serialize directly
 	DesignStatus   DesignStatus       `json:"designStatus"`
 	CurrentVersion int                `json:"currentVersion"`
 	DesignData     json.RawMessage    `json:"designData"`
@@ -93,6 +93,28 @@ type Design struct {
 	UpdatedByName  sql.NullString     `json:"updatedByName,omitempty"`
 	CreatedAt      time.Time          `json:"createdAt"`
 	UpdatedAt      time.Time          `json:"updatedAt"`
+}
+
+// MarshalJSON implements custom JSON marshaling for Design
+func (d Design) MarshalJSON() ([]byte, error) {
+	type Alias Design
+	return json.Marshal(&struct {
+		*Alias
+		CustomerName *string `json:"customerName,omitempty"`
+		CustomerID   *string `json:"customerId,omitempty"`
+	}{
+		Alias:        (*Alias)(&d),
+		CustomerName: nullStringToPtr(d.CustomerName),
+		CustomerID:   nullStringToPtr(d.CustomerID),
+	})
+}
+
+// nullStringToPtr converts sql.NullString to *string
+func nullStringToPtr(ns sql.NullString) *string {
+	if ns.Valid {
+		return &ns.String
+	}
+	return nil
 }
 
 // CreateDesignParams represents parameters for creating a design

@@ -5,4 +5,5 @@ export { FileCheckCard } from './FileCheckCard';
 export { ReqTypeChangeCard } from './ReqTypeChangeCard';
 export { Hyperlink } from './Hyperlink';
 export { ProofMetaCard } from './ProofMetaCard';
+export { DesignMetaCard } from './DesignMetaCard';
 export { default as FileAttachmentCard } from '../FileAttachmentCard';

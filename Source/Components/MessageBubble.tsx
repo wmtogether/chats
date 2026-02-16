@@ -132,7 +132,7 @@ export default function MessageBubble({ data, searchQuery, isNewMessage = false,
   if (isCheckpoint) {
     return (
       <div className="flex items-center justify-center py-6 px-4">
-        <div className="flex items-center gap-4 w-full max-w-md">
+        <div className="flex items-center gap-4 w-full ">
           <div className="flex-1 h-px bg-gradient-to-r from-transparent via-outline-variant to-outline-variant"></div>
           <div className="flex items-center gap-3 px-4 py-2 bg-surface-container border border-outline-variant rounded-full shadow-sm">
             <MapPin size={16} className="text-primary" />

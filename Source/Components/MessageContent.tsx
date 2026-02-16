@@ -6,7 +6,8 @@ import {
   FileCheckCard, 
   ReqTypeChangeCard,
   Hyperlink,
-  ProofMetaCard
+  ProofMetaCard,
+  DesignMetaCard
 } from './MetaCards';
 
 interface MessageContentProps {
@@ -125,6 +126,23 @@ export function MessageContent({
     const [, queueId] = queuePreviewMatch;
     return (
       <QueuePreviewCard queueId={queueId} />
+    );
+  }
+
+  // Detect design format: [DESIGN|designId|jobName|customerName]
+  // Also support format without customerName: [DESIGN|designId|jobName]
+  const designRegex = /^\[DESIGN\|([^|]+)\|([^|]+)(?:\|([^\]]*))?\]$/;
+  const designMatch = content.match(designRegex);
+
+  if (designMatch) {
+    const [, designId, jobName, rawCustomerName] = designMatch;
+    const customerName = formatCustomerName(rawCustomerName);
+    return (
+      <DesignMetaCard
+        designId={designId}
+        jobName={jobName}
+        customerName={customerName}
+      />
     );
   }
 

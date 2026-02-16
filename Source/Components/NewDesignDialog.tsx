@@ -60,9 +60,12 @@ export default function NewDesignDialog({ isOpen, onClose, onSuccess, currentCha
         },
       });
       
+      console.log('Design API response:', response.data);
+      
       addToast({ message: 'Design created successfully', type: 'success' });
       
       if (onSuccess && response.data?.data) {
+        console.log('Calling onSuccess with:', response.data.data);
         onSuccess(response.data.data);
       }
       

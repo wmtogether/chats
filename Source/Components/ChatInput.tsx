@@ -1103,20 +1103,12 @@ export default function ChatInput({ onSendMessage, replyingTo, onCancelReply, cu
         onClose={() => setShowDesignDialog(false)}
         currentChat={currentChat}
         onSuccess={(designData) => {
-          // Send design data as a special message with metadata
+          // Send design data as a MetaCard message
           if (onSendMessage) {
-            const designMessage = `🎨 New Design Created: ${designData.jobName}`;
-            const designMetadata = JSON.stringify({
-              type: 'design',
-              designId: designData.designId,
-              jobName: designData.jobName,
-              customerName: designData.customerName,
-              customerId: designData.customerId,
-              designStatus: designData.designStatus,
-              createdByName: designData.createdByName,
-              createdAt: designData.createdAt,
-            });
-            onSendMessage(designMessage, [designMetadata], replyingTo || undefined);
+            // Format: [DESIGN|designId|jobName|customerName]
+            const customerName = designData.customerName || '';
+            const metaCardMessage = `[DESIGN|${designData.designId}|${designData.jobName}|${customerName}]`;
+            onSendMessage(metaCardMessage, [], replyingTo || undefined);
           }
         }}
       />
