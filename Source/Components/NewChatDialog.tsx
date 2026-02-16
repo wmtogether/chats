@@ -56,7 +56,7 @@ const REQUEST_TYPES: {
     },
     {
         id: 'proof',
-        label: 'ตรวจสอบปรู๊ฟ',
+        label: 'ขอ Proof',
         description: 'Review proof before production',
         icon: Eye,
         color: 'bg-outline/12 text-on-surface border-outline/20 hover:bg-outline/16',

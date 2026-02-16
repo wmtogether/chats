@@ -95,6 +95,23 @@ export default function StickyStatus({
         }
       }
       
+      // Handle queue_assigned messages (when graphic user accepts queue)
+      if (data.type === 'queue_assigned' && data.data?.chatUuid === selectedChat.uuid) {
+        console.log('📊 StickyStatus: Queue assigned, refreshing chat data');
+        // Refresh the chat data to get updated status
+        const fetchUpdatedChat = async () => {
+          try {
+            const result = await getChat(selectedChat.uuid);
+            if (result.success && result.data) {
+              setQueueData(result.data);
+            }
+          } catch (error) {
+            console.error('Failed to refresh chat data:', error);
+          }
+        };
+        fetchUpdatedChat();
+      }
+      
       // Also handle general chat_updated messages
       if (data.type === 'chat_updated' && data.data?.chat) {
         const updatedChat = data.data.chat;

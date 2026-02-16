@@ -59,11 +59,9 @@ export default function ChatHeader({ selectedChat, chatCount, wsConnected = fals
     { id: 'dimension', label: 'เช็คระยะ/ขนาด', icon: Ruler },
     { id: 'adjustdesign', label: 'แก้ไขแบบ', icon: Settings },
     { id: 'checkfile', label: 'เช็คไฟล์', icon: CheckCircle },
-    { id: 'proof', label: 'ตรวจสอบปรู๊ฟ', icon: Eye },
+    { id: 'proof', label: 'ขอ Proof', icon: Eye },
     { id: 'sample-i', label: 'ตัวอย่าง (Inkjet)', icon: Package },
     { id: 'sample-t', label: 'ตัวอย่าง (Toner)', icon: Package },
-    { id: 'general', label: 'เรื่องทั่วไป', icon: Briefcase },
-    { id: 'consultation', label: 'ขอคำปรึกษา', icon: Settings },
   ];
 
   const handleRequestTypeChange = async (newRequestType: string) => {

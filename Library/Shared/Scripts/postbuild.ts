@@ -308,6 +308,13 @@ async function main(): Promise<void> {
     const launcherDest = join(DISTRIBUTION_PACKAGE_DIR, 'launcher.exe');
     const launcherCopied = copyFile(launcherSrc, launcherDest, 'launcher.exe');
 
+    console.log('\n📄 Copying version file...');
+    
+    // Copy version.txt
+    const versionSrc = join(PROJECT_ROOT, 'Library/Resources/version.txt');
+    const versionDest = join(DISTRIBUTION_PACKAGE_DIR, 'version.txt');
+    const versionCopied = copyFile(versionSrc, versionDest, 'version.txt');
+
     console.log('\n🌐 Copying WebView2 runtime...');
     
     // Copy WebView2 runtime - look for the actual extracted folder
@@ -357,6 +364,7 @@ async function main(): Promise<void> {
     console.log(`   workspace.exe: ${workspaceCopied ? '✅' : '❌'}`);
     console.log(`   downloaderservice.exe: ${downloaderCopied ? '✅' : '❌'}`);
     console.log(`   launcher.exe (Rust): ${launcherCopied ? '✅' : '❌'}`);
+    console.log(`   version.txt: ${versionCopied ? '✅' : '❌'}`);
     console.log(`   WebView2 runtime: ${existsSync(RUNTIME_DIR) ? '✅' : '❌'}`);
 
     // List contents of Distribution/Package

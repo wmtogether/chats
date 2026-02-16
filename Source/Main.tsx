@@ -41,6 +41,7 @@ type AppAction =
   | { type: 'SELECT_CHAT'; payload: any | null }
   | { type: 'UPDATE_CHAT'; payload: ChatType }
   | { type: 'ADD_CHAT'; payload: ChatType }
+  | { type: 'ADD_CHAT_IF_NOT_EXISTS'; payload: ChatType }
   | { type: 'REMOVE_CHAT'; payload: string }
   | { type: 'ADD_MESSAGE'; payload: { message: MessageType; chatUuid: string } }
   | { type: 'REMOVE_MESSAGE'; payload: string }
@@ -72,7 +73,27 @@ function appReducer(state: AppState, action: AppAction): AppState {
       localStorageManager.saveCurrentPage(action.payload);
       return { ...state, currentPage: action.payload };
     case 'SET_CHATS':
-      return { ...state, chats: action.payload, isLoadingChats: false };
+      // Deduplicate chats by UUID before setting
+      const uniqueChats = action.payload.reduce((acc: ChatType[], chat: ChatType) => {
+        const existingIndex = acc.findIndex((c: ChatType) => c.uuid === chat.uuid);
+        if (existingIndex === -1) {
+          acc.push(chat);
+        } else {
+          // Keep the one with higher ID (more recent)
+          if (chat.id > acc[existingIndex].id) {
+            acc[existingIndex] = chat;
+          }
+        }
+        return acc;
+      }, [] as ChatType[]);
+      
+      console.log('💬 SET_CHATS:', {
+        originalCount: action.payload.length,
+        uniqueCount: uniqueChats.length,
+        duplicatesRemoved: action.payload.length - uniqueChats.length
+      });
+      
+      return { ...state, chats: uniqueChats, isLoadingChats: false };
     case 'SET_MESSAGES':
         return { ...state, messages: action.payload, isLoadingMessages: false, newMessageIds: new Set() };
     case 'SELECT_CHAT':
@@ -96,6 +117,26 @@ function appReducer(state: AppState, action: AppAction): AppState {
       };
     case 'ADD_CHAT':
       // Add a new chat to the chats array
+      return { 
+        ...state, 
+        chats: [...state.chats, action.payload] 
+      };
+    case 'ADD_CHAT_IF_NOT_EXISTS':
+      // Add a new chat only if it doesn't already exist (for WebSocket events)
+      const chatExists = state.chats.some(chat => chat.uuid === action.payload.uuid);
+      console.log('💬 ADD_CHAT_IF_NOT_EXISTS check:', {
+        newChatUuid: action.payload.uuid,
+        newChatId: action.payload.id,
+        newChatName: action.payload.channelName,
+        existingChatCount: state.chats.length,
+        existingUuids: state.chats.map(c => c.uuid),
+        chatExists
+      });
+      if (chatExists) {
+        console.log('💬 Chat already exists, skipping duplicate:', action.payload.channelName);
+        return state;
+      }
+      console.log('💬 Adding new chat via WebSocket');
       return { 
         ...state, 
         chats: [...state.chats, action.payload] 
@@ -357,8 +398,15 @@ const ChatLayout = ({
         // Process the new chat data
         const processedChat = preprocessChat(result.data);
         
-        // Add the new chat to the local state
-        dispatch({ type: 'SET_CHATS', payload: [...chats, processedChat] });
+        console.log('💬 handleCreateChat - Chat created via API:', {
+          uuid: processedChat.uuid,
+          id: processedChat.id,
+          name: processedChat.channelName,
+          currentChatCount: chats.length
+        });
+        
+        // Add the new chat to the local state immediately for better UX
+        dispatch({ type: 'ADD_CHAT', payload: processedChat });
         
         // Select the newly created chat
         dispatch({ type: 'SELECT_CHAT', payload: processedChat });
@@ -897,14 +945,8 @@ export default function Main() {
           // Handle real-time chat creation
           if (data.data?.chat) {
             const processedChat = preprocessChat(data.data.chat);
-            // Check if chat already exists to prevent duplicates
-            const chatExists = state.chats.some(chat => chat.uuid === processedChat.uuid);
-            if (!chatExists) {
-              console.log('💬 Adding new chat via WebSocket');
-              dispatch({ type: 'ADD_CHAT', payload: processedChat });
-            } else {
-              console.log('💬 Chat already exists, skipping duplicate:', processedChat.channelName);
-            }
+            // Use ADD_CHAT_IF_NOT_EXISTS to prevent duplicates
+            dispatch({ type: 'ADD_CHAT_IF_NOT_EXISTS', payload: processedChat });
           }
           break;
         case 'chat_deleted':

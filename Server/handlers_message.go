@@ -318,17 +318,31 @@ func searchMessagesHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	log.Printf("Searching messages: chatUUID=%s, query=%s, user=%s", chatUUID, searchQuery, user.Name)
+
 	// Get chat to verify it exists and get channel_id
 	var channelID string
 	err := db.QueryRow(`SELECT channel_id FROM chats WHERE uuid = $1`, chatUUID).Scan(&channelID)
 	if err != nil {
 		if err == sql.ErrNoRows {
+			log.Printf("Chat not found: uuid=%s", chatUUID)
 			http.Error(w, `{"success": false, "error": "Chat not found"}`, http.StatusNotFound)
 			return
 		}
 		log.Printf("Error getting chat: %v", err)
 		http.Error(w, `{"success": false, "error": "Failed to get chat"}`, http.StatusInternalServerError)
 		return
+	}
+
+	log.Printf("Found chat: channelID=%s", channelID)
+
+	// First, check if there are any messages in this chat
+	var messageCount int
+	err = db.QueryRow(`SELECT COUNT(*) FROM chats_history WHERE channel_id = $1`, channelID).Scan(&messageCount)
+	if err != nil {
+		log.Printf("Error counting messages: %v", err)
+	} else {
+		log.Printf("Total messages in chat: %d", messageCount)
 	}
 
 	// Search messages using full-text search
@@ -342,6 +356,8 @@ func searchMessagesHandler(w http.ResponseWriter, r *http.Request) {
 		ORDER BY created_at DESC
 		LIMIT 100
 	`
+
+	log.Printf("Executing search query with channelID=%s, pattern=%%%s%%", channelID, searchQuery)
 
 	rows, err := db.Query(query, channelID, "%"+searchQuery+"%")
 	if err != nil {
@@ -374,6 +390,22 @@ func searchMessagesHandler(w http.ResponseWriter, r *http.Request) {
 
 	if messages == nil {
 		messages = []ChatMessage{}
+	}
+
+	log.Printf("Search completed: found %d messages for query '%s'", len(messages), searchQuery)
+	
+	// If no results found, log some sample messages for debugging
+	if len(messages) == 0 {
+		log.Printf("No messages found. Checking if any messages exist in channel...")
+		var sampleContent string
+		err := db.QueryRow(`SELECT content FROM chats_history WHERE channel_id = $1 LIMIT 1`, channelID).Scan(&sampleContent)
+		if err == nil {
+			log.Printf("Sample message content: '%s'", sampleContent)
+		} else if err == sql.ErrNoRows {
+			log.Printf("No messages exist in this channel at all")
+		} else {
+			log.Printf("Error fetching sample message: %v", err)
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")

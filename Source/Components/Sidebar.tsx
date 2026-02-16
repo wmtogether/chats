@@ -53,7 +53,7 @@ const REQUEST_TYPES: {
     },
     {
       id: 'proof',
-      label: 'ตรวจสอบปรู๊ฟ', // Proof Review
+      label: 'ขอ Proof', // Proof Review
       description: 'Review proof before production',
       icon: Eye,
       color: 'bg-outline/12 text-on-surface border-outline/20 hover:bg-outline/16',
@@ -192,7 +192,21 @@ export default function Sidebar({
   }, [chats, searchQuery, activeTab, user, joinedChats]);
 
   const chatGroups = useMemo(() => {
-    return filteredChats.reduce((acc, chat) => {
+    // First, deduplicate chats by UUID to prevent rendering duplicates
+    const uniqueChats = filteredChats.reduce((acc, chat) => {
+      const existingIndex = acc.findIndex(c => c.uuid === chat.uuid);
+      if (existingIndex === -1) {
+        acc.push(chat);
+      } else {
+        // If duplicate found, keep the one with the higher ID (more recent)
+        if (chat.id > acc[existingIndex].id) {
+          acc[existingIndex] = chat;
+        }
+      }
+      return acc;
+    }, [] as ChatType[]);
+    
+    return uniqueChats.reduce((acc, chat) => {
       const creator = chat.createdByName || 'Unknown';
       if (!acc[creator]) {
         acc[creator] = [];
@@ -533,7 +547,7 @@ export default function Sidebar({
                   
                   return (
                     <div
-                      key={chat.id}
+                      key={chat.uuid || chat.id}
                       className={`relative rounded-2xl cursor-pointer transition-all hover:bg-surface-variant/50 group border ${
                         selectedChat?.id === chat.id 
                           ? 'bg-surface-variant border-outline' 

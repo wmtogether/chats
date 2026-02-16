@@ -67,6 +67,9 @@ func main() {
 		// Queue routes
 		r.Get("/api/queue", getQueuesHandler)
 		r.Post("/api/queue", createQueueHandler)
+		r.Post("/api/queue/{id}/assign", assignQueueHandler) // Assign queue by ID
+		
+		// Chat-specific queue routes are in the chat routes section
 
 		// User routes
 		r.Route("/api/users", func(r chi.Router) {
@@ -124,6 +127,7 @@ func main() {
 
 							r.Get("/{uuid}", getChatHandler)
 							r.Get("/{uuid}/queue", getChatQueueHandler)
+							r.Post("/{uuid}/assign-queue", assignQueueByChatHandler) // Assign queue for this chat
 							r.Patch("/{uuid}", updateChatHandler)
 							r.Patch("/{uuid}/status", updateChatStatusHandler)
 

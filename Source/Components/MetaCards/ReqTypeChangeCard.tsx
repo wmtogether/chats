@@ -38,7 +38,7 @@ const REQUEST_TYPE_CONFIG: Record<string, { label: string; icon: any; color: str
     bgColor: 'bg-green-100 dark:bg-green-900/30'
   },
   proof: { 
-    label: 'ตรวจสอบปรู๊ฟ', 
+    label: 'ขอ Proof', 
     icon: Eye, 
     color: 'text-indigo-700 dark:text-indigo-300',
     bgColor: 'bg-indigo-100 dark:bg-indigo-900/30'

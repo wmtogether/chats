@@ -100,6 +100,12 @@ export default function SearchMessagesDialog({
         throw new Error('No authentication token found');
       }
 
+      console.log('Searching messages:', {
+        chatUuid,
+        query,
+        url: `${API_BASE_URL}/api/chats/${chatUuid}/messages/search?q=${encodeURIComponent(query)}`
+      });
+
       const response = await fetch(
         `${API_BASE_URL}/api/chats/${chatUuid}/messages/search?q=${encodeURIComponent(query)}`,
         {
@@ -111,12 +117,22 @@ export default function SearchMessagesDialog({
         }
       );
 
+      console.log('Search response status:', response.status);
+
       if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Search error response:', errorText);
         throw new Error(`Search failed: ${response.statusText}`);
       }
 
       const data = await response.json();
-      setResults(data.messages || []);
+      console.log('Search response:', data);
+      
+      // Backend returns data in APIResponse format: { success, data: { messages, count, query } }
+      const messages = data.data?.messages || data.messages || [];
+      console.log('Search results:', messages);
+      
+      setResults(messages);
       setSelectedIndex(0);
     } catch (error) {
       console.error('Search error:', error);

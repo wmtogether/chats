@@ -1,11 +1,16 @@
 import { useState, useRef, useEffect, type KeyboardEvent } from 'react';
-import { Send, Bold, Italic, Code, Smile, PlusCircle, File, Image, FileImage, X, Upload, Reply, Clipboard, FolderUp, Flag } from 'lucide-react'
+import { Send, Bold, Italic, Code, Smile, PlusCircle, File, Image, FileImage, X, Upload, Reply, Clipboard, FolderUp, Flag, UserPlus, CheckCircle } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import CustomEmojiPicker from './EmojiPicker';
 import { fileUploader, type UploadProgress, type UploadResult } from '../Library/utils/fileUpload';
 import { cn } from '../Library/utils';
 import NewProofDialog from './NewProofDialog';
 import UploadDialog from './UploadDialog';
+import { useAuth } from '../Library/Authentication/AuthContext';
+import { joinChat } from '../Library/Shared/chatMemberApi';
+import { assignQueueByChat, getChatQueue } from '../Library/Shared/queueApi';
+import { useToast } from '../Library/hooks/useToast';
+import { getWebSocketManager } from '../Library/utils/websocket';
 
 interface Attachment {
   id: string;
@@ -33,6 +38,8 @@ interface ChatInputProps {
 }
 
 export default function ChatInput({ onSendMessage, replyingTo, onCancelReply, currentChat }: ChatInputProps) {
+  const { user } = useAuth();
+  const { addToast } = useToast();
   const [message, setMessage] = useState('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [showAttachmentDropdown, setShowAttachmentDropdown] = useState(false);
@@ -41,12 +48,108 @@ export default function ChatInput({ onSendMessage, replyingTo, onCancelReply, cu
   const [isPasting, setIsPasting] = useState(false);
   const [showProofDialog, setShowProofDialog] = useState(false);
   const [showUploadDialog, setShowUploadDialog] = useState(false);
+  const [isJoiningAndAccepting, setIsJoiningAndAccepting] = useState(false);
+  const [queueAssigned, setQueueAssigned] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const gifInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Check if queue is already assigned on mount
+  useEffect(() => {
+    const checkQueueStatus = async () => {
+      if (currentChat?.uuid && user?.role === 'graphic') {
+        try {
+          const response = await getChatQueue(currentChat.uuid);
+          console.log('Queue status check:', response);
+          if (response.success && response.data) {
+            const queue = response.data;
+            console.log('Queue data:', {
+              assignedToId: queue.assignedToId,
+              currentUserId: user.id,
+              status: queue.status
+            });
+            // Check if queue is assigned to current user OR if status is ACCEPTED
+            if (queue.assignedToId === user.id || queue.status === 'ACCEPTED') {
+              setQueueAssigned(true);
+            } else {
+              setQueueAssigned(false);
+            }
+          } else {
+            setQueueAssigned(false);
+          }
+        } catch (error) {
+          // Queue might not exist yet, that's okay
+          console.log('Queue not found or error:', error);
+          setQueueAssigned(false);
+        }
+      }
+    };
+    checkQueueStatus();
+  }, [currentChat?.uuid, user]);
+
+  // Listen for WebSocket queue assignment events
+  useEffect(() => {
+    if (!currentChat?.uuid || user?.role !== 'graphic') return;
+
+    const wsManager = getWebSocketManager();
+    if (!wsManager) return;
+
+    const handleWebSocketMessage = (data: any) => {
+      // Handle queue_assigned messages
+      if (data.type === 'queue_assigned' && data.data?.chatUuid === currentChat.uuid) {
+        console.log('🎯 ChatInput: Queue assigned event received for current chat');
+        setQueueAssigned(true);
+      }
+      
+      // Handle chat_status_updated messages
+      if (data.type === 'chat_status_updated' && data.data?.chat) {
+        const updatedChat = data.data.chat;
+        if (updatedChat.uuid === currentChat.uuid && updatedChat.status === 'ACCEPTED') {
+          console.log('🎯 ChatInput: Chat status updated to ACCEPTED');
+          setQueueAssigned(true);
+        }
+      }
+    };
+
+    wsManager.on('message', handleWebSocketMessage);
+    return () => wsManager.off('message', handleWebSocketMessage);
+  }, [currentChat?.uuid, user]);
+
+  // Handle join and accept queue
+  const handleJoinAndAcceptQueue = async () => {
+    if (!currentChat?.uuid || !currentChat?.id) {
+      addToast({ message: 'No chat selected', type: 'error' });
+      return;
+    }
+
+    setIsJoiningAndAccepting(true);
+    try {
+      // Step 1: Join the chat
+      await joinChat(currentChat.id);
+      console.log('Joined chat successfully');
+
+      // Step 2: Assign the queue
+      const response = await assignQueueByChat(currentChat.uuid);
+      if (response.success) {
+        setQueueAssigned(true);
+        addToast({ 
+          message: `Queue assigned to you successfully!`, 
+          type: 'success' 
+        });
+      }
+    } catch (error) {
+      console.error('Error joining and accepting queue:', error);
+      addToast({ 
+        message: error instanceof Error ? error.message : 'Failed to join and accept queue', 
+        type: 'error' 
+      });
+    } finally {
+      setIsJoiningAndAccepting(false);
+    }
+  };
 
   // Add clipboard paste support
   useEffect(() => {
@@ -849,6 +952,36 @@ export default function ChatInput({ onSendMessage, replyingTo, onCancelReply, cu
             >
               <Flag size={20} />
             </button>
+
+            {/* Join and Accept Queue Button - Only for graphic role */}
+            {user?.role === 'graphic' && !queueAssigned && (
+              <button
+                onClick={handleJoinAndAcceptQueue}
+                disabled={isJoiningAndAccepting}
+                className="flex items-center gap-2 px-4 h-12 rounded-full bg-tertiary hover:bg-tertiary/90 text-on-tertiary shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Join chat and accept queue"
+              >
+                {isJoiningAndAccepting ? (
+                  <>
+                    <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                    <span className="text-sm font-medium">Joining...</span>
+                  </>
+                ) : (
+                  <>
+                    <UserPlus size={18} />
+                    <span className="text-sm font-medium">Accept Queue</span>
+                  </>
+                )}
+              </button>
+            )}
+
+            {/* Queue Assigned Indicator - Only for graphic role */}
+            {user?.role === 'graphic' && queueAssigned && (
+              <div className="flex items-center gap-2 px-4 h-12 rounded-full bg-success/10 text-success border border-success/20">
+                <CheckCircle size={18} />
+                <span className="text-sm font-medium">Queue Assigned</span>
+              </div>
+            )}
 
             {/* Send Button */}
             <button
