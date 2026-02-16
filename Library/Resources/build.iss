@@ -112,7 +112,7 @@ Filename: "{app}\{#MyAppExeName}"; \
   Flags: nowait postinstall skipifsilent; \
   Check: IsNotUpdateMode
 
-; Update mode → always relaunch silently
+; Update mode → always relaunch silently after installation
 Filename: "{app}\{#MyAppExeName}"; \
-  Flags: nowait runhidden; \
+  Flags: nowait postinstall runhidden; \
   Check: CheckIsUpdateMode

@@ -5,6 +5,7 @@ import CustomEmojiPicker from './EmojiPicker';
 import { fileUploader, type UploadProgress, type UploadResult } from '../Library/utils/fileUpload';
 import { cn } from '../Library/utils';
 import NewProofDialog from './NewProofDialog';
+import NewDesignDialog from './NewDesignDialog';
 import UploadDialog from './UploadDialog';
 import { useAuth } from '../Library/Authentication/AuthContext';
 import { joinChat } from '../Library/Shared/chatMemberApi';
@@ -47,6 +48,7 @@ export default function ChatInput({ onSendMessage, replyingTo, onCancelReply, cu
   const [isDragOver, setIsDragOver] = useState(false);
   const [isPasting, setIsPasting] = useState(false);
   const [showProofDialog, setShowProofDialog] = useState(false);
+  const [showDesignDialog, setShowDesignDialog] = useState(false);
   const [showUploadDialog, setShowUploadDialog] = useState(false);
   const [isJoiningAndAccepting, setIsJoiningAndAccepting] = useState(false);
   const [queueAssigned, setQueueAssigned] = useState(false);
@@ -902,6 +904,16 @@ export default function ChatInput({ onSendMessage, replyingTo, onCancelReply, cu
                   </button>
                   <button
                     onClick={() => {
+                      setShowDesignDialog(true);
+                      setShowAttachmentDropdown(false);
+                    }}
+                    className="w-full px-2 space-x-2 py-3 text-left hover:bg-surface-variant flex items-center text-on-surface transition-colors rounded-xl "
+                  >
+                    <PlusCircle size={18} />
+                    <span className="font-medium text-xs">New Design Data</span>
+                  </button>
+                  <button
+                    onClick={() => {
                       setShowUploadDialog(true);
                       setShowAttachmentDropdown(false);
                     }}
@@ -1081,6 +1093,30 @@ export default function ChatInput({ onSendMessage, replyingTo, onCancelReply, cu
               createdAt: proofData.createdAt,
             });
             onSendMessage(proofMessage, [proofMetadata], replyingTo || undefined);
+          }
+        }}
+      />
+
+      {/* New Design Dialog */}
+      <NewDesignDialog
+        isOpen={showDesignDialog}
+        onClose={() => setShowDesignDialog(false)}
+        currentChat={currentChat}
+        onSuccess={(designData) => {
+          // Send design data as a special message with metadata
+          if (onSendMessage) {
+            const designMessage = `🎨 New Design Created: ${designData.jobName}`;
+            const designMetadata = JSON.stringify({
+              type: 'design',
+              designId: designData.designId,
+              jobName: designData.jobName,
+              customerName: designData.customerName,
+              customerId: designData.customerId,
+              designStatus: designData.designStatus,
+              createdByName: designData.createdByName,
+              createdAt: designData.createdAt,
+            });
+            onSendMessage(designMessage, [designMetadata], replyingTo || undefined);
           }
         }}
       />

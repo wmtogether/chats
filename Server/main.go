@@ -98,6 +98,13 @@ func main() {
 			r.Delete("/{id}", deleteProofDataHandler)
 		})
 
+		// Design routes
+		r.Route("/api/designs", func(r chi.Router) {
+			r.Get("/", listDesignsHandler)
+			r.Post("/", createDesignHandler)
+			r.Get("/{designId}", getDesignHandler)
+		})
+
 		// File management routes (upload, list, delete)
 		r.Route("/api/files", func(r chi.Router) {
 			r.Get("/list", listFilesHandler)

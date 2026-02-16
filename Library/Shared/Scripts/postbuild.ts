@@ -303,10 +303,20 @@ async function main(): Promise<void> {
     const downloaderDest = join(DISTRIBUTION_PACKAGE_DIR, 'downloaderservice.exe');
     const downloaderCopied = copyFile(downloaderSrc, downloaderDest, 'downloaderservice.exe');
 
-    // Copy launcher.exe (Rust version)
-    const launcherSrc = join(LAUNCHERPATH, 'launcher.exe');
+    // Copy launcher.exe (Native C version)
+    const launcherSrc = join(PROJECT_ROOT, 'Launcher/native/build/launcher.exe');
     const launcherDest = join(DISTRIBUTION_PACKAGE_DIR, 'launcher.exe');
-    const launcherCopied = copyFile(launcherSrc, launcherDest, 'launcher.exe');
+    const launcherCopied = copyFile(launcherSrc, launcherDest, 'launcher.exe (Native C)');
+
+    // Copy updater.exe (Python updater helper) - optional, fallback only
+    const updaterSrc = join(LAUNCHERPATH, 'updater.exe');
+    const updaterDest = join(DISTRIBUTION_PACKAGE_DIR, 'updater.exe');
+    let updaterCopied = false;
+    if (existsSync(updaterSrc)) {
+        updaterCopied = copyFile(updaterSrc, updaterDest, 'updater.exe (optional)');
+    } else {
+        console.log('⚠️  updater.exe not found (optional, skipping)');
+    }
 
     console.log('\n📄 Copying version file...');
     
@@ -363,7 +373,8 @@ async function main(): Promise<void> {
     console.log('\n📊 Post-build summary:');
     console.log(`   workspace.exe: ${workspaceCopied ? '✅' : '❌'}`);
     console.log(`   downloaderservice.exe: ${downloaderCopied ? '✅' : '❌'}`);
-    console.log(`   launcher.exe (Rust): ${launcherCopied ? '✅' : '❌'}`);
+    console.log(`   launcher.exe (Native C): ${launcherCopied ? '✅' : '❌'}`);
+    console.log(`   updater.exe (optional): ${updaterCopied ? '✅' : '⚠️  skipped'}`);
     console.log(`   version.txt: ${versionCopied ? '✅' : '❌'}`);
     console.log(`   WebView2 runtime: ${existsSync(RUNTIME_DIR) ? '✅' : '❌'}`);
 

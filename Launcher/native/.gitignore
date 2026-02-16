@@ -1,0 +1,8 @@
+# Build artifacts
+build/
+*.obj
+*.res
+*.rc
+*.exe
+*.pdb
+*.ilk

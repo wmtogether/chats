@@ -188,10 +188,46 @@ def main():
                         installer_path = os.path.join(temp_dir, asset['name'])
                         
                         if ui.show_download_progress(asset['browser_download_url'], installer_path):
-                            # Success: Run Installer
-                            cmd = [installer_path] + INSTALLER_ARGS
-                            subprocess.Popen(cmd)
-                            sys.exit(0)
+                            # Success: Use updater.exe to launch installer after launcher exits
+                            updater_path = os.path.join(app_dir, 'updater.exe')
+                            
+                            # Destroy UI first to release all resources
+                            try:
+                                ui.root.destroy()
+                            except:
+                                pass
+                            
+                            # Check if updater exists
+                            if os.path.exists(updater_path):
+                                # Use updater.exe to handle the update
+                                cmd = [updater_path, installer_path] + INSTALLER_ARGS
+                                DETACHED_PROCESS = 0x00000008
+                                subprocess.Popen(
+                                    cmd,
+                                    creationflags=DETACHED_PROCESS,
+                                    close_fds=True
+                                )
+                            else:
+                                # Fallback: Use batch file if updater.exe not found
+                                batch_path = os.path.join(temp_dir, 'update_launcher.bat')
+                                with open(batch_path, 'w') as f:
+                                    f.write('@echo off\n')
+                                    f.write('timeout /t 1 /nobreak >nul\n')
+                                    f.write('taskkill /F /IM launcher.exe >nul 2>&1\n')
+                                    f.write('timeout /t 1 /nobreak >nul\n')
+                                    f.write(f'start "" "{installer_path}" {" ".join(INSTALLER_ARGS)}\n')
+                                    f.write(f'del "%~f0"\n')
+                                
+                                DETACHED_PROCESS = 0x00000008
+                                CREATE_NO_WINDOW = 0x08000000
+                                subprocess.Popen(
+                                    ['cmd', '/c', batch_path],
+                                    creationflags=DETACHED_PROCESS | CREATE_NO_WINDOW,
+                                    close_fds=True
+                                )
+                            
+                            # Exit launcher immediately
+                            os._exit(0)
                         else:
                             ui.show_message("Update Failed", f"Could not download update.\n\n{ui.download_error}", 'error')
                     else:
