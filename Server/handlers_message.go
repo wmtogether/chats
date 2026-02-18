@@ -352,7 +352,7 @@ func searchMessagesHandler(w http.ResponseWriter, r *http.Request) {
 	query := `
 		SELECT 
 			id, message_id, channel_id, content, user_id, user_name, 
-			user_role, attachments, created_at
+			user_role, attachments, is_edited, created_at
 		FROM chats_history
 		WHERE channel_id = $1 
 		AND content ILIKE $2
@@ -382,6 +382,7 @@ func searchMessagesHandler(w http.ResponseWriter, r *http.Request) {
 			&msg.UserName,
 			&msg.UserRole,
 			&msg.Attachments,
+			&msg.IsEdited,
 			&msg.CreatedAt,
 		)
 		if err != nil {

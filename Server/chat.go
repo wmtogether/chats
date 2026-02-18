@@ -60,6 +60,7 @@ type ChatMessage struct {
 	Reactions   []byte              `json:"reactions"` // jsonb type
 	CustomerID  sql.NullString      `json:"customerId"`
 	Customers   sql.NullString      `json:"customers"`
+	IsEdited    int                 `json:"isEdited"`    // 0 = not edited, 1 = edited
 	EditedAt    sql.NullTime        `json:"editedAt"`
 	CreatedAt   time.Time           `json:"createdAt"`
 }

@@ -179,7 +179,7 @@ export default function MessageBubble({ data, searchQuery, isNewMessage = false,
           <span className="body-small text-on-surface-variant text-xs sm:text-sm">
             {data.time}
           </span>
-          {data.editedAt && (
+          {data.isEdited === 1 && (
             <span className="body-small text-on-surface-variant italic text-xs sm:text-sm">
               (edited)
             </span>

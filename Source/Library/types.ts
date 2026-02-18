@@ -76,6 +76,7 @@ export interface MessageBubbleData {
   attachments?: string[];
   reactions?: { emoji: string; count: number; active?: boolean }[];
   isHighlighted?: boolean;
+  isEdited?: number; // 0 = not edited, 1 = edited
   editedAt?: string;
   replyTo?: {
     messageId: string;

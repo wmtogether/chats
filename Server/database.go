@@ -212,7 +212,7 @@ func GetChatByUUID(uuid string) (*Chat, error) {
 
 // GetMessagesByChannelID fetches messages for a given channel ID.
 func GetMessagesByChannelID(channelID string) ([]ChatMessage, error) {
-	rows, err := db.Query(`SELECT id, message_id, channel_id, content, user_id, user_name, user_role, attachments, tags, status, reactions, customer_id, customers, edited_at, created_at FROM chats_history WHERE channel_id = $1 ORDER BY created_at ASC`, channelID)
+	rows, err := db.Query(`SELECT id, message_id, channel_id, content, user_id, user_name, user_role, attachments, tags, status, reactions, customer_id, customers, is_edited, edited_at, created_at FROM chats_history WHERE channel_id = $1 ORDER BY created_at ASC`, channelID)
 	if err != nil {
 		return nil, fmt.Errorf("error querying messages: %w", err)
 	}
@@ -223,7 +223,7 @@ func GetMessagesByChannelID(channelID string) ([]ChatMessage, error) {
 		var m ChatMessage
 		err := rows.Scan(
 			&m.ID, &m.MessageID, &m.ChannelID, &m.Content, &m.UserID, &m.UserName, &m.UserRole,
-			&m.Attachments, &m.Tags, &m.Status, &m.Reactions, &m.CustomerID, &m.Customers, &m.EditedAt, &m.CreatedAt,
+			&m.Attachments, &m.Tags, &m.Status, &m.Reactions, &m.CustomerID, &m.Customers, &m.IsEdited, &m.EditedAt, &m.CreatedAt,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("error scanning message row: %w", err)
@@ -398,11 +398,11 @@ func CreateMessage(params CreateMessageParams) (*ChatMessage, error) {
 	query := `
 		INSERT INTO chats_history (
 			message_id, channel_id, content, user_id, user_name, user_role,
-			attachments, status, created_at
+			attachments, status, is_edited, created_at
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10
 		) RETURNING id, message_id, channel_id, content, user_id, user_name, user_role,
-		attachments, tags, status, reactions, customer_id, customers, edited_at, created_at
+		attachments, tags, status, reactions, customer_id, customers, is_edited, edited_at, created_at
 	`
 
 	now := time.Now()
@@ -419,6 +419,7 @@ func CreateMessage(params CreateMessageParams) (*ChatMessage, error) {
 		params.UserRole,     // user_role
 		attachments,         // attachments (FlexibleStringArray -> JSON)
 		"sent",              // status
+		0,                   // is_edited (0 = not edited)
 		now,                 // created_at
 	)
 
@@ -427,7 +428,7 @@ func CreateMessage(params CreateMessageParams) (*ChatMessage, error) {
 		&message.ID, &message.MessageID, &message.ChannelID, &message.Content,
 		&message.UserID, &message.UserName, &message.UserRole, &message.Attachments,
 		&message.Tags, &message.Status, &message.Reactions, &message.CustomerID,
-		&message.Customers, &message.EditedAt, &message.CreatedAt,
+		&message.Customers, &message.IsEdited, &message.EditedAt, &message.CreatedAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("error creating message: %w", err)
@@ -440,7 +441,7 @@ func CreateMessage(params CreateMessageParams) (*ChatMessage, error) {
 func GetMessageByID(messageID string) (*ChatMessage, error) {
 	row := db.QueryRow(`
 		SELECT id, message_id, channel_id, content, user_id, user_name, user_role,
-		attachments, tags, status, reactions, customer_id, customers, edited_at, created_at
+		attachments, tags, status, reactions, customer_id, customers, is_edited, edited_at, created_at
 		FROM chats_history WHERE message_id = $1 LIMIT 1
 	`, messageID)
 
@@ -449,7 +450,7 @@ func GetMessageByID(messageID string) (*ChatMessage, error) {
 		&message.ID, &message.MessageID, &message.ChannelID, &message.Content,
 		&message.UserID, &message.UserName, &message.UserRole, &message.Attachments,
 		&message.Tags, &message.Status, &message.Reactions, &message.CustomerID,
-		&message.Customers, &message.EditedAt, &message.CreatedAt,
+		&message.Customers, &message.IsEdited, &message.EditedAt, &message.CreatedAt,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -486,11 +487,11 @@ func UpdateMessage(messageID string, content string, attachments []string) (*Cha
 		attachmentsArray = FlexibleStringArray(attachments)
 	}
 
-	// Update the message
+	// Update the message and set is_edited to 1
 	now := time.Now()
 	_, err := db.Exec(`
 		UPDATE chats_history 
-		SET content = $1, attachments = $2, edited_at = $3
+		SET content = $1, attachments = $2, is_edited = 1, edited_at = $3
 		WHERE message_id = $4
 	`, content, attachmentsArray, now, messageID)
 	if err != nil {
