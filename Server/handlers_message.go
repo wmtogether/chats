@@ -108,11 +108,14 @@ func sendMessageHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Broadcast the message via WebSocket
+	// Broadcast the message via WebSocket with notification flag
 	if wsHub != nil {
-		wsHub.BroadcastMessage("chat_message", map[string]interface{}{
-			"chatUuid": chatUUID,
-			"message":  message,
+		wsHub.BroadcastMessage("new_message", map[string]interface{}{
+			"chatUuid":     chatUUID,
+			"message":      message,
+			"notification": true, // Flag for desktop notification
+			"sender":       user.Name,
+			"senderRole":   user.Role,
 		})
 	}
 

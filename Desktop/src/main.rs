@@ -8,34 +8,28 @@
 mod context_menu;
 #[cfg(target_os = "windows")]
 mod menubar;
-#[cfg(target_os = "windows")]
 mod hooks;
 
 // Platform-specific conditional compilation
-#[cfg(target_os = "windows")]
-#[path = "main_win.rs"]
-mod platform_main;
-
-#[cfg(target_os = "macos")]
-#[path = "main_mac.rs"]
-mod platform_main;
-
-#[cfg(target_os = "linux")]
-mod platform_main {
-    pub fn main() -> Result<(), Box<dyn std::error::Error>> {
-        eprintln!("❌ Linux support not yet implemented.");
-        std::process::exit(1);
-    }
-}
+mod platform;
 
 // Main function that calls the platform-specific implementation
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    platform_main::main()
-}
-
-// Fallback for unsupported platforms
-#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
-fn unsupported_platform_main() -> Result<(), Box<dyn std::error::Error>> {
-    eprintln!("❌ Unsupported platform. This application supports Windows, macOS, and Linux only.");
-    std::process::exit(1);
+    #[cfg(target_os = "windows")]
+    {
+        platform::win::main()
+    }
+    #[cfg(target_os = "macos")]
+    {
+        platform::mac::main()
+    }
+    #[cfg(target_os = "linux")]
+    {
+        platform::linux::main()
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    {
+        eprintln!("❌ Unsupported platform. This application supports Windows, macOS, and Linux only.");
+        std::process::exit(1);
+    }
 }

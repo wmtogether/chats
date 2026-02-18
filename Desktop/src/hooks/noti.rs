@@ -1,179 +1,150 @@
-use std::ffi::OsStr;
-use std::os::windows::ffi::OsStrExt;
-use windows::{
-    core::*,
-    Win32::{
-        Foundation::*,
-        UI::{
-            Shell::*,
-            WindowsAndMessaging::*,
-        },
-        System::{
-            Com::*,
-            LibraryLoader::*,
-        },
-    },
-};
+use std::sync::Arc;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone)]
+#[cfg(target_os = "windows")]
+use windows::UI::Notifications::{
+    ToastNotification, ToastNotificationManager,
+};
+#[cfg(target_os = "windows")]
+use windows::Data::Xml::Dom::XmlDocument;
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct NotificationData {
     pub title: String,
     pub message: String,
-    pub icon_type: NotificationIcon,
-    pub duration: u32, // in milliseconds
+    pub icon: Option<String>,
+    pub chat_uuid: Option<String>,
 }
 
-#[derive(Debug, Clone)]
-pub enum NotificationIcon {
-    Info,
+/// Initialize notification system
+pub fn init_notifications() -> Result<(), Box<dyn std::error::Error>> {
+    #[cfg(target_os = "windows")]
+    {
+        println!("✅ Windows notification system initialized");
+    }
+    
+    #[cfg(target_os = "macos")]
+    {
+        println!("✅ macOS notification system initialized (osascript)");
+    }
+    
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        println!("⚠️ Notifications not yet implemented for this platform");
+    }
+    
+    Ok(())
 }
 
-impl NotificationIcon {
-    fn to_win32_icon(&self) -> NOTIFY_ICON_INFOTIP_FLAGS {
-        match self {
-            NotificationIcon::Info => NIIF_INFO,
+/// Show a notification (cross-platform)
+pub fn show_notification(data: NotificationData) -> Result<(), Box<dyn std::error::Error>> {
+    #[cfg(target_os = "windows")]
+    {
+        return show_windows_notification(data);
+    }
+    
+    #[cfg(target_os = "macos")]
+    {
+        return show_macos_notification(data);
+    }
+    
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        println!("📢 Notification (Fallback): {} - {}", data.title, data.message);
+        Ok(())
+    }
+}
+
+/// Show a Windows toast notification
+#[cfg(target_os = "windows")]
+fn show_windows_notification(data: NotificationData) -> Result<(), Box<dyn std::error::Error>> {
+    use windows::core::HSTRING;
+    
+    println!("📢 Showing Windows notification: {} - {}", data.title, data.message);
+    
+    // Create XML template for toast notification
+    let xml_template = format!(
+        r#"<toast>
+            <visual>
+                <binding template="ToastGeneric">
+                    <text>{}</text>
+                    <text>{}</text>
+                </binding>
+            </visual>
+            <audio src="ms-winsoundevent:Notification.Default"/>
+        </toast>"#,
+        escape_xml(&data.title),
+        escape_xml(&data.message)
+    );
+    
+    // Create XML document
+    let xml_doc = XmlDocument::new()?;
+    xml_doc.LoadXml(&HSTRING::from(&xml_template))?;
+    
+    // Create toast notification
+    let toast = ToastNotification::CreateToastNotification(&xml_doc)?;
+    
+    // Get toast notifier
+    let app_id = HSTRING::from("MikoWorkspace");
+    let notifier = ToastNotificationManager::CreateToastNotifierWithId(&app_id)?;
+    
+    // Show the notification
+    notifier.Show(&toast)?;
+    
+    println!("✅ Windows notification shown successfully");
+    Ok(())
+}
+
+/// Show a macOS notification using osascript
+#[cfg(target_os = "macos")]
+fn show_macos_notification(data: NotificationData) -> Result<(), Box<dyn std::error::Error>> {
+    println!("📢 Showing macOS notification: {} - {}", data.title, data.message);
+    
+    // Use macOS osascript to show notification
+    let script = format!(
+        r#"display notification "{}" with title "{}""#,
+        data.message.replace("\"", "\\\""),
+        data.title.replace("\"", "\\\"")
+    );
+    
+    let mut command = std::process::Command::new("osascript");
+    command.arg("-e").arg(&script);
+    
+    match command.spawn() {
+        Ok(_) => {
+            println!("✅ macOS notification sent");
+            Ok(())
+        }
+        Err(e) => {
+            println!("❌ Failed to send macOS notification: {}", e);
+            Err(e.into())
         }
     }
 }
 
-pub struct NotificationManager {
-    hwnd: HWND,
-    notification_id: u32,
+/// Escape XML special characters
+#[cfg(target_os = "windows")]
+fn escape_xml(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
 }
 
-impl NotificationManager {
-    pub fn new(hwnd: HWND) -> Self {
-        Self {
-            hwnd,
-            notification_id: 1,
-        }
-    }
-
-    /// Show a native Windows notification using the system tray
-    pub fn show_notification(&mut self, notification: NotificationData) -> std::result::Result<(), Box<dyn std::error::Error>> {
-        unsafe {
-            // Initialize COM for shell notifications
-            let mut nid = NOTIFYICONDATAW {
-                cbSize: std::mem::size_of::<NOTIFYICONDATAW>() as u32,
-                hWnd: self.hwnd,
-                uID: self.notification_id,
-                uFlags: NIF_MESSAGE | NIF_ICON | NIF_TIP | NIF_INFO,
-                uCallbackMessage: WM_USER + 1,
-                hIcon: self.load_default_icon()?,
-                dwInfoFlags: notification.icon_type.to_win32_icon(),
-                Anonymous: NOTIFYICONDATAW_0 {
-                    uTimeout: notification.duration,
-                },
-                ..Default::default()
-            };
-
-            // Convert strings to wide strings
-            let title_wide = self.to_wide_string(&notification.title);
-            let message_wide = self.to_wide_string(&notification.message);
-            let tip_wide = self.to_wide_string("Miko Workspace");
-
-            // Copy strings to the structure (truncate if too long)
-            self.copy_to_array(&title_wide, &mut nid.szInfoTitle);
-            self.copy_to_array(&message_wide, &mut nid.szInfo);
-            self.copy_to_array(&tip_wide, &mut nid.szTip);
-
-            // Add the notification icon to system tray
-            if Shell_NotifyIconW(NIM_ADD, &nid).as_bool() {
-                println!("✅ Notification shown: {}", notification.title);
-                
-                // Schedule removal after duration (without threading issues)
-                self.notification_id += 1;
-                Ok(())
-            } else {
-                Err("Failed to show notification".into())
-            }
-        }
-    }
-
-    /// Show a simple toast notification
-    pub fn show_toast(&mut self, title: &str, message: &str) -> std::result::Result<(), Box<dyn std::error::Error>> {
-        let notification = NotificationData {
-            title: title.to_string(),
-            message: message.to_string(),
-            icon_type: NotificationIcon::Info,
-            duration: 5000, // 5 seconds
-        };
-        
-        self.show_notification(notification)
-    }
-
-
-
-    /// Load the default application icon
-    fn load_default_icon(&self) -> std::result::Result<HICON, Box<dyn std::error::Error>> {
-        unsafe {
-            // Try to load the application icon first
-            let hicon = LoadIconW(GetModuleHandleW(None)?, PCWSTR(1 as *const u16))?;
-            
-            if hicon.is_invalid() {
-                // Fallback to system information icon
-                Ok(LoadIconW(None, IDI_INFORMATION)?)
-            } else {
-                Ok(hicon)
-            }
-        }
-    }
-
-    /// Convert Rust string to wide string
-    fn to_wide_string(&self, s: &str) -> Vec<u16> {
-        OsStr::new(s).encode_wide().chain(std::iter::once(0)).collect()
-    }
-
-    /// Copy wide string to fixed-size array
-    fn copy_to_array(&self, source: &[u16], dest: &mut [u16]) {
-        let len = std::cmp::min(source.len() - 1, dest.len() - 1); // -1 for null terminator
-        dest[..len].copy_from_slice(&source[..len]);
-        dest[len] = 0; // Ensure null termination
-    }
-
-
-
-    /// Remove all notifications
-    pub fn clear_all_notifications(&self) {
-        unsafe {
-            for id in 1..=self.notification_id {
-                let nid = NOTIFYICONDATAW {
-                    cbSize: std::mem::size_of::<NOTIFYICONDATAW>() as u32,
-                    hWnd: self.hwnd,
-                    uID: id,
-                    ..Default::default()
-                };
-                
-                let _ = Shell_NotifyIconW(NIM_DELETE, &nid);
-            }
-        }
-    }
+/// Handle notification from WebView IPC
+pub fn handle_notification_ipc(payload: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let data: NotificationData = serde_json::from_str(payload)?;
+    show_notification(data)?;
+    Ok(())
 }
 
-impl Drop for NotificationManager {
-    fn drop(&mut self) {
-        self.clear_all_notifications();
-        unsafe {
-            CoUninitialize();
-        }
-    }
-}
-
-/// Global notification functions for easy access
-static mut NOTIFICATION_MANAGER: Option<NotificationManager> = None;
-
-pub fn init_notifications(hwnd: HWND) {
-    unsafe {
-        NOTIFICATION_MANAGER = Some(NotificationManager::new(hwnd));
-    }
-}
-
-pub fn show_notification(title: &str, message: &str) -> std::result::Result<(), Box<dyn std::error::Error>> {
-    unsafe {
-        if let Some(ref mut manager) = NOTIFICATION_MANAGER {
-            manager.show_toast(title, message)
-        } else {
-            Err(std::io::Error::new(std::io::ErrorKind::NotFound, "Notification manager not initialized").into())
-        }
-    }
+/// Simple convenience function for text-based notifications
+pub fn show_simple_notification(title: &str, message: &str) -> Result<(), Box<dyn std::error::Error>> {
+    show_notification(NotificationData {
+        title: title.to_string(),
+        message: message.to_string(),
+        icon: None,
+        chat_uuid: None,
+    })
 }

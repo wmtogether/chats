@@ -82,6 +82,8 @@ windows = { version = "0.58", features = [
     "Win32_System_LibraryLoader",
     "Win32_System_Threading",
     "Win32_System_SystemServices",
+    "UI_Notifications",
+    "Data_Xml_Dom",
     "implement",
 ] }
 winreg = "0.52"
