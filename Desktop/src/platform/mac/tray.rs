@@ -112,6 +112,6 @@ pub fn create_tray_icon(window: Option<Arc<Window>>) -> Result<TrayIcon, Box<dyn
 
 fn fallback_icon() -> Result<tray_icon::Icon, Box<dyn std::error::Error>> {
     let size = 32;
-    let mut rgba_data = vec![128; (size * size * 4) as usize];
+    let rgba_data = vec![128; (size * size * 4) as usize];
     Ok(tray_icon::Icon::from_rgba(rgba_data, size, size)?)
 }

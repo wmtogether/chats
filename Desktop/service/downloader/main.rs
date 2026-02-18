@@ -1,17 +1,12 @@
 use std::env;
 use std::fs::File;
-use std::io::{self, Write, BufWriter, Seek, SeekFrom};
+use std::io::{self, Write, BufWriter};
 use std::path::Path;
 use std::time::{Instant, Duration};
-use std::sync::{Arc, Mutex};
 use serde_json::json;
 use reqwest;
 use tokio;
 use futures_util::StreamExt;
-
-const MAX_CONNECTIONS: usize = 64;
-const DEFAULT_CONNECTIONS: usize = 16;
-const MIN_CHUNK_SIZE: u64 = 1024 * 1024; // 1MB minimum per connection
 
 #[derive(Debug, Clone)]
 struct DownloadProgress {
@@ -57,8 +52,6 @@ impl DownloadProgress {
     }
     
     fn broadcast(&self) {
-        // For now, just print to stdout
-        // TCP client functionality can be added later if needed
         self.print_json();
     }
 }
@@ -122,9 +115,6 @@ async fn download_file_multiconnection(url: &str, output_path: &str, headers: Ve
     }
 
     let total_size = response.content_length().unwrap_or(0);
-    let _supports_ranges = response.headers().get("accept-ranges")
-        .map(|v| v.to_str().unwrap_or("") == "bytes")
-        .unwrap_or(false);
 
     // For simplicity, always use single connection to avoid range request issues
     let connections = 1;
@@ -148,82 +138,8 @@ async fn download_file_multiconnection(url: &str, output_path: &str, headers: Ve
     download_file_single_with_response(url, &final_output_path, progress, response, headers).await
 }
 
-async fn download_range(
-    client: reqwest::Client,
-    url: &str,
-    output_path: &str,
-    start: u64,
-    end: u64,
-    _connection_id: usize,
-    progress_shared: Arc<Mutex<DownloadProgress>>,
-    start_time: Instant,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let range_header = format!("bytes={}-{}", start, end);
-    
-    let response = client
-        .get(url)
-        .header("Range", range_header)
-        .send()
-        .await?;
-
-    if !response.status().is_success() && response.status().as_u16() != 206 {
-        return Err(format!("HTTP error for range request: {}", response.status()).into());
-    }
-
-    // Open file for writing at specific position
-    let mut file = File::options().write(true).open(output_path)?;
-    file.seek(SeekFrom::Start(start))?;
-    let mut writer = BufWriter::new(file);
-
-    let mut stream = response.bytes_stream();
-    let mut last_speed_update = Instant::now();
-    let mut bytes_since_last_update = 0u64;
-
-    while let Some(chunk_result) = stream.next().await {
-        match chunk_result {
-            Ok(bytes) => {
-                let chunk_size = bytes.len() as u64;
-                
-                writer.write_all(&bytes)?;
-                bytes_since_last_update += chunk_size;
-
-                // Update shared progress
-                let now = Instant::now();
-                if now.duration_since(last_speed_update) >= Duration::from_millis(100) {
-                    let mut progress = progress_shared.lock().unwrap();
-                    progress.downloaded += bytes_since_last_update;
-                    progress.chunk_size = chunk_size;
-                    
-                    // Calculate speed
-                    let elapsed = now.duration_since(start_time).as_secs_f64();
-                    if elapsed > 0.0 {
-                        progress.download_speed_bps = progress.downloaded as f64 / elapsed;
-                        
-                        if progress.total_size > 0 && progress.download_speed_bps > 0.0 {
-                            let remaining_bytes = progress.total_size - progress.downloaded;
-                            progress.eta_seconds = Some((remaining_bytes as f64 / progress.download_speed_bps) as u64);
-                        }
-                    }
-                    
-                    progress.print_json();
-                    drop(progress);
-                    
-                    bytes_since_last_update = 0;
-                    last_speed_update = now;
-                }
-            }
-            Err(e) => {
-                return Err(format!("Stream error: {}", e).into());
-            }
-        }
-    }
-
-    writer.flush()?;
-    Ok(())
-}
-
 async fn download_file_single_with_response(
-    url: &str, 
+    _url: &str, 
     output_path: &str, 
     mut progress: DownloadProgress,
     response: reqwest::Response,
@@ -282,75 +198,6 @@ async fn download_file_single_with_response(
     writer.flush()?;
     progress.status = "completed".to_string();
     progress.broadcast();
-
-    Ok(())
-}
-
-async fn download_file_single(url: &str, output_path: &str, mut progress: DownloadProgress) -> Result<(), Box<dyn std::error::Error>> {
-    let client = reqwest::Client::new();
-    
-    progress.status = "connecting".to_string();
-    progress.print_json();
-
-    let response = client.get(url).send().await?;
-
-    if !response.status().is_success() {
-        progress.status = "error".to_string();
-        progress.error = Some(format!("HTTP error: {}", response.status()));
-        progress.print_json();
-        return Err(format!("HTTP error: {}", response.status()).into());
-    }
-
-    progress.total_size = response.content_length().unwrap_or(0);
-    progress.status = "downloading".to_string();
-    progress.print_json();
-
-    let file = File::create(output_path)?;
-    let mut writer = BufWriter::new(file);
-    
-    let mut stream = response.bytes_stream();
-    let mut last_speed_update = Instant::now();
-    let mut bytes_since_last_update = 0u64;
-    let mut current_speed = 0.0f64;
-    
-    while let Some(chunk_result) = stream.next().await {
-        match chunk_result {
-            Ok(chunk) => {
-                let chunk_size = chunk.len() as u64;
-                
-                writer.write_all(&chunk)?;
-                
-                progress.downloaded += chunk_size;
-                progress.chunk_size = chunk_size;
-                bytes_since_last_update += chunk_size;
-                
-                let now = Instant::now();
-                let time_since_last_update = now.duration_since(last_speed_update);
-                
-                if time_since_last_update >= Duration::from_millis(100) {
-                    current_speed = bytes_since_last_update as f64 / time_since_last_update.as_secs_f64();
-                    bytes_since_last_update = 0;
-                    last_speed_update = now;
-                }
-                
-                progress.download_speed_bps = current_speed;
-                
-                if progress.total_size > 0 && current_speed > 0.0 {
-                    let remaining_bytes = progress.total_size - progress.downloaded;
-                    progress.eta_seconds = Some((remaining_bytes as f64 / current_speed) as u64);
-                }
-                
-                progress.print_json();
-            }
-            Err(e) => {
-                return Err(format!("Stream error: {}", e).into());
-            }
-        }
-    }
-
-    writer.flush()?;
-    progress.status = "completed".to_string();
-    progress.print_json();
 
     Ok(())
 }

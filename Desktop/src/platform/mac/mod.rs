@@ -160,7 +160,7 @@ impl App {
                             }
                             "show_notification" => {
                                 if let Ok(noti_data) = serde_json::from_value::<crate::hooks::noti::NotificationData>(message.clone()) {
-                                    std::thread::spawn(move || { let _ = crate::hooks::show_notification(noti_data); });
+                                    std::thread::spawn(move || { let _ = show_notification(noti_data); });
                                 }
                             }
                             _ => {}

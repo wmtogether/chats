@@ -81,8 +81,8 @@ pub fn show_notification(title: &str, message: &str) {
     // Use macOS osascript to show notification
     let script = format!(
         r#"display notification "{}" with title "{}""#,
-        message.replace(""", """),
-        title.replace(""", """)
+        message.replace('"', "\\\""),
+        title.replace('"', "\\\"")
     );
     
     let mut command = std::process::Command::new("osascript");
