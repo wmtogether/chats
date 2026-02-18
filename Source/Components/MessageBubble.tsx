@@ -151,7 +151,7 @@ export default function MessageBubble({ data, searchQuery, isNewMessage = false,
 
   return (
     <div 
-      className={`group flex gap-4 p-3 -mx-3 rounded-2xl hover:bg-surface-container/40 transition-all duration-200 ${
+      className={`group flex gap-2 sm:gap-4 p-2 sm:p-3 -mx-2 sm:-mx-3 rounded-2xl hover:bg-surface-container/40 transition-all duration-200 ${
         data.isHighlighted ? 'bg-primary-container/20 border border-primary/20' : ''
       } ${
         isNewMessage ? 'animate-pulse bg-primary-container/10' : ''
@@ -167,20 +167,20 @@ export default function MessageBubble({ data, searchQuery, isNewMessage = false,
         }
       }}
     >
-      <div className="mt-1">
+      <div className="mt-1 flex-shrink-0">
         <Avatar user={data.user} />
       </div>
       
-      <div className="flex flex-1 flex-col items-start gap-2 min-w-0">
-        <div className="flex items-baseline gap-2">
-          <span className="title-small text-on-surface hover:underline cursor-pointer font-medium">
+      <div className="flex flex-1 flex-col items-start gap-1 sm:gap-2 min-w-0">
+        <div className="flex items-baseline gap-1 sm:gap-2 flex-wrap">
+          <span className="title-small text-on-surface hover:underline cursor-pointer font-medium text-sm sm:text-base">
             {data.user.name}
           </span>
-          <span className="body-small text-on-surface-variant">
+          <span className="body-small text-on-surface-variant text-xs sm:text-sm">
             {data.time}
           </span>
           {data.editedAt && (
-            <span className="body-small text-on-surface-variant italic">
+            <span className="body-small text-on-surface-variant italic text-xs sm:text-sm">
               (edited)
             </span>
           )}
@@ -188,13 +188,13 @@ export default function MessageBubble({ data, searchQuery, isNewMessage = false,
 
         {/* Reply Reference */}
         {data.replyTo && (
-          <div className="flex items-center gap-2 px-3 py-2 bg-surface-variant/30 border-l-4 border-primary rounded-r-xl max-w-md">
+          <div className="flex items-center gap-2 px-2 sm:px-3 py-1.5 sm:py-2 bg-surface-variant/30 border-l-4 border-primary rounded-r-xl max-w-full sm:max-w-md w-full">
             <Reply size={14} className="text-on-surface-variant flex-shrink-0" />
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <div className="text-xs font-medium text-primary">
                 {data.replyTo.userName}
               </div>
-              <div className="text-sm text-on-surface-variant truncate">
+              <div className="text-xs sm:text-sm text-on-surface-variant truncate">
                 {data.replyTo.content}
               </div>
             </div>
@@ -211,7 +211,7 @@ export default function MessageBubble({ data, searchQuery, isNewMessage = false,
 
         {/* Image Attachments and Proof MetaCards */}
         {data.attachments && data.attachments.length > 0 && (
-          <div className="mt-2 space-y-2 max-w-md">
+          <div className="mt-1 sm:mt-2 space-y-2 w-full max-w-full sm:max-w-md">
             {data.attachments.map((attachment, index) => {
               // Check if this is proof metadata (JSON string starting with {"type":"proof")
               if (attachment.startsWith('{"type":"proof"')) {
@@ -288,12 +288,12 @@ export default function MessageBubble({ data, searchQuery, isNewMessage = false,
 
         {/* Progress Card Attachment */}
         {data.meta?.type === 'progress' && (
-          <div className="mt-2 p-4 bg-surface-container border border-outline-variant rounded-2xl max-w-sm w-full select-none">
-            <div className="flex items-center justify-between mb-3">
-              <span className="label-medium text-on-surface-variant uppercase tracking-wider">
+          <div className="mt-1 sm:mt-2 p-3 sm:p-4 bg-surface-container border border-outline-variant rounded-2xl w-full max-w-full sm:max-w-sm select-none">
+            <div className="flex items-center justify-between mb-2 sm:mb-3">
+              <span className="label-medium text-on-surface-variant uppercase tracking-wider text-xs sm:text-sm">
                 {data.meta.label}
               </span>
-              <span className="label-medium text-on-surface font-medium">
+              <span className="label-medium text-on-surface font-medium text-xs sm:text-sm">
                 {data.meta.current} / {data.meta.total}
               </span>
             </div>
@@ -317,13 +317,13 @@ export default function MessageBubble({ data, searchQuery, isNewMessage = false,
                   e.stopPropagation();
                   handleQuickReaction(reaction.emoji);
                 }}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full body-small transition-all duration-200 ${
+                className={`inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 rounded-full body-small transition-all duration-200 text-xs sm:text-sm ${
                   reaction.active
                     ? 'bg-primary-container text-on-primary-container border border-primary'
                     : 'bg-surface-container hover:bg-surface-variant border border-outline-variant text-on-surface'
                 }`}
               >
-                <span className="text-base">{reaction.emoji}</span>
+                <span className="text-sm sm:text-base">{reaction.emoji}</span>
                 <span className="font-medium">{reaction.count}</span>
               </button>
             ))}
@@ -331,8 +331,8 @@ export default function MessageBubble({ data, searchQuery, isNewMessage = false,
         )}
       </div>
 
-      {/* Message Actions */}
-      <div className={`flex items-start transition-all duration-200 ${
+      {/* Message Actions - Hidden on mobile, shown on hover on desktop */}
+      <div className={`hidden sm:flex items-start transition-all duration-200 ${
         showActions ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-2 pointer-events-none'
       }`}>
         <div className="flex items-center bg-surface-container border border-outline-variant rounded-2xl shadow-sm p-1">
@@ -429,6 +429,81 @@ export default function MessageBubble({ data, searchQuery, isNewMessage = false,
           </div>
         </div>
       </div>
+
+      {/* Mobile Action Button - Only visible on mobile */}
+      <div className="sm:hidden flex-shrink-0">
+        <button 
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setShowMoreMenu(!showMoreMenu);
+          }}
+          className="p-2 hover:bg-surface-variant rounded-xl text-on-surface-variant hover:text-on-surface transition-colors" 
+          title="More options"
+        >
+          <MoreHorizontal size={18} />
+        </button>
+        
+        {showMoreMenu && (
+          <div className="absolute right-2 mt-1 bg-surface-container border border-outline-variant rounded-2xl shadow-lg py-2 z-10 min-w-[160px]">
+            <button 
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleReply();
+                setShowMoreMenu(false);
+              }}
+              className="w-full px-4 py-2 text-left hover:bg-surface-variant flex items-center gap-3 text-on-surface"
+            >
+              <Reply size={16} />
+              <span className='text-xs'>Reply</span>
+            </button>
+            <button 
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setShowEmojiPicker(true);
+                setShowMoreMenu(false);
+              }}
+              className="w-full px-4 py-2 text-left hover:bg-surface-variant flex items-center gap-3 text-on-surface"
+            >
+              <Smile size={16} />
+              <span className='text-xs'>Add reaction</span>
+            </button>
+            <div className="border-t border-outline-variant my-1" />
+            <button 
+              onClick={handleCopyMessage}
+              className="w-full px-4 py-2 text-left hover:bg-surface-variant flex items-center gap-3 text-on-surface"
+            >
+              <Copy size={16} />
+              <span className='text-xs'>Copy message</span>
+            </button>
+            <button 
+              onClick={handleEditMessage}
+              className="w-full px-4 py-2 text-left hover:bg-surface-variant flex items-center gap-3 text-on-surface"
+            >
+              <Edit size={16} />
+              <span className='text-xs'>Edit message</span>
+            </button>
+            <div className="border-t border-outline-variant my-1" />
+            <button 
+              onClick={handleDeleteMessageClick}
+              className="w-full px-4 py-2 text-left hover:bg-error-container flex items-center gap-3 text-error"
+            >
+              <Trash2 size={16} />
+              <span className='text-xs'>Delete message</span>
+            </button>
+          </div>
+        )}
+        
+        {/* Mobile Emoji Picker */}
+        <CustomEmojiPicker
+          isOpen={showEmojiPicker}
+          onEmojiSelect={handleEmojiSelect}
+          onClose={() => setShowEmojiPicker(false)}
+        />
+      </div>
+
       <ConfirmDialog
         open={showDeleteConfirm}
         onOpenChange={setShowDeleteConfirm}

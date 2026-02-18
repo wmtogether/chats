@@ -35,7 +35,7 @@ const REQUEST_TYPES: {
     },
     {
         id: 'dimension',
-        label: 'เช็คระยะ/ขนาด',
+        label: 'Dimension',
         description: 'Verify measurements and specifications',
         icon: Ruler,
         color: 'bg-secondary/12 text-secondary border-secondary/20 hover:bg-secondary/16',
@@ -74,21 +74,7 @@ const REQUEST_TYPES: {
         description: 'Toner sample request',
         icon: Package,
         color: 'bg-inverse-surface/12 text-inverse-on-surface border-inverse-surface/20 hover:bg-inverse-surface/16',
-    },
-    {
-        id: 'general',
-        label: 'เรื่องทั่วไป',
-        description: 'General discussion or inquiry',
-        icon: Briefcase,
-        color: 'bg-on-surface/12 text-on-surface border-on-surface/20 hover:bg-on-surface/16',
-    },
-    {
-        id: 'consultation',
-        label: 'ขอคำปรึกษา',
-        description: 'Expert advice and consultation',
-        icon: Settings,
-        color: 'bg-primary-container/12 text-on-primary-container border-primary-container/20 hover:bg-primary-container/16',
-    },
+    }
 ];
 
 // --- Animation Variants ---

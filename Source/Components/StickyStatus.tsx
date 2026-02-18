@@ -84,14 +84,21 @@ export default function StickyStatus({
     if (!wsManager || !selectedChat?.uuid) return;
 
     const handleWebSocketMessage = (data: any) => {
+      console.log('📊 StickyStatus: WebSocket message received:', data);
+      
       // Handle chat_status_updated messages
       if (data.type === 'chat_status_updated' && data.data?.chat) {
         const updatedChat = data.data.chat;
         
         // Only update if this is the currently selected chat
         if (updatedChat.uuid === selectedChat.uuid) {
-          console.log('📊 StickyStatus: Received real-time status update:', updatedChat);
+          console.log('📊 StickyStatus: Received real-time status update for current chat:', updatedChat);
           setQueueData(updatedChat);
+          
+          // Also notify parent component
+          if (onStatusUpdate && updatedChat.status) {
+            onStatusUpdate(updatedChat.status);
+          }
         }
       }
       
@@ -103,6 +110,7 @@ export default function StickyStatus({
           try {
             const result = await getChat(selectedChat.uuid);
             if (result.success && result.data) {
+              console.log('📊 StickyStatus: Fetched updated chat data:', result.data);
               setQueueData(result.data);
             }
           } catch (error) {
@@ -117,18 +125,20 @@ export default function StickyStatus({
         const updatedChat = data.data.chat;
         
         if (updatedChat.uuid === selectedChat.uuid) {
-          console.log('📊 StickyStatus: Received real-time chat update:', updatedChat);
+          console.log('📊 StickyStatus: Received real-time chat update for current chat:', updatedChat);
           setQueueData(updatedChat);
         }
       }
     };
 
+    console.log('📊 StickyStatus: Setting up WebSocket listener for chat:', selectedChat.uuid);
     wsManager.on('message', handleWebSocketMessage);
 
     return () => {
+      console.log('📊 StickyStatus: Cleaning up WebSocket listener');
       wsManager.off('message', handleWebSocketMessage);
     };
-  }, [selectedChat?.uuid]);
+  }, [selectedChat?.uuid, onStatusUpdate]);
 
   // Handle click outside to close dropdown
   useEffect(() => {

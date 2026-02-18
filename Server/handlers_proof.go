@@ -110,6 +110,18 @@ func createProofDataHandler(w http.ResponseWriter, r *http.Request) {
 	} else {
 		log.Printf("📁 Created directory: %s", dirPath)
 		
+		// Create subfolders: Printing, Proof, Design, Customer
+		subfolders := []string{"Printing", "Proof", "Design", "Customer"}
+		for _, subfolder := range subfolders {
+			subfolderPath := fmt.Sprintf("%s/%s", dirPath, subfolder)
+			err = os.MkdirAll(subfolderPath, 0755)
+			if err != nil {
+				log.Printf("⚠️ Warning: Failed to create subfolder %s: %v", subfolderPath, err)
+			} else {
+				log.Printf("📁 Created subfolder: %s", subfolderPath)
+			}
+		}
+		
 		// Create filestorage entry in database
 		_, err = CreateFileStorage(CreateFileStorageParams{
 			RunnerID:     proof.RunnerID,

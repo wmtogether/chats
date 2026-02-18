@@ -606,67 +606,66 @@ export default function ChatInput({ onSendMessage, replyingTo, onCancelReply, cu
   };
 
   return (
-    <div ref={containerRef} className="p-4 bg-background shrink-0 relative">
+    <div ref={containerRef} className="fixed bottom-16 left-0 right-0 lg:relative lg:bottom-auto p-3 sm:p-4 bg-background shrink-0">
       {/* Paste Indicator */}
-
 
       {/* Reply Section */}
       {replyingTo && (
-        <div className="mb-3 bg-surface-container border border-outline-variant rounded-2xl p-4 flex items-start gap-3">
-          <Reply size={16} className="text-primary mt-0.5 flex-shrink-0" />
+        <div className="mb-2 sm:mb-3 bg-surface-container border border-outline-variant rounded-2xl p-3 sm:p-4 flex items-start gap-2 sm:gap-3">
+          <Reply size={14} className="sm:size-4 text-primary mt-0.5 flex-shrink-0" />
           <div className="flex-1 min-w-0">
-            <div className="text-sm font-medium text-primary mb-1">
+            <div className="text-xs sm:text-sm font-medium text-primary mb-1">
               Replying to {replyingTo.userName}
             </div>
-            <div className="text-sm text-on-surface-variant line-clamp-2">
+            <div className="text-xs sm:text-sm text-on-surface-variant line-clamp-2">
               {replyingTo.content}
             </div>
           </div>
           <button
             onClick={onCancelReply}
-            className="p-2 hover:bg-surface-variant rounded-full text-on-surface-variant hover:text-on-surface transition-colors"
+            className="p-1.5 sm:p-2 hover:bg-surface-variant rounded-full text-on-surface-variant hover:text-on-surface transition-colors"
             title="Cancel reply"
           >
-            <X size={16} />
+            <X size={14} className="sm:size-4" />
           </button>
         </div>
       )}
 
       {/* Attachments Preview */}
       {attachments.length > 0 && (
-        <div className="mb-3 flex flex-wrap gap-2">
+        <div className="mb-2 sm:mb-3 flex flex-wrap gap-2">
           {attachments.map((attachment) => (
-            <div key={attachment.id} className="relative bg-surface-container border border-outline-variant rounded-2xl p-3 flex items-center gap-3 max-w-xs">
+            <div key={attachment.id} className="relative bg-surface-container border border-outline-variant rounded-2xl p-2 sm:p-3 flex items-center gap-2 sm:gap-3 max-w-full sm:max-w-xs">
               {attachment.preview ? (
-                <div className="relative">
+                <div className="relative flex-shrink-0">
                   <img
                     src={attachment.preview}
                     alt={attachment.file.name}
-                    className={`w-10 h-10 object-cover rounded-xl ${
+                    className={`w-8 h-8 sm:w-10 sm:h-10 object-cover rounded-xl ${
                       attachment.uploadStatus === 'uploading' ? 'opacity-50' : ''
                     }`}
                   />
                   {attachment.uploadStatus === 'uploading' && (
                     <div className="absolute inset-0 flex items-center justify-center">
-                      <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+                      <div className="w-5 h-5 sm:w-6 sm:h-6 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
                     </div>
                   )}
                 </div>
               ) : (
-                <div className={`w-10 h-10 bg-surface-variant rounded-xl flex items-center justify-center relative ${
+                <div className={`w-8 h-8 sm:w-10 sm:h-10 bg-surface-variant rounded-xl flex items-center justify-center relative flex-shrink-0 ${
                   attachment.uploadStatus === 'uploading' ? 'opacity-50' : ''
                 }`}>
-                  <File size={20} className="text-on-surface-variant" />
+                  <File size={16} className="sm:size-5 text-on-surface-variant" />
                   {attachment.uploadStatus === 'uploading' && (
                     <div className="absolute inset-0 flex items-center justify-center">
-                      <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+                      <div className="w-5 h-5 sm:w-6 sm:h-6 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
                     </div>
                   )}
                 </div>
               )}
               
               <div className="flex-1 min-w-0">
-                <div className="text-sm font-medium text-on-surface truncate">
+                <div className="text-xs sm:text-sm font-medium text-on-surface truncate">
                   {attachment.file.name}
                 </div>
                 <div className="text-xs text-on-surface-variant">
@@ -676,14 +675,14 @@ export default function ChatInput({ onSendMessage, replyingTo, onCancelReply, cu
                 {/* Upload Status */}
                 {attachment.uploadStatus === 'uploading' && (
                   <div className="mt-1">
-                    <div className="flex items-center gap-2">
-                      <div className="flex-1 bg-surface-variant rounded-full h-1.5 overflow-hidden">
+                    <div className="flex items-center gap-1 sm:gap-2">
+                      <div className="flex-1 bg-surface-variant rounded-full h-1 sm:h-1.5 overflow-hidden">
                         <div 
                           className="bg-primary h-full transition-all duration-300 ease-out"
                           style={{ width: `${attachment.uploadProgress || 0}%` }}
                         />
                       </div>
-                      <span className="text-xs text-on-surface-variant font-medium">
+                      <span className="text-xs text-on-surface-variant font-medium flex-shrink-0">
                         {attachment.uploadProgress || 0}%
                       </span>
                     </div>
@@ -707,7 +706,7 @@ export default function ChatInput({ onSendMessage, replyingTo, onCancelReply, cu
                       ✗ Upload failed
                     </div>
                     {attachment.uploadError && (
-                      <div className="text-xs text-error opacity-75">
+                      <div className="text-xs text-error opacity-75 truncate">
                         {attachment.uploadError}
                       </div>
                     )}
@@ -715,24 +714,24 @@ export default function ChatInput({ onSendMessage, replyingTo, onCancelReply, cu
                 )}
               </div>
               
-              <div className="flex flex-col gap-1">
+              <div className="flex flex-col gap-1 flex-shrink-0">
                 {attachment.uploadStatus === 'error' && (
                   <button
                     onClick={() => retryUpload(attachment.id)}
-                    className="p-1.5 hover:bg-primary-container rounded-full text-primary transition-colors"
+                    className="p-1 sm:p-1.5 hover:bg-primary-container rounded-full text-primary transition-colors"
                     title="Retry upload"
                   >
-                    <Upload size={14} />
+                    <Upload size={12} className="sm:size-3.5" />
                   </button>
                 )}
                 
                 <button
                   onClick={() => removeAttachment(attachment.id)}
                   disabled={attachment.uploadStatus === 'uploading'}
-                  className="p-1.5 hover:bg-error-container rounded-full text-on-surface-variant hover:text-error transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="p-1 sm:p-1.5 hover:bg-error-container rounded-full text-on-surface-variant hover:text-error transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   title="Remove attachment"
                 >
-                  <X size={14} />
+                  <X size={12} className="sm:size-3.5" />
                 </button>
               </div>
             </div>
@@ -800,8 +799,8 @@ export default function ChatInput({ onSendMessage, replyingTo, onCancelReply, cu
           />
         </div>
 
-        <div className="flex items-center justify-between px-4 pb-3">
-          <div className="flex items-center gap-1">
+        <div className="flex items-center justify-between px-3 sm:px-4 pb-2 sm:pb-3">
+          <div className="flex items-center gap-0.5 sm:gap-1">
             {/* Attachment Dropdown */}
             <div className="relative" ref={dropdownRef}>
               <ActionButton
@@ -930,14 +929,16 @@ export default function ChatInput({ onSendMessage, replyingTo, onCancelReply, cu
               )}
             </div>
 
-            <div className="w-px h-6 bg-outline-variant mx-2" />
+            <div className="w-px h-4 sm:h-6 bg-outline-variant mx-1 sm:mx-2" />
 
-            <ActionButton icon="format_bold" title="Bold" />
-            <ActionButton icon="format_italic" title="Italic" />
-            <ActionButton icon="code" title="Code" />
+            <div className="hidden sm:flex items-center gap-1">
+              <ActionButton icon="format_bold" title="Bold" />
+              <ActionButton icon="format_italic" title="Italic" />
+              <ActionButton icon="code" title="Code" />
+            </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 sm:gap-2">
             {/* Emoji Picker */}
             <div className="relative">
               <ActionButton
@@ -956,42 +957,43 @@ export default function ChatInput({ onSendMessage, replyingTo, onCancelReply, cu
               />
             </div>
 
-            {/* Checkpoint Button */}
+            {/* Checkpoint Button - Hidden on mobile */}
             <button
               onClick={handleCheckpoint}
-              className="flex items-center justify-center w-12 h-12 rounded-full bg-surface-container hover:bg-surface-variant text-on-surface shadow-sm transition-all border border-outline-variant"
+              className="hidden sm:flex items-center justify-center w-12 h-12 rounded-full bg-surface-container hover:bg-surface-variant text-on-surface shadow-sm transition-all border border-outline-variant"
               title="Add checkpoint"
             >
               <Flag size={20} />
             </button>
 
-            {/* Join and Accept Queue Button - Only for graphic role */}
+            {/* Join and Accept Queue Button - Only for graphic role - Responsive */}
             {user?.role === 'graphic' && !queueAssigned && (
               <button
                 onClick={handleJoinAndAcceptQueue}
                 disabled={isJoiningAndAccepting}
-                className="flex items-center gap-2 px-4 h-12 rounded-full bg-tertiary hover:bg-tertiary/90 text-on-tertiary shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex items-center gap-1 sm:gap-2 px-3 sm:px-4 h-10 sm:h-12 rounded-full bg-tertiary hover:bg-tertiary/90 text-on-tertiary shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed text-xs sm:text-sm"
                 title="Join chat and accept queue"
               >
                 {isJoiningAndAccepting ? (
                   <>
-                    <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                    <span className="text-sm font-medium">Joining...</span>
+                    <div className="w-4 h-4 sm:w-5 sm:h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                    <span className="font-medium hidden sm:inline">Joining...</span>
                   </>
                 ) : (
                   <>
-                    <UserPlus size={18} />
-                    <span className="text-sm font-medium">Accept Queue</span>
+                    <UserPlus size={16} className="sm:size-[18px]" />
+                    <span className="font-medium">Accept</span>
                   </>
                 )}
               </button>
             )}
 
-            {/* Queue Assigned Indicator - Only for graphic role */}
+            {/* Queue Assigned Indicator - Only for graphic role - Responsive */}
             {user?.role === 'graphic' && queueAssigned && (
-              <div className="flex items-center gap-2 px-4 h-12 rounded-full bg-success/10 text-success border border-success/20">
-                <CheckCircle size={18} />
-                <span className="text-sm font-medium">Queue Assigned</span>
+              <div className="flex items-center gap-1 sm:gap-2 px-3 sm:px-4 h-10 sm:h-12 rounded-full bg-success/10 text-success border border-success/20">
+                <CheckCircle size={16} className="sm:size-[18px]" />
+                <span className="text-xs sm:text-sm font-medium hidden sm:inline">Queue Assigned</span>
+                <span className="text-xs sm:text-sm font-medium sm:hidden">Assigned</span>
               </div>
             )}
 
@@ -1003,7 +1005,7 @@ export default function ChatInput({ onSendMessage, replyingTo, onCancelReply, cu
                 attachments.some(att => att.uploadStatus === 'uploading') ||
                 attachments.some(att => att.uploadStatus === 'error')
               }
-              className="flex items-center justify-center w-12 h-12 rounded-full bg-primary hover:bg-primary/90 text-on-primary shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-surface-variant disabled:text-on-surface-variant"
+              className="flex items-center justify-center w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-primary hover:bg-primary/90 text-on-primary shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-surface-variant disabled:text-on-surface-variant"
               title={
                 attachments.some(att => att.uploadStatus === 'uploading') 
                   ? 'Uploading files...' 
@@ -1013,9 +1015,9 @@ export default function ChatInput({ onSendMessage, replyingTo, onCancelReply, cu
               }
             >
               {attachments.some(att => att.uploadStatus === 'uploading') ? (
-                <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                <div className="w-4 h-4 sm:w-5 sm:h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
               ) : (
-                <Send size={20} />
+                <Send size={18} className="sm:size-5" />
               )}
             </button>
           </div>
@@ -1047,7 +1049,7 @@ export default function ChatInput({ onSendMessage, replyingTo, onCancelReply, cu
         onChange={(e) => handleFileSelect(e.target.files, 'gif')}
       />
 
-      <div className="mt-2 text-right">
+      <div className="mt-2 text-right hidden sm:block">
         <span className="label-small text-on-surface-variant">
           <strong>Enter</strong> to send, <strong>Shift + Enter</strong> for new line, <strong>Ctrl + V</strong> to paste files
           {attachments.length > 0 && (
@@ -1155,14 +1157,14 @@ function ActionButton({ icon, title, onClick, active }: { icon: string; title: s
 
   return (
     <button
-      className={`p-2 rounded-full transition-colors ${active
+      className={`p-1.5 sm:p-2 rounded-full transition-colors ${active
         ? 'bg-primary-container text-on-primary-container'
         : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-variant'
         }`}
       title={title}
       onClick={onClick}
     >
-      <IconComponent size={20} />
+      <IconComponent size={18} className="sm:size-5" />
     </button>
   )
 }

@@ -32,7 +32,7 @@ const REQUEST_TYPES: {
     },
     {
       id: 'dimension',
-      label: 'เช็คระยะ/ขนาด', // Dimension Check
+      label: 'Dimension', // Dimension Check
       description: 'Verify measurements and specifications',
       icon: Ruler,
       color: 'bg-secondary/12 text-secondary border-secondary/20 hover:bg-secondary/16',
@@ -71,21 +71,7 @@ const REQUEST_TYPES: {
       description: 'Toner sample request',
       icon: Package,
       color: 'bg-inverse-surface/12 text-inverse-on-surface border-inverse-surface/20 hover:bg-inverse-surface/16',
-    },
-    {
-      id: 'general',
-      label: 'เรื่องทั่วไป', // General Request
-      description: 'General discussion or inquiry',
-      icon: Briefcase,
-      color: 'bg-on-surface/12 text-on-surface border-on-surface/20 hover:bg-on-surface/16',
-    },
-    {
-      id: 'consultation',
-      label: 'ขอคำปรึกษา', // Consultation
-      description: 'Expert advice and consultation',
-      icon: Settings,
-      color: 'bg-primary-container/12 text-on-primary-container border-primary-container/20 hover:bg-primary-container/16',
-    },
+    }
   ];
 // type ChatType = any; // Remove this line as ChatType is now imported
 
@@ -394,7 +380,7 @@ export default function Sidebar({
   }, [chatMenus]);
 
   return (
-    <aside className="w-[350px] bg-surface flex flex-col border-r border-outline shrink-0 z-10 select-none relative">
+    <aside className="w-[350px] bg-surface h-full flex flex-col border-r border-outline shrink-0  select-none relative">
       {/* Navigation Switcher */}
       <div className="px-4 py-3 shrink-0 flex space-x-2 w-full">
         <div className="flex items-center p-1 bg-surface rounded-lg border border-outline space-x-1 w-full">

@@ -1,4 +1,4 @@
-import { Search, Palette, Ruler, CheckCircle, Settings, Eye, Package, Briefcase, Wifi, WifiOff } from 'lucide-react'
+import { Search, Palette, Ruler, CheckCircle, Settings, Eye, Package, Briefcase, Wifi, WifiOff, UserPlus } from 'lucide-react'
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { updateChatRequestType, updateChatStatus, sendMessage } from '../Library/utils/api' // Import sendMessage
@@ -6,6 +6,7 @@ import { useToast } from '../Library/hooks/useToast'
 import type { ChatType } from '../Library/types'
 import { cn } from '../Library/utils' // Assuming cn utility is available
 import SearchMessagesDialog from './SearchMessagesDialog'
+import InviteDialog from './InviteDialog'
 
 interface ChatHeaderProps {
   selectedChat: ChatType | null;
@@ -13,12 +14,23 @@ interface ChatHeaderProps {
   wsConnected?: boolean;
   onChatUpdate?: (updatedChat: ChatType) => void;
   onMessageSelect?: (messageId: string) => void; // Callback to scroll to message
+  onToggleRightSidebar?: () => void; // Callback to toggle right sidebar
+  showRightSidebar?: boolean; // Current state of right sidebar
 }
 
-export default function ChatHeader({ selectedChat, chatCount, wsConnected = false, onChatUpdate, onMessageSelect }: ChatHeaderProps) {
+export default function ChatHeader({ 
+  selectedChat, 
+  chatCount, 
+  wsConnected = false, 
+  onChatUpdate, 
+  onMessageSelect,
+  onToggleRightSidebar,
+  showRightSidebar = true
+}: ChatHeaderProps) {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showRequestTypeMenu, setShowRequestTypeMenu] = useState(false);
   const [showSearchDialog, setShowSearchDialog] = useState(false);
+  const [showInviteDialog, setShowInviteDialog] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const requestTypeMenuRef = useRef<HTMLDivElement>(null);
@@ -56,7 +68,7 @@ export default function ChatHeader({ selectedChat, chatCount, wsConnected = fals
 
   const REQUEST_TYPES = [
     { id: 'design', label: 'งานออกแบบใหม่', icon: Palette },
-    { id: 'dimension', label: 'เช็คระยะ/ขนาด', icon: Ruler },
+    { id: 'dimension', label: 'Dimension', icon: Ruler },
     { id: 'adjustdesign', label: 'แก้ไขแบบ', icon: Settings },
     { id: 'checkfile', label: 'เช็คไฟล์', icon: CheckCircle },
     { id: 'proof', label: 'ขอ Proof', icon: Eye },
@@ -246,20 +258,71 @@ export default function ChatHeader({ selectedChat, chatCount, wsConnected = fals
           </span>
         </div>
         
-        <button className="flex items-center justify-center size-9 rounded-full hover:bg-surface-variant transition-colors" onClick={() => setShowSearchDialog(true)} disabled={!selectedChat} title="Search messages">
+        <button 
+          className="flex items-center justify-center size-9 rounded-full hover:bg-surface-variant transition-colors" 
+          onClick={() => setShowSearchDialog(true)} 
+          disabled={!selectedChat} 
+          title="Search messages"
+        >
           <Search className="text-on-surface-variant" />
         </button>
+
+        {/* Invite Button */}
+        {selectedChat && (
+          <button 
+            className="flex items-center justify-center size-9 rounded-full hover:bg-surface-variant transition-colors" 
+            onClick={() => setShowInviteDialog(true)}
+            title="Invite to chat"
+          >
+            <UserPlus className="text-on-surface-variant" />
+          </button>
+        )}
+
+        {/* Toggle Right Sidebar Button - Hidden on mobile */}
+        {onToggleRightSidebar && (
+          <button 
+            className="hidden md:flex items-center justify-center size-9 rounded-full hover:bg-surface-variant transition-colors" 
+            onClick={onToggleRightSidebar}
+            title={showRightSidebar ? 'Hide file manager' : 'Show file manager'}
+          >
+            <svg 
+              className={cn(
+                "text-on-surface-variant transition-transform duration-200",
+                showRightSidebar ? "" : "rotate-180"
+              )} 
+              width="20" 
+              height="20" 
+              viewBox="0 0 24 24" 
+              fill="none" 
+              stroke="currentColor" 
+              strokeWidth="2" 
+              strokeLinecap="round" 
+              strokeLinejoin="round"
+            >
+              <path d="M9 18l6-6-6-6" />
+            </svg>
+          </button>
+        )}
       </div>
 
       {/* Search Messages Dialog */}
       {selectedChat && (
-        <SearchMessagesDialog
-          isOpen={showSearchDialog}
-          onClose={() => setShowSearchDialog(false)}
-          chatUuid={selectedChat.uuid}
-          chatName={selectedChat.channelName}
-          onMessageSelect={onMessageSelect}
-        />
+        <>
+          <SearchMessagesDialog
+            isOpen={showSearchDialog}
+            onClose={() => setShowSearchDialog(false)}
+            chatUuid={selectedChat.uuid}
+            chatName={selectedChat.channelName}
+            onMessageSelect={onMessageSelect}
+          />
+          
+          <InviteDialog
+            isOpen={showInviteDialog}
+            onClose={() => setShowInviteDialog(false)}
+            chatUuid={selectedChat.uuid}
+            chatName={selectedChat.channelName}
+          />
+        </>
       )}
     </header>
   )

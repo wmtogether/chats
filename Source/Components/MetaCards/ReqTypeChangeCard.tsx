@@ -14,13 +14,13 @@ interface ReqTypeChangeCardProps {
 // Request type configuration with Thai labels and icons
 const REQUEST_TYPE_CONFIG: Record<string, { label: string; icon: any; color: string; bgColor: string }> = {
   design: { 
-    label: 'งานออกแบบใหม่', 
+    label: 'งานออกแบบ', 
     icon: Palette, 
     color: 'text-purple-700 dark:text-purple-300',
     bgColor: 'bg-purple-100 dark:bg-purple-900/30'
   },
   dimension: { 
-    label: 'เช็คระยะ/ขนาด', 
+    label: 'Dimension', 
     icon: Ruler, 
     color: 'text-orange-700 dark:text-orange-300',
     bgColor: 'bg-orange-100 dark:bg-orange-900/30'
@@ -54,19 +54,7 @@ const REQUEST_TYPE_CONFIG: Record<string, { label: string; icon: any; color: str
     icon: Package, 
     color: 'text-cyan-700 dark:text-cyan-300',
     bgColor: 'bg-cyan-100 dark:bg-cyan-900/30'
-  },
-  general: { 
-    label: 'เรื่องทั่วไป', 
-    icon: Briefcase, 
-    color: 'text-gray-700 dark:text-gray-300',
-    bgColor: 'bg-gray-100 dark:bg-gray-800/30'
-  },
-  consultation: { 
-    label: 'ขอคำปรึกษา', 
-    icon: Settings, 
-    color: 'text-pink-700 dark:text-pink-300',
-    bgColor: 'bg-pink-100 dark:bg-pink-900/30'
-  },
+  }
 };
 // import { queueApiService } from '../../Library/Shared/queueApi';
 
@@ -91,52 +79,52 @@ export function ReqTypeChangeCard({
   const NewIcon = newTypeConfig.icon;
 
   return (
-    <Card className="my-3 max-w-md bg-gradient-to-r from-purple-50/80 to-indigo-50/80 dark:from-purple-950/20 dark:to-indigo-950/20 border-purple-200/60 dark:border-purple-800/40 shadow-md">
-      <CardContent className="p-4">
-        <div className="flex items-start gap-4">
+    <Card className="my-2 sm:my-3 w-full max-w-full sm:max-w-md bg-gradient-to-r from-purple-50/80 to-indigo-50/80 dark:from-purple-950/20 dark:to-indigo-950/20 border-purple-200/60 dark:border-purple-800/40 shadow-md">
+      <CardContent className="p-3 sm:p-4">
+        <div className="flex items-start gap-2 sm:gap-4">
           {/* Type Change Indicator */}
           <div className="flex-shrink-0">
-            <div className="flex items-center gap-2">
-              <div className={cn('p-2 rounded-full shadow-sm', oldTypeConfig.bgColor)}>
-                <OldIcon className={cn('h-4 w-4', oldTypeConfig.color)} />
+            <div className="flex items-center gap-1 sm:gap-2">
+              <div className={cn('p-1.5 sm:p-2 rounded-full shadow-sm', oldTypeConfig.bgColor)}>
+                <OldIcon className={cn('h-3 w-3 sm:h-4 sm:w-4', oldTypeConfig.color)} />
               </div>
-              <ArrowRight className="h-4 w-4 text-on-surface-variant" />
-              <div className={cn('p-2 rounded-full shadow-sm', newTypeConfig.bgColor)}>
-                <NewIcon className={cn('h-4 w-4', newTypeConfig.color)} />
+              <ArrowRight className="h-3 w-3 sm:h-4 sm:w-4 text-on-surface-variant" />
+              <div className={cn('p-1.5 sm:p-2 rounded-full shadow-sm', newTypeConfig.bgColor)}>
+                <NewIcon className={cn('h-3 w-3 sm:h-4 sm:w-4', newTypeConfig.color)} />
               </div>
             </div>
           </div>
 
           {/* Content Section */}
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-3">
-              <span className="label-large font-medium text-purple-700 dark:text-purple-300">
+            <div className="flex items-center gap-2 mb-2 sm:mb-3">
+              <span className="label-large font-medium text-purple-700 dark:text-purple-300 text-sm sm:text-base">
                 เปลี่ยนประเภทคำขอ
               </span>
               <div className="flex-1 h-px bg-purple-200 dark:bg-purple-800/60"></div>
             </div>
             
-            <div className="space-y-3">
-              <div className="flex items-center gap-2 body-small text-on-surface-variant">
-                <span>คำขอ #{queueId}:</span>
-                <span className="font-medium text-on-surface truncate">{jobName}</span>
+            <div className="space-y-2 sm:space-y-3">
+              <div className="flex items-center gap-2 body-small text-on-surface-variant text-xs sm:text-sm">
+                <span className="flex-shrink-0">คำขอ #{queueId}:</span>
+                <span className="font-medium text-on-surface truncate min-w-0">{jobName}</span>
               </div>
 
               {customerName && (
-                <div className="flex items-center gap-2 body-small text-on-surface-variant">
-                  <User className="h-4 w-4" />
-                  <span>ลูกค้า:</span>
-                  <span className="font-medium text-on-surface truncate">{customerName}</span>
+                <div className="flex items-center gap-2 body-small text-on-surface-variant text-xs sm:text-sm">
+                  <User className="h-3 w-3 sm:h-4 sm:w-4 flex-shrink-0" />
+                  <span className="flex-shrink-0">ลูกค้า:</span>
+                  <span className="font-medium text-on-surface truncate min-w-0">{customerName}</span>
                 </div>
               )}
 
               {/* Type Change */}
-              <div className="flex items-center gap-3 p-3 rounded-lg bg-surface-variant/30 border border-outline/30">
-                <Badge className={cn('label-small', oldTypeConfig.color, oldTypeConfig.bgColor)}>
+              <div className="flex items-center gap-2 sm:gap-3 p-2 sm:p-3 rounded-lg bg-surface-variant/30 border border-outline/30 overflow-hidden">
+                <Badge className={cn('label-small text-xs flex-shrink-0', oldTypeConfig.color, oldTypeConfig.bgColor)}>
                   {oldTypeConfig.label}
                 </Badge>
-                <ArrowRight className="h-3 w-3 text-on-surface-variant" />
-                <Badge className={cn('label-small', newTypeConfig.color, newTypeConfig.bgColor)}>
+                <ArrowRight className="h-2.5 w-2.5 sm:h-3 sm:w-3 text-on-surface-variant flex-shrink-0" />
+                <Badge className={cn('label-small text-xs flex-shrink-0', newTypeConfig.color, newTypeConfig.bgColor)}>
                   {newTypeConfig.label}
                 </Badge>
               </div>

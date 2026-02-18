@@ -120,23 +120,23 @@ export function ProofMetaCard({
 
   return (
     <Card className={cn(
-      'my-3 max-w-md shadow-md',
+      'my-2 sm:my-3 w-full max-w-full sm:max-w-md shadow-md',
       'bg-gradient-to-r',
       statusConfig.gradientFrom,
       statusConfig.gradientTo,
       'dark:from-purple-950/20 dark:to-indigo-950/20',
       'border-purple-200/60 dark:border-purple-800/40'
     )}>
-      <CardContent className="p-4">
-        <div className="flex items-start gap-4">
+      <CardContent className="p-3 sm:p-4">
+        <div className="flex items-start gap-2 sm:gap-4">
           {/* Icon Section */}
           <div className="flex-shrink-0">
             <div className="relative">
-              <div className={cn('p-3 rounded-full shadow-sm', statusConfig.bgColor)}>
-                <FileText className={cn('h-6 w-6', statusConfig.color)} />
+              <div className={cn('p-2 sm:p-3 rounded-full shadow-sm', statusConfig.bgColor)}>
+                <FileText className={cn('h-5 w-5 sm:h-6 sm:w-6', statusConfig.color)} />
               </div>
               <div className={cn(
-                'absolute -bottom-1 -right-1 p-1 rounded-full bg-surface shadow-sm',
+                'absolute -bottom-1 -right-1 p-0.5 sm:p-1 rounded-full bg-surface shadow-sm',
                 'border-2',
                 statusConfig.bgColor.includes('yellow') ? 'border-yellow-200 dark:border-yellow-800' :
                 statusConfig.bgColor.includes('blue') ? 'border-blue-200 dark:border-blue-800' :
@@ -147,15 +147,15 @@ export function ProofMetaCard({
                 statusConfig.bgColor.includes('gray') ? 'border-gray-200 dark:border-gray-800' :
                 'border-purple-200 dark:border-purple-800'
               )}>
-                <StatusIcon className={cn('h-3 w-3', statusConfig.color)} />
+                <StatusIcon className={cn('h-2.5 w-2.5 sm:h-3 sm:w-3', statusConfig.color)} />
               </div>
             </div>
           </div>
 
           {/* Content Section */}
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-3">
-              <span className={cn('label-large font-medium', statusConfig.color)}>
+            <div className="flex items-center gap-2 mb-2 sm:mb-3">
+              <span className={cn('label-large font-medium text-sm sm:text-base', statusConfig.color)}>
                 ข้อมูลปรู๊ฟ
               </span>
               <div className={cn(
@@ -171,51 +171,51 @@ export function ProofMetaCard({
               )}></div>
             </div>
             
-            <div className="space-y-3">
+            <div className="space-y-2 sm:space-y-3">
               {/* Job Name and Runner ID */}
               <div className="space-y-1">
-                <div className="flex items-center gap-2 body-small text-on-surface-variant">
-                  <span className="font-medium text-on-surface truncate">{jobName}</span>
+                <div className="flex items-center gap-2 body-small text-on-surface-variant text-xs sm:text-sm">
+                  <span className="font-medium text-on-surface break-words min-w-0">{jobName}</span>
                 </div>
-                <div className="flex items-center gap-2 body-small text-on-surface-variant">
-                  <span>Runner:</span>
-                  <code className="font-mono text-xs bg-surface-variant/50 px-2 py-0.5 rounded">{runnerId}</code>
-                  <span>• ID: #{proofId}</span>
+                <div className="flex items-center gap-1 sm:gap-2 body-small text-on-surface-variant text-xs flex-wrap">
+                  <span className="flex-shrink-0">Runner:</span>
+                  <code className="font-mono text-xs bg-surface-variant/50 px-1.5 sm:px-2 py-0.5 rounded break-all">{runnerId}</code>
+                  <span className="flex-shrink-0">• ID: #{proofId}</span>
                 </div>
               </div>
 
               {/* Status Badge */}
               <div className="flex items-center gap-2">
-                <Badge className={cn('label-small flex items-center gap-1.5', statusConfig.color, statusConfig.bgColor)}>
-                  <StatusIcon className="h-3.5 w-3.5" />
+                <Badge className={cn('label-small flex items-center gap-1 sm:gap-1.5 text-xs flex-shrink-0', statusConfig.color, statusConfig.bgColor)}>
+                  <StatusIcon className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
                   {statusConfig.label}
                 </Badge>
               </div>
 
               {/* Customer and Sales Info */}
               {(customerName || salesName) && (
-                <div className="space-y-2 p-3 rounded-lg bg-surface-variant/30 border border-outline/30">
+                <div className="space-y-1.5 sm:space-y-2 p-2 sm:p-3 rounded-lg bg-surface-variant/30 border border-outline/30">
                   {customerName && (
-                    <div className="flex items-center gap-2 body-small text-on-surface-variant">
-                      <Building2 className="h-4 w-4" />
-                      <span>ลูกค้า:</span>
-                      <span className="font-medium text-on-surface truncate">{customerName}</span>
+                    <div className="flex items-center gap-2 body-small text-on-surface-variant text-xs sm:text-sm">
+                      <Building2 className="h-3 w-3 sm:h-4 sm:w-4 flex-shrink-0" />
+                      <span className="flex-shrink-0">ลูกค้า:</span>
+                      <span className="font-medium text-on-surface truncate min-w-0">{customerName}</span>
                     </div>
                   )}
                   {salesName && (
-                    <div className="flex items-center gap-2 body-small text-on-surface-variant">
-                      <User className="h-4 w-4" />
-                      <span>เซลส์:</span>
-                      <span className="font-medium text-on-surface truncate">{salesName}</span>
+                    <div className="flex items-center gap-2 body-small text-on-surface-variant text-xs sm:text-sm">
+                      <User className="h-3 w-3 sm:h-4 sm:w-4 flex-shrink-0" />
+                      <span className="flex-shrink-0">เซลส์:</span>
+                      <span className="font-medium text-on-surface truncate min-w-0">{salesName}</span>
                     </div>
                   )}
                 </div>
               )}
 
               {/* Footer */}
-              <div className="flex items-center justify-between body-small text-on-surface-variant pt-2 border-t border-outline/30">
-                <span>สร้างโดย: {createdByName}</span>
-                <span className="text-xs">{formatDate(createdAt)}</span>
+              <div className="flex items-center justify-between gap-2 body-small text-on-surface-variant pt-2 border-t border-outline/30 text-xs sm:text-sm">
+                <span className="truncate min-w-0">สร้างโดย: {createdByName}</span>
+                <span className="text-xs flex-shrink-0 ml-2">{formatDate(createdAt)}</span>
               </div>
             </div>
           </div>

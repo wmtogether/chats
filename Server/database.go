@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/lib/pq" // PostgreSQL driver
 )
 
@@ -509,8 +510,8 @@ func CreateChat(params CreateChatParams) (*Chat, error) {
 	}
 	defer tx.Rollback() // This will be ignored if tx.Commit() succeeds
 
-	// Generate UUID for the chat
-	chatUUID := fmt.Sprintf("%d_%s_%d", params.CreatedByID, params.Name, time.Now().Unix())
+	// Generate UUID for the chat using proper UUID v4
+	chatUUID := uuid.New().String()
 	
 	// Generate channel ID (similar format to existing chats)
 	channelID := fmt.Sprintf("ch_%d_%d", params.CreatedByID, time.Now().Unix())

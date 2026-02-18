@@ -1,4 +1,4 @@
-import { useReducer, useEffect, useState } from 'react';
+import { useReducer, useEffect, useState, useRef } from 'react';
 import { MessageCircle, UserPlus } from 'lucide-react'
 import Sidebar from './Components/Sidebar'
 import ChatHeader from './Components/ChatHeader'
@@ -100,6 +100,26 @@ function appReducer(state: AppState, action: AppAction): AppState {
       // When a chat is selected, clear previous messages and navigate back to the main chat view
       // Save selected chat to localStorage
       localStorageManager.saveSelectedChat(action.payload);
+      
+      // Update URL with chat parameter
+      if (action.payload) {
+        const url = new URL(window.location.href);
+        const chatUuid = action.payload.uuid;
+        console.log('🔗 SELECT_CHAT: Updating URL with UUID:', chatUuid, 'Chat object:', action.payload);
+        
+        if (chatUuid) {
+          url.searchParams.set('chat', chatUuid);
+          window.history.pushState({}, '', url.toString());
+        } else {
+          console.error('🔗 SELECT_CHAT: Chat UUID is undefined!', action.payload);
+        }
+      } else {
+        // Clear chat parameter if no chat selected
+        const url = new URL(window.location.href);
+        url.searchParams.delete('chat');
+        window.history.pushState({}, '', url.toString());
+      }
+      
       return { ...state, selectedChat: action.payload, messages: [], currentPage: 'chat', replyingTo: null, isLoadingMessages: false, newMessageIds: new Set() };
     case 'UPDATE_CHAT':
       // Update a specific chat in the chats array and selectedChat if it matches
@@ -229,6 +249,10 @@ const ChatLayout = ({
   const { user } = useAuth();
   const { addToast } = useToast();
 
+  // Mobile sidebar states
+  const [showLeftSidebar, setShowLeftSidebar] = useState(true); // Open by default on desktop
+  const [showRightSidebar, setShowRightSidebar] = useState(true);
+
   // Check if user is a member of the selected chat
   const isChatMember = (chat: ChatType | null): boolean => {
     if (!chat || !user) return false;
@@ -265,28 +289,54 @@ const ChatLayout = ({
 
   // Separate effect to handle state restoration after chats are loaded
   useEffect(() => {
-    if (chats.length > 0 && !selectedChat && shouldRestoreState()) {
-      console.log('🔄 Chats loaded, attempting state restoration...');
-      const savedChatUuid = localStorageManager.getSelectedChatUuid();
-      const savedPage = localStorageManager.getCurrentPage();
+    if (chats.length > 0 && !selectedChat) {
+      // Check for URL parameter first
+      const urlParams = new URLSearchParams(window.location.search);
+      const chatUuidFromUrl = urlParams.get('chat');
       
-      console.log('🔄 Saved chat UUID:', savedChatUuid);
-      console.log('🔄 Available chats:', chats.length);
-      
-      if (savedChatUuid) {
-        const savedChat = findChatByUuid(chats, savedChatUuid);
-        if (savedChat) {
-          console.log('🔄 Found saved chat, restoring:', savedChat.channelName);
-          addToast({ message: `Restored chat: ${savedChat.channelName}`, type: 'success' });
+      if (chatUuidFromUrl) {
+        console.log('� Chat UUID from URL:', chatUuidFromUrl);
+        const chatFromUrl = findChatByUuid(chats, chatUuidFromUrl);
+        if (chatFromUrl) {
+          console.log('🔗 Found chat from URL, selecting:', chatFromUrl.channelName);
+          addToast({ message: `Opening chat: ${chatFromUrl.channelName}`, type: 'success' });
           dispatch({ 
-            type: 'RESTORE_STATE', 
-            payload: { 
-              page: savedPage || 'chat', 
-              selectedChat: savedChat 
-            } 
+            type: 'SELECT_CHAT', 
+            payload: chatFromUrl 
           });
+          // Clear the URL parameter after selecting
+          window.history.replaceState({}, '', window.location.pathname);
+          return;
         } else {
-          console.log('🔄 Saved chat not found in loaded chats');
+          console.log('🔗 Chat from URL not found');
+          addToast({ message: 'Chat not found', type: 'error' });
+        }
+      }
+      
+      // Fall back to localStorage restoration if no URL parameter or chat not found
+      if (shouldRestoreState()) {
+        console.log('🔄 Chats loaded, attempting state restoration...');
+        const savedChatUuid = localStorageManager.getSelectedChatUuid();
+        const savedPage = localStorageManager.getCurrentPage();
+        
+        console.log('🔄 Saved chat UUID:', savedChatUuid);
+        console.log('🔄 Available chats:', chats.length);
+        
+        if (savedChatUuid) {
+          const savedChat = findChatByUuid(chats, savedChatUuid);
+          if (savedChat) {
+            console.log('🔄 Found saved chat, restoring:', savedChat.channelName);
+            addToast({ message: `Restored chat: ${savedChat.channelName}`, type: 'success' });
+            dispatch({ 
+              type: 'RESTORE_STATE', 
+              payload: { 
+                page: savedPage || 'chat', 
+                selectedChat: savedChat 
+              } 
+            });
+          } else {
+            console.log('🔄 Saved chat not found in loaded chats');
+          }
         }
       }
     }
@@ -600,47 +650,58 @@ const ChatLayout = ({
   };
 
   return (
-    <div className="bg-background text-on-background h-screen w-screen flex overflow-hidden selection:bg-primary/30 selection:text-on-primary ">
-      <Sidebar
-        onNavigate={(page) => dispatch({ type: 'NAVIGATE', payload: page })}
-        onLogout={onLogout}
-        chats={chats}
-        selectedChat={selectedChat}
-        onChatSelect={(chat) => dispatch({ type: 'SELECT_CHAT', payload: chat })}
-        isLoadingAllChats={isLoadingChats}
-        onCreateChat={handleCreateChat}
-        //@ts-expect-error
-        onDeleteChat={handleDeleteChat}
-        joinedChats={joinedChats}
-        onJoinChat={onJoinChat}
-        onLeaveChat={onLeaveChat}
-      />
+    <div className="bg-background text-on-background h-screen w-screen flex overflow-hidden selection:bg-primary/30 selection:text-on-primary relative">
+      {/* Left Sidebar - Always visible on desktop, hidden on mobile */}
+      <div className="hidden lg:block">
+        <Sidebar
+          onNavigate={(page) => {
+            dispatch({ type: 'NAVIGATE', payload: page });
+          }}
+          onLogout={onLogout}
+          chats={chats}
+          selectedChat={selectedChat}
+          onChatSelect={(chat) => {
+            dispatch({ type: 'SELECT_CHAT', payload: chat });
+          }}
+          isLoadingAllChats={isLoadingChats}
+          onCreateChat={handleCreateChat}
+          //@ts-expect-error
+          onDeleteChat={handleDeleteChat}
+          joinedChats={joinedChats}
+          onJoinChat={onJoinChat}
+          onLeaveChat={onLeaveChat}
+        />
+      </div>
 
       {state.currentPage === 'allChats' ? (
         <AllChats
           chats={chats}
-          onChatSelect={(chat) => dispatch({ type: 'SELECT_CHAT', payload: chat })}
+          onChatSelect={(chat) => {
+            dispatch({ type: 'SELECT_CHAT', payload: chat });
+          }}
           onBack={() => dispatch({ type: 'NAVIGATE', payload: 'chat' })}
           selectedChatId={selectedChat?.id}
           isLoading={isLoadingChats}
         />
       ) : (
         <>
-          <main className="flex-1 flex flex-col min-w-0 bg-surface relative">
+          <main className="flex-1 flex flex-col min-w-0 bg-surface h-full pb-0 lg:pb-0">
             <ChatHeader 
               selectedChat={selectedChat} 
               chatCount={chats.length} 
               wsConnected={wsConnected} 
               onChatUpdate={handleChatUpdate}
+              onToggleRightSidebar={() => setShowRightSidebar(!showRightSidebar)}
+              showRightSidebar={showRightSidebar}
             />
 
-            <div className="flex-1 overflow-y-auto flex flex-col relative" id="message-container">
+            <div className="flex-1 overflow-y-auto flex flex-col relative min-h-0 pb-32 lg:pb-0" id="message-container">
               <StickyStatus
                 selectedChat={selectedChat}
                 onStatusUpdate={(newStatus) => console.log('Queue status updated to:', newStatus)}
               />
 
-              <div className="flex flex-col gap-1 pb-4 px-6 -mt-2 h-full">
+              <div className="flex flex-col gap-1 pb-4 px-3 sm:px-6 -mt-2 flex-1">
                 {selectedChat ? (
                   <>
                     <div className="relative py-6 flex items-center justify-center">
@@ -717,6 +778,7 @@ const ChatLayout = ({
               </div>
             </div>
 
+            {/* Message Input - Let ChatInput handle its own positioning */}
             {selectedChat && (
               isChatMember(selectedChat) ? (
                 <ChatInput
@@ -726,15 +788,15 @@ const ChatLayout = ({
                   currentChat={selectedChat}
                 />
               ) : (
-                <div className="p-6 bg-surface border-t border-outline shrink-0">
-                  <div className="bg-surface-container border border-outline-variant rounded-3xl p-6 flex flex-col items-center text-center">
-                    <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mb-4">
-                      <UserPlus className="h-8 w-8 text-primary" />
+                <div className="fixed bottom-16 left-0 right-0 lg:relative lg:bottom-auto z-30 p-3 sm:p-6 bg-surface border-t border-outline">
+                  <div className="bg-surface-container border border-outline-variant rounded-3xl p-4 sm:p-6 flex flex-col items-center text-center">
+                    <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-primary/10 flex items-center justify-center mb-3 sm:mb-4">
+                      <UserPlus className="h-6 w-6 sm:h-8 sm:w-8 text-primary" />
                     </div>
-                    <h3 className="title-medium text-on-surface mb-2">
+                    <h3 className="title-medium text-on-surface mb-2 text-sm sm:text-base">
                       Join to Participate
                     </h3>
-                    <p className="body-medium text-on-surface-variant mb-4 max-w-md">
+                    <p className="body-medium text-on-surface-variant mb-3 sm:mb-4 max-w-md text-xs sm:text-sm">
                       You need to join this chat to send messages and participate in the conversation.
                     </p>
                     <button
@@ -748,9 +810,9 @@ const ChatLayout = ({
                         }
                       }}
                       disabled={isLoadingMembership}
-                      className="flex items-center gap-2 px-6 py-3 bg-primary text-on-primary rounded-full hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed label-large"
+                      className="flex items-center gap-2 px-4 sm:px-6 py-2 sm:py-3 bg-primary text-on-primary rounded-full hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed label-large text-sm sm:text-base"
                     >
-                      <UserPlus size={20} />
+                      <UserPlus size={18} className="sm:size-5" />
                       Join Chat
                     </button>
                   </div>
@@ -759,23 +821,74 @@ const ChatLayout = ({
             )}
           </main>
 
-          {/* File Manager - Right Sidebar */}
-          <FileManager 
-            uniqueId={selectedChat?.uniqueId}
-            onPostFile={(fileName, filePath) => {
-              // Post file as a message attachment
-              if (selectedChat) {
-                const fileMetadata = JSON.stringify({
-                  type: 'file_attachment',
-                  fileName: fileName,
-                  filePath: filePath,
-                });
-                handleSendMessage(`📎 ${fileName}`, [fileMetadata]);
-              }
-            }}
-          />
+          {/* File Manager - Right Sidebar - Toggleable */}
+          {showRightSidebar && (
+            <div className="transition-all duration-300 ease-in-out hidden md:block">
+              <FileManager 
+                uniqueId={selectedChat?.uniqueId}
+                onPostFile={(fileName, filePath) => {
+                  // Post file as a message attachment
+                  if (selectedChat) {
+                    const fileMetadata = JSON.stringify({
+                      type: 'file_attachment',
+                      fileName: fileName,
+                      filePath: filePath,
+                    });
+                    handleSendMessage(`📎 ${fileName}`, [fileMetadata]);
+                  }
+                }}
+              />
+            </div>
+          )}
         </>
       )}
+
+      {/* Mobile Bottom Navigation - Only visible on mobile */}
+      <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-surface border-t border-outline z-40">
+        <div className="flex items-center justify-around h-16">
+          <button
+            onClick={() => dispatch({ type: 'NAVIGATE', payload: 'allChats' })}
+            className={`flex flex-col items-center justify-center flex-1 h-full transition-colors ${
+              state.currentPage === 'allChats' ? 'text-primary' : 'text-on-surface-variant'
+            }`}
+          >
+            <MessageCircle size={24} />
+            <span className="text-xs mt-1">Chats</span>
+          </button>
+          
+          <button
+            onClick={() => dispatch({ type: 'NAVIGATE', payload: 'chat' })}
+            className={`flex flex-col items-center justify-center flex-1 h-full transition-colors ${
+              state.currentPage === 'chat' ? 'text-primary' : 'text-on-surface-variant'
+            }`}
+          >
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            </svg>
+            <span className="text-xs mt-1">Messages</span>
+          </button>
+          
+          <button
+            onClick={() => dispatch({ type: 'NAVIGATE', payload: 'users' })}
+            className={`flex flex-col items-center justify-center flex-1 h-full transition-colors ${
+              state.currentPage === 'users' ? 'text-primary' : 'text-on-surface-variant'
+            }`}
+          >
+            <UserPlus size={24} />
+            <span className="text-xs mt-1">Users</span>
+          </button>
+          
+          <button
+            onClick={onLogout}
+            className="flex flex-col items-center justify-center flex-1 h-full text-on-surface-variant transition-colors hover:text-error"
+          >
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            </svg>
+            <span className="text-xs mt-1">Logout</span>
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -790,6 +903,9 @@ export default function Main() {
   // Track joined chats
   const [joinedChats, setJoinedChats] = useState<Set<number>>(new Set());
   const [isLoadingMembership, setIsLoadingMembership] = useState(true);
+
+  // Track message IDs that are being processed to prevent race condition duplicates
+  const processingMessageIds = useRef<Set<string>>(new Set());
 
   // Load user's joined chats on mount
   useEffect(() => {
@@ -928,11 +1044,31 @@ export default function Main() {
       setWsConnected(false);
     });
 
-    wsManager.on('message', (data: any) => {
+    // Attempt to connect
+    wsManager.connect().catch((error) => {
+      console.error('❌ Failed to establish real-time connection:', error);
+      setWsConnected(false);
+    });
+
+    return () => {
+      wsManager.disconnect();
+      setWsConnected(false);
+      console.log('🔌 Real-time connection closed');
+    };
+  }, [user]); // Re-run when user changes
+
+  // Separate effect for handling WebSocket messages that depends on state
+  useEffect(() => {
+    const wsManager = getWebSocketManager();
+    if (!wsManager) return;
+
+    const handleMessage = (data: any) => {
       // Handle incoming real-time messages
       console.log('📨 Real-time message received:', data);
       console.log('📨 Message type:', data.type);
       console.log('📨 Message data:', data.data);
+      console.log('📨 Current selected chat:', state.selectedChat?.uuid);
+      console.log('📨 Current messages count:', state.messages.length);
       
       // Handle different message types
       switch (data.type) {
@@ -969,10 +1105,16 @@ export default function Main() {
           // Handle real-time chat status updates
           if (data.data?.chat) {
             const processedChat = preprocessChat(data.data.chat);
+            console.log('💬 Processed chat with updated status:', {
+              uuid: processedChat.uuid,
+              status: processedChat.status,
+              channelName: processedChat.channelName
+            });
             dispatch({ type: 'UPDATE_CHAT', payload: processedChat });
             
             // If this is the currently selected chat, update it immediately
             if (state.selectedChat?.uuid === data.data.chat.uuid) {
+              console.log('💬 Updating currently selected chat with new status');
               dispatch({ type: 'SELECT_CHAT', payload: processedChat });
             }
           }
@@ -980,24 +1122,50 @@ export default function Main() {
         case 'chat_message':
           console.log('💬 Chat message received via WebSocket:', data.data);
           console.log('💬 Message object:', data.data?.message);
+          console.log('💬 Message ID:', data.data?.message?.messageId);
           console.log('💬 Chat UUID:', data.data?.chatUuid);
           console.log('💬 Current selected chat UUID:', state.selectedChat?.uuid);
+          console.log('💬 Current messages:', state.messages.map(m => ({ id: m.messageId, content: m.content.substring(0, 50) })));
           
           // Handle real-time chat messages
           if (data.data?.message && data.data?.chatUuid) {
-            // Check if message already exists to prevent duplicates
-            const messageExists = state.messages.some(msg => msg.messageId === data.data.message.messageId);
-            if (!messageExists) {
-              console.log('💬 Adding new message to chat via WebSocket');
-              dispatch({ 
-                type: 'ADD_MESSAGE', 
-                payload: { 
-                  message: data.data.message, 
-                  chatUuid: data.data.chatUuid 
-                } 
-              });
+            const messageId = data.data.message.messageId;
+            
+            // Only add message if it's for the currently selected chat
+            if (state.selectedChat?.uuid === data.data.chatUuid) {
+              // Check if message is already being processed (race condition protection)
+              if (processingMessageIds.current.has(messageId)) {
+                console.log('💬 Message is already being processed, skipping:', messageId);
+                return;
+              }
+              
+              // Check if message already exists in state
+              const messageExists = state.messages.some(msg => msg.messageId === messageId);
+              console.log('💬 Message exists check:', messageExists);
+              
+              if (!messageExists) {
+                console.log('💬 Adding new message to chat via WebSocket');
+                
+                // Mark as processing
+                processingMessageIds.current.add(messageId);
+                
+                dispatch({ 
+                  type: 'ADD_MESSAGE', 
+                  payload: { 
+                    message: data.data.message, 
+                    chatUuid: data.data.chatUuid 
+                  } 
+                });
+                
+                // Remove from processing after a short delay
+                setTimeout(() => {
+                  processingMessageIds.current.delete(messageId);
+                }, 1000);
+              } else {
+                console.log('💬 Message already exists, skipping duplicate:', messageId);
+              }
             } else {
-              console.log('💬 Message already exists, skipping duplicate:', data.data.message.messageId);
+              console.log('💬 Message is for different chat, ignoring. Expected:', state.selectedChat?.uuid, 'Got:', data.data.chatUuid);
             }
           } else {
             console.warn('💬 WebSocket chat_message missing required data:', {
@@ -1041,20 +1209,14 @@ export default function Main() {
         default:
           console.log('❓ Unknown message type:', data.type);
       }
-    });
+    };
 
-    // Attempt to connect
-    wsManager.connect().catch((error) => {
-      console.error('❌ Failed to establish real-time connection:', error);
-      setWsConnected(false);
-    });
+    wsManager.on('message', handleMessage);
 
     return () => {
-      wsManager.disconnect();
-      setWsConnected(false);
-      console.log('🔌 Real-time connection closed');
+      wsManager.off('message', handleMessage);
     };
-  }, [user]); // Re-run when user changes
+  }, [state.selectedChat, state.messages]); // Re-run when selectedChat or messages change
 
   // Render a loading screen while auth state is being determined
   if (loading) {

@@ -221,17 +221,17 @@ const FileAttachmentCard: React.FC<FileAttachmentCardProps> = ({
 
   return (
     <div 
-      className={`relative p-4 border rounded-2xl shadow-sm transition-all duration-200 ${getCardStyle()}`}
+      className={`relative p-3 sm:p-4 border rounded-2xl shadow-sm transition-all duration-200 ${getCardStyle()}`}
       onClick={handleCardClick}
     >
-      <div className="flex items-start gap-4">
+      <div className="flex items-start gap-2 sm:gap-4">
         {/* File Icon */}
         <div className="flex-shrink-0">
-          <div className="p-3 rounded-full bg-primary/10 relative">
-            <FileIcon className="h-6 w-6 text-primary" />
+          <div className="p-2 sm:p-3 rounded-full bg-primary/10 relative">
+            <FileIcon className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />
             {/* Status overlay */}
             {activeDownload && (
-              <div className="absolute -bottom-1 -right-1 p-1 rounded-full bg-surface border-2 border-outline shadow-sm">
+              <div className="absolute -bottom-1 -right-1 p-0.5 sm:p-1 rounded-full bg-surface border-2 border-outline shadow-sm">
                 {getStatusIcon()}
               </div>
             )}
@@ -242,14 +242,14 @@ const FileAttachmentCard: React.FC<FileAttachmentCardProps> = ({
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2">
             <div className="flex-1 min-w-0">
-              <h4 className="title-medium font-medium text-on-surface truncate">
+              <h4 className="title-medium font-medium text-on-surface truncate text-sm sm:text-base">
                 {actualFileName}
               </h4>
-              <p className="body-small text-on-surface-variant mt-1">
+              <p className="body-small text-on-surface-variant mt-1 text-xs sm:text-sm">
                 {getStatusText()}
               </p>
               {fileSize && (
-                <p className="body-small text-on-surface-variant">
+                <p className="body-small text-on-surface-variant text-xs sm:text-sm">
                   {fileSize}
                 </p>
               )}
@@ -260,37 +260,37 @@ const FileAttachmentCard: React.FC<FileAttachmentCardProps> = ({
               <button
                 onClick={handleDownload}
                 disabled={isDownloading}
-                className="p-2 hover:bg-surface-variant rounded-full text-on-surface-variant hover:text-primary transition-colors disabled:opacity-50"
+                className="p-1.5 sm:p-2 hover:bg-surface-variant rounded-full text-on-surface-variant hover:text-primary transition-colors disabled:opacity-50"
                 title="Download file"
               >
-                <Download className="h-4 w-4" />
+                <Download className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
               </button>
             ) : (
-              <div className="p-2">
-                <Download className="h-4 w-4 text-primary animate-pulse" />
+              <div className="p-1.5 sm:p-2">
+                <Download className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-primary animate-pulse" />
               </div>
             )}
           </div>
 
           {/* Progress bar for downloading */}
           {activeDownload?.status === 'downloading' && (
-            <div className="mt-3">
-              <div className="flex justify-between items-center mb-2">
-                <span className="body-small text-on-surface-variant">
+            <div className="mt-2 sm:mt-3">
+              <div className="flex justify-between items-center mb-1 sm:mb-2">
+                <span className="body-small text-on-surface-variant text-xs sm:text-sm">
                   Progress
                 </span>
-                <span className="body-small font-medium text-primary">
+                <span className="body-small font-medium text-primary text-xs sm:text-sm">
                   {activeDownload.progress}%
                 </span>
               </div>
-              <div className="w-full bg-surface-variant rounded-full h-2">
+              <div className="w-full bg-surface-variant rounded-full h-1.5 sm:h-2">
                 <div 
-                  className="bg-primary h-2 rounded-full transition-all duration-300"
+                  className="bg-primary h-1.5 sm:h-2 rounded-full transition-all duration-300"
                   style={{ width: `${activeDownload.progress}%` }}
                 />
               </div>
               {activeDownload.downloadSpeed && (
-                <div className="flex justify-between items-center mt-2 text-on-surface-variant body-small">
+                <div className="flex justify-between items-center mt-1 sm:mt-2 text-on-surface-variant body-small text-xs">
                   <span>Speed: {activeDownload.downloadSpeed}</span>
                   {activeDownload.eta && <span>ETA: {activeDownload.eta}</span>}
                 </div>
@@ -315,7 +315,7 @@ const FileAttachmentCard: React.FC<FileAttachmentCardProps> = ({
                     console.error('Failed to show file in folder:', error);
                   }
                 }}
-                className="body-small text-green-600 hover:text-green-700 underline flex items-center gap-1"
+                className="body-small text-green-600 hover:text-green-700 underline flex items-center gap-1 text-xs sm:text-sm"
               >
                 <ExternalLink className="h-3 w-3" />
                 Show in folder
@@ -328,7 +328,7 @@ const FileAttachmentCard: React.FC<FileAttachmentCardProps> = ({
             <div className="mt-2">
               <button
                 onClick={handleDownload}
-                className="body-small text-red-600 hover:text-red-700 underline"
+                className="body-small text-red-600 hover:text-red-700 underline text-xs sm:text-sm"
               >
                 Retry download
               </button>
