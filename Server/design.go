@@ -42,6 +42,7 @@ type DesignData struct {
 	DimensionsDepth          *string         `json:"dimensionsDepth,omitempty"`
 	DimensionUnit            *string         `json:"dimensionUnit,omitempty"`
 	EditCount                int             `json:"editCount"`
+	Quantity                 *int            `json:"quantity,omitempty"`
 	CustomerName             *string         `json:"customerName,omitempty"`
 	CustomerID               *string         `json:"customerId,omitempty"`
 	Note                     *string         `json:"note,omitempty"`
@@ -122,6 +123,7 @@ type CreateDesignParams struct {
 	JobName        string
 	CustomerName   *string
 	CustomerID     *string
+	Quantity       *int
 	DesignData     DesignData
 	CreatedByID    int
 	CreatedByRole  string

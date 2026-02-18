@@ -218,7 +218,7 @@ export default function FileManager({ uniqueId, onPostFile }: FileManagerProps) 
 
   if (!uniqueId) {
     return (
-      <aside className="w-80 bg-surface border-l border-outline flex flex-col">
+      <aside className="w-80 bg-surface border-l border-outline flex flex-col h-full">
         <div className="flex items-center justify-center h-full text-center p-6">
           <div>
             <Folder className="h-12 w-12 text-on-surface-variant mx-auto mb-3 opacity-50" />
@@ -239,7 +239,7 @@ export default function FileManager({ uniqueId, onPostFile }: FileManagerProps) 
   };
 
   return (
-    <aside className="w-80 bg-surface border-l h-full border-outline flex flex-col">
+    <aside className="w-80 bg-surface border-l border-outline flex flex-col h-full">
       {/* Header */}
       <div className="p-4 border-b border-outline flex-shrink-0">
         <div className="flex items-center justify-between mb-2">

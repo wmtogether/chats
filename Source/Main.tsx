@@ -788,7 +788,7 @@ const ChatLayout = ({
                   currentChat={selectedChat}
                 />
               ) : (
-                <div className="fixed bottom-16 left-0 right-0 lg:relative lg:bottom-auto z-30 p-3 sm:p-6 bg-surface border-t border-outline">
+                <div className="fixed bottom-16 left-0 right-0 lg:relative lg:bottom-auto p-3 sm:p-6 bg-surface border-t border-outline">
                   <div className="bg-surface-container border border-outline-variant rounded-3xl p-4 sm:p-6 flex flex-col items-center text-center">
                     <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-primary/10 flex items-center justify-center mb-3 sm:mb-4">
                       <UserPlus className="h-6 w-6 sm:h-8 sm:w-8 text-primary" />
@@ -823,7 +823,7 @@ const ChatLayout = ({
 
           {/* File Manager - Right Sidebar - Toggleable */}
           {showRightSidebar && (
-            <div className="transition-all duration-300 ease-in-out hidden md:block">
+            <div className="transition-all duration-300 ease-in-out hidden md:block h-full">
               <FileManager 
                 uniqueId={selectedChat?.uniqueId}
                 onPostFile={(fileName, filePath) => {

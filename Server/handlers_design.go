@@ -22,7 +22,9 @@ func createDesignHandler(w http.ResponseWriter, r *http.Request) {
 		JobName      string      `json:"jobName"`
 		CustomerName *string     `json:"customerName"`
 		CustomerID   *string     `json:"customerId"`
+		Quantity     *int        `json:"quantity"`
 		DesignData   DesignData  `json:"designData"`
+		ChatUUID     *string     `json:"chatUuid"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -55,6 +57,7 @@ func createDesignHandler(w http.ResponseWriter, r *http.Request) {
 		JobName:       req.JobName,
 		CustomerName:  req.CustomerName,
 		CustomerID:    req.CustomerID,
+		Quantity:      req.Quantity,
 		DesignData:    req.DesignData,
 		CreatedByID:   user.ID,
 		CreatedByRole: user.Role,
@@ -66,6 +69,11 @@ func createDesignHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"success": false, "error": "Failed to create design"}`, http.StatusInternalServerError)
 		return
 	}
+
+	// Note: Design files will be stored in the proof's /Design subfolder
+	// Path structure: /volumes/filestorage/{PREFIX}/{CUSTOMER-ID}/{RUNNER-ID}/Design
+	// The RUNNER-ID comes from the associated proof job
+	// Design files are stored alongside proof files in the same runner directory
 
 	log.Printf("Design created successfully: %s by %s", design.DesignID, user.Name)
 
